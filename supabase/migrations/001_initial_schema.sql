@@ -160,3 +160,39 @@ VALUES (
   4,
   '2026-06-28T00:00:00Z'
 ) ON CONFLICT (slug) DO NOTHING;
+
+INSERT INTO public.bracket_matches (
+  bracket_id,
+  match_identifier,
+  round_name,
+  home_placeholder,
+  away_placeholder
+)
+SELECT
+  bracket.id,
+  seeded.match_identifier,
+  seeded.round_name,
+  seeded.home_placeholder,
+  seeded.away_placeholder
+FROM public.brackets AS bracket
+JOIN (
+  VALUES
+    ('R16-01', 'Round of 16', 'Winner Group A', 'Runner-up Group B'),
+    ('R16-02', 'Round of 16', 'Winner Group C', 'Runner-up Group D'),
+    ('R16-03', 'Round of 16', 'Winner Group E', 'Runner-up Group F'),
+    ('R16-04', 'Round of 16', 'Winner Group G', 'Runner-up Group H'),
+    ('R16-05', 'Round of 16', 'Winner Group B', 'Runner-up Group A'),
+    ('R16-06', 'Round of 16', 'Winner Group D', 'Runner-up Group C'),
+    ('R16-07', 'Round of 16', 'Winner Group F', 'Runner-up Group E'),
+    ('R16-08', 'Round of 16', 'Winner Group H', 'Runner-up Group G'),
+    ('QF-01', 'Quarterfinals', 'Winner R16-01', 'Winner R16-02'),
+    ('QF-02', 'Quarterfinals', 'Winner R16-03', 'Winner R16-04'),
+    ('QF-03', 'Quarterfinals', 'Winner R16-05', 'Winner R16-06'),
+    ('QF-04', 'Quarterfinals', 'Winner R16-07', 'Winner R16-08'),
+    ('SF-01', 'Semifinals', 'Winner QF-01', 'Winner QF-02'),
+    ('SF-02', 'Semifinals', 'Winner QF-03', 'Winner QF-04'),
+    ('3P-01', 'Third Place', 'Loser SF-01', 'Loser SF-02'),
+    ('F-01', 'Final', 'Winner SF-01', 'Winner SF-02')
+) AS seeded(match_identifier, round_name, home_placeholder, away_placeholder)
+  ON bracket.slug = 'world-cup-2026'
+ON CONFLICT (bracket_id, match_identifier) DO NOTHING;
