@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import BracketTree from '@/components/BracketTree'
@@ -38,106 +38,132 @@ export default function ContestPage() {
     picks.some((p) => p.is_locked) || new Date() > lockDeadline
 
   // ── Load all data ──────────────────────────────────────────
-  const loadData = useCallback(async () => {
-    const supabase = createClient()
-
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
-
-    setUserId(user.id)
-
-    // 1. Fetch bracket metadata
-    const { data: bracket } = await supabase
-      .from('brackets')
-      .select('id, display_name, lock_deadline')
-      .eq('slug', bracketSlug)
-      .single()
-
-    if (!bracket) {
-      setError('Tournament not found.')
-      setLoading(false)
-      return
-    }
-
-    setBracketId(bracket.id)
-    setBracketDisplayName(bracket.display_name)
-    if (bracket.lock_deadline) {
-      setLockDeadline(new Date(bracket.lock_deadline))
-    }
-
-    // 2. Fetch group name
-    const { data: group } = await supabase
-      .from('groups')
-      .select('name')
-      .eq('id', groupId)
-      .single()
-
-    if (group) setGroupName(group.name)
-
-    // 3. Fetch matches ordered by round/identifier
-    const { data: matchData } = await supabase
-      .from('bracket_matches')
-      .select('*')
-      .eq('bracket_id', bracket.id)
-      .order('match_identifier', { ascending: true })
-
-    setMatches((matchData ?? []) as BracketMatch[])
-
-    // 4. Fetch current user's picks for this group
-    const { data: pickData } = await supabase
-      .from('bracket_user_picks')
-      .select('*')
-      .eq('user_id', user.id)
-      .eq('group_id', groupId)
-      .eq('bracket_id', bracket.id)
-
-    setPicks((pickData ?? []) as BracketUserPick[])
-
-    // 5. Build leaderboard from group memberships + picks
-    const { data: members } = await supabase
-      .from('group_memberships')
-      .select('user_id, has_paid')
-      .eq('group_id', groupId)
-
-    if (members && matchData) {
-      const completedMatches = (matchData as BracketMatch[]).filter(
-        (m) => m.status === 'completed' && m.winning_team_id
-      )
-
-      const entries: ScoreEntry[] = await Promise.all(
-        members.map(async (member) => {
-          const { data: memberPicks } = await supabase
-            .from('bracket_user_picks')
-            .select('match_id, choice_team_id')
-            .eq('user_id', member.user_id)
-            .eq('group_id', groupId)
-            .eq('bracket_id', bracket.id)
-
-          const correct = completedMatches.filter((m) =>
-            memberPicks?.some(
-              (p) => p.match_id === m.id && p.choice_team_id === m.winning_team_id
-            )
-          ).length
-
-          return {
-            userId: member.user_id,
-            displayName: member.user_id === user.id ? user.email ?? 'You' : `Player ${member.user_id.slice(0, 6)}`,
-            correctPicks: correct,
-            totalPicks: memberPicks?.length ?? 0,
-            hasPaid: member.has_paid,
-          }
-        })
-      )
-
-      setLeaderboard(entries)
-    }
-
-    setLoading(false)
-  }, [groupId, bracketSlug])
-
   useEffect(() => {
-    loadData()
-  }, [loadData])
+    let cancelled = false
+
+    async function loadData() {
+      setLoading(true)
+      setError(null)
+
+      const supabase = createClient()
+
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user || cancelled) return
+
+      setUserId(user.id)
+
+      // 1. Fetch the bracket linked to this group contest
+      const { data: contest } = await supabase
+        .from('group_bracket_contests')
+        .select('bracket_id')
+        .eq('group_id', groupId)
+        .single()
+
+      if (!contest?.bracket_id) {
+        if (!cancelled) {
+          setError('This pool contest could not be found.')
+          setLoading(false)
+        }
+        return
+      }
+
+      const { data: bracket } = await supabase
+        .from('brackets')
+        .select('id, slug, display_name, lock_deadline')
+        .eq('id', contest.bracket_id)
+        .single()
+
+      if (!bracket) {
+        if (!cancelled) {
+          setError('Tournament not found.')
+          setLoading(false)
+        }
+        return
+      }
+
+      setBracketId(bracket.id)
+      setBracketDisplayName(bracket.display_name)
+      if (bracket.lock_deadline) {
+        setLockDeadline(new Date(bracket.lock_deadline))
+      }
+
+      // 2. Fetch group name
+      const { data: group } = await supabase
+        .from('groups')
+        .select('name')
+        .eq('id', groupId)
+        .single()
+
+      if (group && !cancelled) setGroupName(group.name)
+
+      // 3. Fetch matches ordered by round/identifier
+      const { data: matchData } = await supabase
+        .from('bracket_matches')
+        .select('*')
+        .eq('bracket_id', contest.bracket_id)
+        .order('match_identifier', { ascending: true })
+
+      const resolvedMatches = (matchData ?? []) as BracketMatch[]
+      if (!cancelled) setMatches(resolvedMatches)
+
+      // 4. Fetch current user's picks for this group
+      const { data: pickData } = await supabase
+        .from('bracket_user_picks')
+        .select('*')
+        .eq('user_id', user.id)
+        .eq('group_id', groupId)
+        .eq('bracket_id', contest.bracket_id)
+
+      if (!cancelled) setPicks((pickData ?? []) as BracketUserPick[])
+
+      // 5. Build leaderboard from group memberships + picks
+      const { data: members } = await supabase
+        .from('group_memberships')
+        .select('user_id, has_paid')
+        .eq('group_id', groupId)
+
+      if (members) {
+        const completedMatches = resolvedMatches.filter(
+          (m) => m.status === 'completed' && m.winning_team_id
+        )
+
+        const entries: ScoreEntry[] = await Promise.all(
+          members.map(async (member) => {
+            const { data: memberPicks } = await supabase
+              .from('bracket_user_picks')
+              .select('match_id, choice_team_id')
+              .eq('user_id', member.user_id)
+              .eq('group_id', groupId)
+              .eq('bracket_id', contest.bracket_id)
+
+            const correct = completedMatches.filter((m) =>
+              memberPicks?.some(
+                (p) => p.match_id === m.id && p.choice_team_id === m.winning_team_id
+              )
+            ).length
+
+            return {
+              userId: member.user_id,
+              displayName: member.user_id === user.id ? user.email ?? 'You' : `Player ${member.user_id.slice(0, 6)}`,
+              correctPicks: correct,
+              totalPicks: memberPicks?.length ?? 0,
+              hasPaid: member.has_paid,
+            }
+          })
+        )
+
+        if (!cancelled) setLeaderboard(entries)
+      }
+
+      if (!cancelled) setLoading(false)
+    }
+
+    void loadData()
+
+    return () => {
+      cancelled = true
+    }
+  }, [groupId, bracketSlug])
 
   // ── Handle pick ────────────────────────────────────────────
   async function handlePick(matchId: string, teamId: string) {
@@ -282,7 +308,7 @@ export default function ContestPage() {
           {matches.length === 0 && (
             <div className="px-4 py-10 text-center">
               <p className="text-zinc-600 text-sm">
-                Matches haven't been scheduled yet. Check back soon.
+                Matches haven&apos;t been scheduled yet. Check back soon.
               </p>
             </div>
           )}
