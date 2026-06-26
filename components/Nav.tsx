@@ -27,11 +27,16 @@ export default function Nav() {
         </button>
 
         {/* Center – App Title */}
-        <h1 className="absolute left-1/2 -translate-x-1/2 text-lg font-bold tracking-tight text-zinc-100 whitespace-nowrap select-none pointer-events-none"
-          style={{ fontFamily: 'Georgia, "Times New Roman", serif' }}
+        <Link
+          href="/dashboard"
+          className="absolute left-1/2 -translate-x-1/2"
         >
-          The Big Board
-        </h1>
+          <h1 className="text-lg font-bold tracking-tight text-zinc-100 whitespace-nowrap select-none"
+            style={{ fontFamily: 'Georgia, "Times New Roman", serif' }}
+          >
+            The Big Board
+          </h1>
+        </Link>
 
         {/* Far Right – Create Pool */}
         <Link
