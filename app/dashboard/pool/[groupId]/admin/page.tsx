@@ -1,9 +1,9 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import type { BracketMatch } from '@/lib/types'
+import type { BracketMatch, Team } from '@/lib/types'
 
 // ── Types ──────────────────────────────────────────────────────
 interface MemberRow {
@@ -33,7 +33,14 @@ export default function AdminPage() {
   const [error, setError] = useState<string | null>(null)
   const [members, setMembers] = useState<MemberRow[]>([])
   const [matches, setMatches] = useState<MatchEntry[]>([])
+  const [teams, setTeams] = useState<Team[]>([])
   const [togglingId, setTogglingId] = useState<string | null>(null)
+
+  const teamsById = useMemo(
+    () =>
+      Object.fromEntries(teams.map((team) => [team.id, team])) as Record<string, Team>,
+    [teams]
+  )
 
   const loadData = useCallback(async () => {
     const supabase = createClient()
@@ -77,6 +84,15 @@ export default function AdminPage() {
       )
     }
 
+    const { data: teamData } = await supabase
+      .from('teams')
+      .select('*')
+      .order('country_name', { ascending: true })
+
+    if (teamData) {
+      setTeams(teamData as Team[])
+    }
+
     // ── Score entry: find bracket for this group ─────────────
     const { data: contest } = await supabase
       .from('group_bracket_contests')
@@ -108,7 +124,7 @@ export default function AdminPage() {
   }, [groupId, router])
 
   useEffect(() => {
-    loadData()
+    void Promise.resolve().then(loadData)
   }, [loadData])
 
   // ── Toggle payment status ────────────────────────────────────
@@ -159,10 +175,25 @@ export default function AdminPage() {
     )
   }
 
+  function updateDraftTeam(
+    matchId: string,
+    field: 'home_team_id' | 'away_team_id',
+    value: string | null
+  ) {
+    setMatches((prev) =>
+      prev.map((m) => (m.id === matchId ? { ...m, [field]: value } : m))
+    )
+  }
+
   // ── Save match result ────────────────────────────────────────
   async function saveMatch(matchId: string) {
     const match = matches.find((m) => m.id === matchId)
     if (!match) return
+
+    if (match.home_team_id && match.home_team_id === match.away_team_id) {
+      setError('Home and away teams must be different.')
+      return
+    }
 
     setMatches((prev) =>
       prev.map((m) => (m.id === matchId ? { ...m, saving: true } : m))
@@ -188,6 +219,8 @@ export default function AdminPage() {
           bracket_id: match.bracket_id,
           match_identifier: match.match_identifier,
           round_name: match.round_name,
+          home_team_id: match.home_team_id,
+          away_team_id: match.away_team_id,
           home_score: match.draftHomeScore,
           away_score: match.draftAwayScore,
           status: match.draftStatus,
@@ -199,19 +232,8 @@ export default function AdminPage() {
     if (upsertErr) {
       setError(upsertErr.message)
     } else {
-      setMatches((prev) =>
-        prev.map((m) =>
-          m.id === matchId
-            ? {
-                ...m,
-                home_score: match.draftHomeScore,
-                away_score: match.draftAwayScore,
-                status: match.draftStatus,
-                winning_team_id: winningTeamId,
-              }
-            : m
-        )
-      )
+      setError(null)
+      await loadData()
     }
 
     setMatches((prev) =>
@@ -401,8 +423,12 @@ export default function AdminPage() {
             </div>
           ) : (
             matches.map((match) => {
-              const homeName = match.home_placeholder || 'TBD'
-              const awayName = match.away_placeholder || 'TBD'
+              const homeName = match.home_team_id
+                ? `${teamsById[match.home_team_id]?.flag_emoji ?? ''} ${teamsById[match.home_team_id]?.country_name ?? ''}`.trim()
+                : match.home_placeholder || 'TBD'
+              const awayName = match.away_team_id
+                ? `${teamsById[match.away_team_id]?.flag_emoji ?? ''} ${teamsById[match.away_team_id]?.country_name ?? ''}`.trim()
+                : match.away_placeholder || 'TBD'
 
               return (
                 <div key={match.id} className="px-4 py-4 flex flex-col gap-3">
@@ -431,6 +457,49 @@ export default function AdminPage() {
                       <option value="live">Live</option>
                       <option value="completed">Completed</option>
                     </select>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    <label className="flex flex-col gap-1">
+                      <span className="text-[10px] text-zinc-500 font-medium uppercase tracking-wide">
+                        Home Team
+                      </span>
+                      <select
+                        value={match.home_team_id ?? ''}
+                        onChange={(e) =>
+                          updateDraftTeam(match.id, 'home_team_id', e.target.value || null)
+                        }
+                        className="bg-zinc-800 border border-zinc-700 text-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500"
+                      >
+                        <option value="">{match.home_placeholder || 'Select team'}</option>
+                        {teams.map((team) => (
+                          <option key={team.id} value={team.id}>
+                            {team.flag_emoji} {team.country_name}
+                            {team.group_seed ? ` (${team.group_seed})` : ''}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="flex flex-col gap-1">
+                      <span className="text-[10px] text-zinc-500 font-medium uppercase tracking-wide">
+                        Away Team
+                      </span>
+                      <select
+                        value={match.away_team_id ?? ''}
+                        onChange={(e) =>
+                          updateDraftTeam(match.id, 'away_team_id', e.target.value || null)
+                        }
+                        className="bg-zinc-800 border border-zinc-700 text-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500"
+                      >
+                        <option value="">{match.away_placeholder || 'Select team'}</option>
+                        {teams.map((team) => (
+                          <option key={team.id} value={team.id}>
+                            {team.flag_emoji} {team.country_name}
+                            {team.group_seed ? ` (${team.group_seed})` : ''}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
                   </div>
 
                   {/* Score row */}
