@@ -9,6 +9,28 @@ import type { BracketMatch, BracketUserPick } from '@/lib/types'
 
 const LOCK_DEADLINE = new Date('2026-06-28T00:00:00Z')
 
+// Hardcoded fallback for the 16 standard World Cup knockout match slots.
+// Used only when the database returns no bracket_matches rows, so the
+// BracketTree component always has data to render.
+const KNOCKOUT_FALLBACK_MATCHES: BracketMatch[] = [
+  { id: 'fb-r16-01', bracket_id: '', match_identifier: 'R16-01', round_name: 'Round of 16', home_placeholder: 'Winner Group A', away_placeholder: 'Runner-up Group B', home_team_id: null, away_team_id: null, home_score: 0, away_score: 0, status: 'scheduled', winning_team_id: null, kickoff_time: null, venue: null },
+  { id: 'fb-r16-02', bracket_id: '', match_identifier: 'R16-02', round_name: 'Round of 16', home_placeholder: 'Winner Group C', away_placeholder: 'Runner-up Group D', home_team_id: null, away_team_id: null, home_score: 0, away_score: 0, status: 'scheduled', winning_team_id: null, kickoff_time: null, venue: null },
+  { id: 'fb-r16-03', bracket_id: '', match_identifier: 'R16-03', round_name: 'Round of 16', home_placeholder: 'Winner Group E', away_placeholder: 'Runner-up Group F', home_team_id: null, away_team_id: null, home_score: 0, away_score: 0, status: 'scheduled', winning_team_id: null, kickoff_time: null, venue: null },
+  { id: 'fb-r16-04', bracket_id: '', match_identifier: 'R16-04', round_name: 'Round of 16', home_placeholder: 'Winner Group G', away_placeholder: 'Runner-up Group H', home_team_id: null, away_team_id: null, home_score: 0, away_score: 0, status: 'scheduled', winning_team_id: null, kickoff_time: null, venue: null },
+  { id: 'fb-r16-05', bracket_id: '', match_identifier: 'R16-05', round_name: 'Round of 16', home_placeholder: 'Winner Group B', away_placeholder: 'Runner-up Group A', home_team_id: null, away_team_id: null, home_score: 0, away_score: 0, status: 'scheduled', winning_team_id: null, kickoff_time: null, venue: null },
+  { id: 'fb-r16-06', bracket_id: '', match_identifier: 'R16-06', round_name: 'Round of 16', home_placeholder: 'Winner Group D', away_placeholder: 'Runner-up Group C', home_team_id: null, away_team_id: null, home_score: 0, away_score: 0, status: 'scheduled', winning_team_id: null, kickoff_time: null, venue: null },
+  { id: 'fb-r16-07', bracket_id: '', match_identifier: 'R16-07', round_name: 'Round of 16', home_placeholder: 'Winner Group F', away_placeholder: 'Runner-up Group E', home_team_id: null, away_team_id: null, home_score: 0, away_score: 0, status: 'scheduled', winning_team_id: null, kickoff_time: null, venue: null },
+  { id: 'fb-r16-08', bracket_id: '', match_identifier: 'R16-08', round_name: 'Round of 16', home_placeholder: 'Winner Group H', away_placeholder: 'Runner-up Group G', home_team_id: null, away_team_id: null, home_score: 0, away_score: 0, status: 'scheduled', winning_team_id: null, kickoff_time: null, venue: null },
+  { id: 'fb-qf-01', bracket_id: '', match_identifier: 'QF-01', round_name: 'Quarterfinals', home_placeholder: 'Winner R16-01', away_placeholder: 'Winner R16-02', home_team_id: null, away_team_id: null, home_score: 0, away_score: 0, status: 'scheduled', winning_team_id: null, kickoff_time: null, venue: null },
+  { id: 'fb-qf-02', bracket_id: '', match_identifier: 'QF-02', round_name: 'Quarterfinals', home_placeholder: 'Winner R16-03', away_placeholder: 'Winner R16-04', home_team_id: null, away_team_id: null, home_score: 0, away_score: 0, status: 'scheduled', winning_team_id: null, kickoff_time: null, venue: null },
+  { id: 'fb-qf-03', bracket_id: '', match_identifier: 'QF-03', round_name: 'Quarterfinals', home_placeholder: 'Winner R16-05', away_placeholder: 'Winner R16-06', home_team_id: null, away_team_id: null, home_score: 0, away_score: 0, status: 'scheduled', winning_team_id: null, kickoff_time: null, venue: null },
+  { id: 'fb-qf-04', bracket_id: '', match_identifier: 'QF-04', round_name: 'Quarterfinals', home_placeholder: 'Winner R16-07', away_placeholder: 'Winner R16-08', home_team_id: null, away_team_id: null, home_score: 0, away_score: 0, status: 'scheduled', winning_team_id: null, kickoff_time: null, venue: null },
+  { id: 'fb-sf-01', bracket_id: '', match_identifier: 'SF-01', round_name: 'Semifinals', home_placeholder: 'Winner QF-01', away_placeholder: 'Winner QF-02', home_team_id: null, away_team_id: null, home_score: 0, away_score: 0, status: 'scheduled', winning_team_id: null, kickoff_time: null, venue: null },
+  { id: 'fb-sf-02', bracket_id: '', match_identifier: 'SF-02', round_name: 'Semifinals', home_placeholder: 'Winner QF-03', away_placeholder: 'Winner QF-04', home_team_id: null, away_team_id: null, home_score: 0, away_score: 0, status: 'scheduled', winning_team_id: null, kickoff_time: null, venue: null },
+  { id: 'fb-3p-01', bracket_id: '', match_identifier: '3P-01', round_name: 'Third Place', home_placeholder: 'Loser SF-01', away_placeholder: 'Loser SF-02', home_team_id: null, away_team_id: null, home_score: 0, away_score: 0, status: 'scheduled', winning_team_id: null, kickoff_time: null, venue: null },
+  { id: 'fb-f-01', bracket_id: '', match_identifier: 'F-01', round_name: 'Final', home_placeholder: 'Winner SF-01', away_placeholder: 'Winner SF-02', home_team_id: null, away_team_id: null, home_score: 0, away_score: 0, status: 'scheduled', winning_team_id: null, kickoff_time: null, venue: null },
+]
+
 interface ScoreEntry {
   userId: string
   displayName: string
@@ -53,25 +75,39 @@ export default function ContestPage() {
       setUserId(user.id)
 
       // 1. Fetch the bracket linked to this group contest
+      //    Primary: look up via group_bracket_contests join table
+      //    Fallback: resolve bracket directly by URL slug
       const { data: contest } = await supabase
         .from('group_bracket_contests')
         .select('bracket_id')
         .eq('group_id', groupId)
         .single()
 
-      if (!contest?.bracket_id) {
-        if (!cancelled) {
-          setError('This pool contest could not be found.')
-          setLoading(false)
-        }
-        return
+      let bracket: {
+        id: string
+        slug: string
+        display_name: string
+        lock_deadline: string | null
+      } | null = null
+
+      if (contest?.bracket_id) {
+        const { data } = await supabase
+          .from('brackets')
+          .select('id, slug, display_name, lock_deadline')
+          .eq('id', contest.bracket_id)
+          .single()
+        bracket = data
       }
 
-      const { data: bracket } = await supabase
-        .from('brackets')
-        .select('id, slug, display_name, lock_deadline')
-        .eq('id', contest.bracket_id)
-        .single()
+      // Fallback: resolve bracket directly by the URL slug
+      if (!bracket) {
+        const { data } = await supabase
+          .from('brackets')
+          .select('id, slug, display_name, lock_deadline')
+          .eq('slug', bracketSlug)
+          .single()
+        bracket = data
+      }
 
       if (!bracket) {
         if (!cancelled) {
@@ -100,10 +136,39 @@ export default function ContestPage() {
       const { data: matchData } = await supabase
         .from('bracket_matches')
         .select('*')
-        .eq('bracket_id', contest.bracket_id)
+        .eq('bracket_id', bracket.id)
         .order('match_identifier', { ascending: true })
 
-      const resolvedMatches = (matchData ?? []) as BracketMatch[]
+      let resolvedMatches = (matchData ?? []) as BracketMatch[]
+
+      // Fallback: if no matches found, try resolving by slug directly
+      // (handles case where bracket_id was resolved via slug fallback above)
+      if (resolvedMatches.length === 0 && bracket.slug) {
+        const { data: fallbackBracket } = await supabase
+          .from('brackets')
+          .select('id')
+          .eq('slug', bracket.slug)
+          .single()
+
+        if (fallbackBracket) {
+          const { data: fallbackMatches } = await supabase
+            .from('bracket_matches')
+            .select('*')
+            .eq('bracket_id', fallbackBracket.id)
+            .order('match_identifier', { ascending: true })
+
+          resolvedMatches = (fallbackMatches ?? []) as BracketMatch[]
+        }
+      }
+
+      // Last-resort hardcoded fallback: 16 standard knockout slots
+      if (resolvedMatches.length === 0) {
+        resolvedMatches = KNOCKOUT_FALLBACK_MATCHES.map((m) => ({
+          ...m,
+          bracket_id: bracket!.id,
+        }))
+      }
+
       if (!cancelled) setMatches(resolvedMatches)
 
       // 4. Fetch current user's picks for this group
@@ -112,7 +177,7 @@ export default function ContestPage() {
         .select('*')
         .eq('user_id', user.id)
         .eq('group_id', groupId)
-        .eq('bracket_id', contest.bracket_id)
+        .eq('bracket_id', bracket.id)
 
       if (!cancelled) setPicks((pickData ?? []) as BracketUserPick[])
 
@@ -134,7 +199,7 @@ export default function ContestPage() {
               .select('match_id, choice_team_id')
               .eq('user_id', member.user_id)
               .eq('group_id', groupId)
-              .eq('bracket_id', contest.bracket_id)
+              .eq('bracket_id', bracket.id)
 
             const correct = completedMatches.filter((m) =>
               memberPicks?.some(
