@@ -1,11 +1,11 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import BracketTree from '@/components/BracketTree'
 import Scoreboard from '@/components/Scoreboard'
-import type { BracketMatch, BracketUserPick } from '@/lib/types'
+import type { BracketMatch, BracketUserPick, Team } from '@/lib/types'
 
 const LOCK_DEADLINE = new Date('2026-06-28T00:00:00Z')
 
@@ -50,11 +50,18 @@ export default function ContestPage() {
   const [bracketDisplayName, setBracketDisplayName] = useState('')
   const [groupName, setGroupName] = useState('')
   const [matches, setMatches] = useState<BracketMatch[]>([])
+  const [teams, setTeams] = useState<Team[]>([])
   const [picks, setPicks] = useState<BracketUserPick[]>([])
   const [leaderboard, setLeaderboard] = useState<ScoreEntry[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  const teamsById = useMemo(
+    () =>
+      Object.fromEntries(teams.map((team) => [team.id, team])) as Record<string, Team>,
+    [teams]
+  )
 
   const isLocked =
     picks.some((p) => p.is_locked) || new Date() > lockDeadline
@@ -62,12 +69,14 @@ export default function ContestPage() {
   // ── Load all data ──────────────────────────────────────────
   useEffect(() => {
     let cancelled = false
+    const supabase = createClient()
+    let channel: ReturnType<typeof supabase.channel> | null = null
 
-    async function loadData() {
-      setLoading(true)
+    async function loadData(showLoader = true) {
+      if (showLoader) {
+        setLoading(true)
+      }
       setError(null)
-
-      const supabase = createClient()
 
       const { data: { user } } = await supabase.auth.getUser()
       if (!user || cancelled) return
@@ -121,6 +130,15 @@ export default function ContestPage() {
       setBracketDisplayName(bracket.display_name)
       if (bracket.lock_deadline) {
         setLockDeadline(new Date(bracket.lock_deadline))
+      }
+
+      const { data: teamData } = await supabase
+        .from('teams')
+        .select('*')
+        .order('country_name', { ascending: true })
+
+      if (!cancelled) {
+        setTeams((teamData ?? []) as Team[])
       }
 
       // 2. Fetch group name
@@ -220,6 +238,59 @@ export default function ContestPage() {
         if (!cancelled) setLeaderboard(entries)
       }
 
+      if (!channel) {
+        channel = supabase
+          .channel(`contest:${groupId}:${bracket.id}`)
+          .on(
+            'postgres_changes',
+            {
+              event: '*',
+              schema: 'public',
+              table: 'bracket_matches',
+              filter: `bracket_id=eq.${bracket.id}`,
+            },
+            () => {
+              void loadData(false)
+            }
+          )
+          .on(
+            'postgres_changes',
+            {
+              event: '*',
+              schema: 'public',
+              table: 'bracket_user_picks',
+              filter: `group_id=eq.${groupId}`,
+            },
+            () => {
+              void loadData(false)
+            }
+          )
+          .on(
+            'postgres_changes',
+            {
+              event: '*',
+              schema: 'public',
+              table: 'group_memberships',
+              filter: `group_id=eq.${groupId}`,
+            },
+            () => {
+              void loadData(false)
+            }
+          )
+          .on(
+            'postgres_changes',
+            {
+              event: '*',
+              schema: 'public',
+              table: 'teams',
+            },
+            () => {
+              void loadData(false)
+            }
+          )
+          .subscribe()
+      }
+
       if (!cancelled) setLoading(false)
     }
 
@@ -227,6 +298,9 @@ export default function ContestPage() {
 
     return () => {
       cancelled = true
+      if (channel) {
+        void supabase.removeChannel(channel)
+      }
     }
   }, [groupId, bracketSlug])
 
@@ -347,6 +421,7 @@ export default function ContestPage() {
               matches={matches}
               picks={picks}
               isLocked={true}
+              teamsById={teamsById}
             />
           </div>
           <div className="border-t border-zinc-800/60 mt-4">
@@ -368,6 +443,7 @@ export default function ContestPage() {
             matches={matches}
             picks={picks}
             isLocked={false}
+            teamsById={teamsById}
             onPick={handlePick}
           />
           {matches.length === 0 && (

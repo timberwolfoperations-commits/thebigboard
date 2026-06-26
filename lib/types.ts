@@ -96,6 +96,27 @@ export interface Database {
         }
         Relationships: []
       }
+      teams: {
+        Row: {
+          id: string
+          country_name: string
+          flag_emoji: string
+          group_seed: string | null
+        }
+        Insert: {
+          id?: string
+          country_name: string
+          flag_emoji?: string
+          group_seed?: string | null
+        }
+        Update: {
+          id?: string
+          country_name?: string
+          flag_emoji?: string
+          group_seed?: string | null
+        }
+        Relationships: []
+      }
       bracket_matches: {
         Row: {
           id: string
@@ -189,5 +210,6 @@ export type Bracket = Database['public']['Tables']['brackets']['Row']
 export type Group = Database['public']['Tables']['groups']['Row']
 export type GroupBracketContest = Database['public']['Tables']['group_bracket_contests']['Row']
 export type GroupMembership = Database['public']['Tables']['group_memberships']['Row']
+export type Team = Database['public']['Tables']['teams']['Row']
 export type BracketMatch = Database['public']['Tables']['bracket_matches']['Row']
 export type BracketUserPick = Database['public']['Tables']['bracket_user_picks']['Row']

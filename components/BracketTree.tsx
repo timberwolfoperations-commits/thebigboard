@@ -1,15 +1,24 @@
-import type { BracketMatch, BracketUserPick } from '@/lib/types'
+import type { BracketMatch, BracketUserPick, Team } from '@/lib/types'
 
 interface MatchNodeProps {
   match: BracketMatch
   userPick?: BracketUserPick
   isLocked: boolean
+  teamsById?: Record<string, Team>
   onPick?: (matchId: string, teamId: string) => void
 }
 
-function MatchNode({ match, userPick, isLocked, onPick }: MatchNodeProps) {
+function MatchNode({ match, userPick, isLocked, teamsById, onPick }: MatchNodeProps) {
   const pickedHome = userPick?.choice_team_id === match.home_team_id
   const pickedAway = userPick?.choice_team_id === match.away_team_id
+  const homeTeam = match.home_team_id ? teamsById?.[match.home_team_id] : undefined
+  const awayTeam = match.away_team_id ? teamsById?.[match.away_team_id] : undefined
+  const homeLabel = homeTeam
+    ? `${homeTeam.flag_emoji} ${homeTeam.country_name}`
+    : match.home_placeholder || 'TBD'
+  const awayLabel = awayTeam
+    ? `${awayTeam.flag_emoji} ${awayTeam.country_name}`
+    : match.away_placeholder || 'TBD'
 
   const statusColors: Record<string, string> = {
     live: 'bg-emerald-500/20 text-emerald-400 ring-1 ring-emerald-500/40',
@@ -43,7 +52,7 @@ function MatchNode({ match, userPick, isLocked, onPick }: MatchNodeProps) {
         `}
       >
         <span className="text-sm font-medium truncate">
-          {match.home_team_id ? match.home_placeholder : match.home_placeholder || 'TBD'}
+          {homeLabel}
         </span>
         {match.status === 'completed' && (
           <span className="text-sm font-bold text-zinc-300 ml-2">{match.home_score}</span>
@@ -65,7 +74,7 @@ function MatchNode({ match, userPick, isLocked, onPick }: MatchNodeProps) {
         `}
       >
         <span className="text-sm font-medium truncate">
-          {match.away_team_id ? match.away_placeholder : match.away_placeholder || 'TBD'}
+          {awayLabel}
         </span>
         {match.status === 'completed' && (
           <span className="text-sm font-bold text-zinc-300 ml-2">{match.away_score}</span>
@@ -94,10 +103,11 @@ interface BracketTreeProps {
   matches: BracketMatch[]
   picks: BracketUserPick[]
   isLocked: boolean
+  teamsById?: Record<string, Team>
   onPick?: (matchId: string, teamId: string) => void
 }
 
-export default function BracketTree({ matches, picks, isLocked, onPick }: BracketTreeProps) {
+export default function BracketTree({ matches, picks, isLocked, teamsById, onPick }: BracketTreeProps) {
   const picksMap = new Map(picks.map((p) => [p.match_id, p]))
 
   // Group matches by round, preserving natural order
@@ -136,6 +146,7 @@ export default function BracketTree({ matches, picks, isLocked, onPick }: Bracke
                   match={match}
                   userPick={picksMap.get(match.id)}
                   isLocked={isLocked}
+                  teamsById={teamsById}
                   onPick={onPick}
                 />
               ))}
