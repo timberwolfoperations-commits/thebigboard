@@ -9,6 +9,8 @@ interface MatchNodeProps {
 }
 
 function MatchNode({ match, userPick, isLocked, teamsById, onPick }: MatchNodeProps) {
+  const homePickDisabled = isLocked || match.status === 'completed' || !match.home_team_id
+  const awayPickDisabled = isLocked || match.status === 'completed' || !match.away_team_id
   const pickedHome = userPick?.choice_team_id === match.home_team_id
   const pickedAway = userPick?.choice_team_id === match.away_team_id
   const homeTeam = match.home_team_id ? teamsById?.[match.home_team_id] : undefined
@@ -50,13 +52,13 @@ function MatchNode({ match, userPick, isLocked, teamsById, onPick }: MatchNodePr
 
       {/* Home team */}
       <button
-        disabled={isLocked || match.status === 'completed'}
+        disabled={homePickDisabled}
         onClick={() =>
           !isLocked && match.home_team_id && onPick?.(match.id, match.home_team_id)
         }
         className={`w-full flex items-center justify-between px-3 py-2.5 border-b border-zinc-800/60 text-left transition-colors
           ${pickedHome ? 'bg-amber-500/15 text-amber-300' : 'text-zinc-300 hover:bg-zinc-800/60'}
-          ${isLocked ? 'cursor-default' : 'cursor-pointer'}
+          ${homePickDisabled ? 'cursor-not-allowed opacity-70' : 'cursor-pointer'}
         `}
       >
         <span className="text-sm font-medium truncate">
@@ -72,13 +74,13 @@ function MatchNode({ match, userPick, isLocked, teamsById, onPick }: MatchNodePr
 
       {/* Away team */}
       <button
-        disabled={isLocked || match.status === 'completed'}
+        disabled={awayPickDisabled}
         onClick={() =>
           !isLocked && match.away_team_id && onPick?.(match.id, match.away_team_id)
         }
         className={`w-full flex items-center justify-between px-3 py-2.5 text-left transition-colors
           ${pickedAway ? 'bg-amber-500/15 text-amber-300' : 'text-zinc-300 hover:bg-zinc-800/60'}
-          ${isLocked ? 'cursor-default' : 'cursor-pointer'}
+          ${awayPickDisabled ? 'cursor-not-allowed opacity-70' : 'cursor-pointer'}
         `}
       >
         <span className="text-sm font-medium truncate">

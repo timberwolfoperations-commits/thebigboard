@@ -52,7 +52,7 @@ export default function AdminPage() {
   const [adminMutationLoading, setAdminMutationLoading] = useState(false)
 
   const canManageLedger = isPoolAdmin || isSiteAdmin
-  const canManageScores = isBracketAdmin || isSiteAdmin
+  const canManageScores = isPoolAdmin || isBracketAdmin || isSiteAdmin
   const canManageBracketAdmins = isBracketAdmin || isSiteAdmin
   const roleLabels = [
     isSiteAdmin ? 'Site Admin' : null,
@@ -157,8 +157,8 @@ export default function AdminPage() {
       setMembers([])
     }
 
-    // ── Score entry (bracket admins + site admins) ───────────
-    if (hasBracketAdminRole || hasSiteAdminRole) {
+    // ── Score entry (pool admins + bracket admins + site admins) ───────────
+    if (hasPoolAdminRole || hasBracketAdminRole || hasSiteAdminRole) {
       const { data: teamData } = await supabase
         .from('teams')
         .select('*')

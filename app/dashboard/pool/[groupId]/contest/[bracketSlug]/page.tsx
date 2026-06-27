@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import BracketTree from '@/components/BracketTree'
@@ -495,6 +496,14 @@ export default function ContestPage() {
         >
           {bracketDisplayName}
         </h2>
+        <div className="mt-2">
+          <Link
+            href={`/dashboard/pool/${groupId}/admin`}
+            className="inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-widest text-zinc-300 bg-zinc-800/70 hover:bg-zinc-700/80 rounded-full px-2.5 py-1 transition-colors"
+          >
+            Commissioner Panel
+          </Link>
+        </div>
 
         {/* Lock status */}
         <div className="mt-2 flex items-center gap-2">
@@ -559,6 +568,11 @@ export default function ContestPage() {
             teamsById={teamsById}
             onPick={handlePick}
           />
+            {effectiveMatches.some((match) => !match.home_team_id || !match.away_team_id) && (
+              <p className="px-4 mt-3 text-[11px] text-zinc-500">
+                Some matches are missing teams and can&apos;t be picked yet. Use Commissioner Panel to load teams.
+              </p>
+            )}
             <div className="px-4 mt-4">
               <button
                 onClick={() => void handleFinalSubmit()}
