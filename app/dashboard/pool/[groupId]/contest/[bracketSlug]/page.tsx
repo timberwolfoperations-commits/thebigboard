@@ -7,7 +7,7 @@ import BracketTree from '@/components/BracketTree'
 import Scoreboard from '@/components/Scoreboard'
 import type { BracketMatch, BracketUserPick, Team } from '@/lib/types'
 
-const LOCK_DEADLINE = new Date('2026-06-28T00:00:00Z')
+const LOCK_DEADLINE = new Date('2026-06-28T23:00:00Z')
 
 // Hardcoded fallback for the 16 standard World Cup knockout match slots.
 // Used only when the database returns no bracket_matches rows, so the
@@ -55,6 +55,7 @@ export default function ContestPage() {
   const [leaderboard, setLeaderboard] = useState<ScoreEntry[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const teamsById = useMemo(
@@ -62,6 +63,79 @@ export default function ContestPage() {
       Object.fromEntries(teams.map((team) => [team.id, team])) as Record<string, Team>,
     [teams]
   )
+
+  const effectiveMatches = useMemo(() => {
+    const picksByMatchId = new Map(picks.map((p) => [p.match_id, p]))
+    const byIdentifier = new Map(matches.map((m) => [m.match_identifier, m]))
+    const resolvedById = new Map<string, { home: string | null; away: string | null }>()
+
+    function parseSlotPlaceholder(placeholder: string | null): {
+      sourceType: 'winner' | 'loser'
+      sourceIdentifier: string
+    } | null {
+      if (!placeholder) return null
+      const winner = /^Winner\s+(.+)$/i.exec(placeholder)
+      if (winner) {
+        return { sourceType: 'winner', sourceIdentifier: winner[1].trim() }
+      }
+      const loser = /^Loser\s+(.+)$/i.exec(placeholder)
+      if (loser) {
+        return { sourceType: 'loser', sourceIdentifier: loser[1].trim() }
+      }
+      return null
+    }
+
+    function resolveMatchTeams(match: BracketMatch): { home: string | null; away: string | null } {
+      const cached = resolvedById.get(match.id)
+      if (cached) return cached
+
+      function resolveSlot(baseTeamId: string | null, placeholder: string): string | null {
+        if (baseTeamId) return baseTeamId
+
+        const parsed = parseSlotPlaceholder(placeholder)
+        if (!parsed) return null
+
+        const sourceMatch = byIdentifier.get(parsed.sourceIdentifier)
+        if (!sourceMatch) return null
+
+        const sourceResolved = resolveMatchTeams(sourceMatch)
+        const sourcePick = picksByMatchId.get(sourceMatch.id)
+        if (!sourcePick?.choice_team_id) return null
+
+        if (parsed.sourceType === 'winner') {
+          return sourcePick.choice_team_id
+        }
+
+        if (sourceResolved.home && sourceResolved.away) {
+          if (sourcePick.choice_team_id === sourceResolved.home) {
+            return sourceResolved.away
+          }
+          if (sourcePick.choice_team_id === sourceResolved.away) {
+            return sourceResolved.home
+          }
+        }
+
+        return null
+      }
+
+      const resolved = {
+        home: resolveSlot(match.home_team_id, match.home_placeholder),
+        away: resolveSlot(match.away_team_id, match.away_placeholder),
+      }
+
+      resolvedById.set(match.id, resolved)
+      return resolved
+    }
+
+    return matches.map((match) => {
+      const resolved = resolveMatchTeams(match)
+      return {
+        ...match,
+        home_team_id: resolved.home,
+        away_team_id: resolved.away,
+      }
+    })
+  }, [matches, picks])
 
   const isLocked =
     picks.some((p) => p.is_locked) || new Date() > lockDeadline
@@ -306,7 +380,7 @@ export default function ContestPage() {
 
   // ── Handle pick ────────────────────────────────────────────
   async function handlePick(matchId: string, teamId: string) {
-    if (isLocked || !userId || !bracketId) return
+    if (isLocked || submitting || !userId || !bracketId) return
 
     setSaving(true)
     const supabase = createClient()
@@ -350,6 +424,45 @@ export default function ContestPage() {
     }
 
     setSaving(false)
+  }
+
+  async function handleFinalSubmit() {
+    if (isLocked || !userId || !bracketId) return
+
+    const picksByMatchId = new Map(picks.map((p) => [p.match_id, p]))
+    const incompleteMatch = effectiveMatches.find((match) => {
+      if (!match.home_team_id || !match.away_team_id) {
+        return true
+      }
+
+      const pick = picksByMatchId.get(match.id)
+      return !pick || ![match.home_team_id, match.away_team_id].includes(pick.choice_team_id)
+    })
+
+    if (incompleteMatch) {
+      setError('Every match must have a valid pick before final submit.')
+      return
+    }
+
+    setSubmitting(true)
+    setError(null)
+    const supabase = createClient()
+
+    const { error: lockErr } = await supabase
+      .from('bracket_user_picks')
+      .update({ is_locked: true })
+      .eq('user_id', userId)
+      .eq('group_id', groupId)
+      .eq('bracket_id', bracketId)
+
+    if (lockErr) {
+      setError(lockErr.message)
+      setSubmitting(false)
+      return
+    }
+
+    setPicks((prev) => prev.map((pick) => ({ ...pick, is_locked: true })))
+    setSubmitting(false)
   }
 
   // ── Render ─────────────────────────────────────────────────
@@ -418,7 +531,7 @@ export default function ContestPage() {
               </h3>
             </div>
             <BracketTree
-              matches={matches}
+              matches={effectiveMatches}
               picks={picks}
               isLocked={true}
               teamsById={teamsById}
@@ -435,18 +548,37 @@ export default function ContestPage() {
             <h3 className="text-xs uppercase tracking-widest font-semibold text-zinc-500">
               Make Your Picks
             </h3>
-            <span className="text-[11px] text-zinc-600">
-              {picks.length} / {matches.length} picked
+              <span className="text-[11px] text-zinc-600">
+                {picks.length} / {effectiveMatches.length} picked
             </span>
           </div>
           <BracketTree
-            matches={matches}
+              matches={effectiveMatches}
             picks={picks}
             isLocked={false}
             teamsById={teamsById}
             onPick={handlePick}
           />
-          {matches.length === 0 && (
+            <div className="px-4 mt-4">
+              <button
+                onClick={() => void handleFinalSubmit()}
+                disabled={submitting || saving}
+                className="w-full rounded-xl bg-emerald-500 hover:bg-emerald-400 active:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed text-zinc-950 font-semibold text-sm py-3.5 transition-colors flex items-center justify-center gap-2"
+              >
+                {submitting ? (
+                  <>
+                    <span className="w-4 h-4 border-2 border-zinc-950/30 border-t-zinc-950 rounded-full animate-spin" />
+                    Submitting…
+                  </>
+                ) : (
+                  'Final Submit Bracket'
+                )}
+              </button>
+              <p className="mt-2 text-[11px] text-zinc-600 text-center">
+                Final submit is one-time only and locks all picks.
+              </p>
+            </div>
+            {effectiveMatches.length === 0 && (
             <div className="px-4 py-10 text-center">
               <p className="text-zinc-600 text-sm">
                 Matches haven&apos;t been scheduled yet. Check back soon.

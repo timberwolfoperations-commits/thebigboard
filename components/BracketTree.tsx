@@ -19,6 +19,14 @@ function MatchNode({ match, userPick, isLocked, teamsById, onPick }: MatchNodePr
   const awayLabel = awayTeam
     ? `${awayTeam.flag_emoji} ${awayTeam.country_name}`
     : match.away_placeholder || 'TBD'
+  const kickoffLabel = match.kickoff_time
+    ? new Date(match.kickoff_time).toLocaleString(undefined, {
+        month: 'short',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+      })
+    : null
 
   const statusColors: Record<string, string> = {
     live: 'bg-emerald-500/20 text-emerald-400 ring-1 ring-emerald-500/40',
@@ -85,9 +93,12 @@ function MatchNode({ match, userPick, isLocked, teamsById, onPick }: MatchNodePr
       </button>
 
       {/* Venue */}
-      {match.venue && (
-        <div className="px-3 py-1 bg-zinc-950/40">
-          <span className="text-[10px] text-zinc-600 truncate">{match.venue}</span>
+      {(match.venue || kickoffLabel) && (
+        <div className="px-3 py-1 bg-zinc-950/40 flex items-center justify-between gap-2">
+          <span className="text-[10px] text-zinc-600 truncate">{match.venue ?? 'Venue TBD'}</span>
+          {kickoffLabel && (
+            <span className="text-[10px] text-zinc-500 whitespace-nowrap">{kickoffLabel}</span>
+          )}
         </div>
       )}
     </div>

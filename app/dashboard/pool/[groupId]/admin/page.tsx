@@ -13,14 +13,22 @@ interface MemberRow {
   hasPaid: boolean
 }
 
+interface BracketAdminRow {
+  id: string
+  userId: string
+  createdAt: string
+}
+
 interface MatchEntry extends BracketMatch {
   draftHomeScore: number
   draftAwayScore: number
   draftStatus: 'scheduled' | 'live' | 'completed'
+  draftKickoffTime: string
+  draftVenue: string
   saving: boolean
 }
 
-type ActiveTab = 'ledger' | 'scores'
+type ActiveTab = 'ledger' | 'scores' | 'admins'
 
 // ── Component ──────────────────────────────────────────────────
 export default function AdminPage() {
@@ -33,8 +41,24 @@ export default function AdminPage() {
   const [error, setError] = useState<string | null>(null)
   const [members, setMembers] = useState<MemberRow[]>([])
   const [matches, setMatches] = useState<MatchEntry[]>([])
+  const [bracketId, setBracketId] = useState<string | null>(null)
+  const [bracketAdmins, setBracketAdmins] = useState<BracketAdminRow[]>([])
+  const [newBracketAdminUserId, setNewBracketAdminUserId] = useState('')
+  const [isPoolAdmin, setIsPoolAdmin] = useState(false)
+  const [isBracketAdmin, setIsBracketAdmin] = useState(false)
+  const [isSiteAdmin, setIsSiteAdmin] = useState(false)
   const [teams, setTeams] = useState<Team[]>([])
   const [togglingId, setTogglingId] = useState<string | null>(null)
+  const [adminMutationLoading, setAdminMutationLoading] = useState(false)
+
+  const canManageLedger = isPoolAdmin || isSiteAdmin
+  const canManageScores = isBracketAdmin || isSiteAdmin
+  const canManageBracketAdmins = isBracketAdmin || isSiteAdmin
+  const roleLabels = [
+    isSiteAdmin ? 'Site Admin' : null,
+    isBracketAdmin ? 'Score Admin' : null,
+    isPoolAdmin ? 'Pool Admin' : null,
+  ].filter(Boolean) as string[]
 
   const teamsById = useMemo(
     () =>
@@ -50,57 +74,100 @@ export default function AdminPage() {
       return
     }
 
-    // ── Admin guard ──────────────────────────────────────────
-    const { data: myMembership } = await supabase
-      .from('group_memberships')
-      .select('is_admin')
-      .eq('group_id', groupId)
-      .eq('user_id', user.id)
-      .single()
-
-    if (!myMembership?.is_admin) {
-      setError('Access denied. You must be a group admin to view this page.')
-      setLoading(false)
-      return
-    }
-
-    // ── Payment ledger: fetch all members ────────────────────
-    const { data: memberData } = await supabase
-      .from('group_memberships')
-      .select('id, user_id, has_paid')
-      .eq('group_id', groupId)
-
-    if (memberData) {
-      setMembers(
-        memberData.map((m) => ({
-          membershipId: m.id,
-          userId: m.user_id,
-          displayName:
-            m.user_id === user.id
-              ? (user.email ?? `User ${m.user_id.slice(0, 6)}`)
-              : `Player ${m.user_id.slice(0, 6)}`,
-          hasPaid: m.has_paid,
-        }))
-      )
-    }
-
-    const { data: teamData } = await supabase
-      .from('teams')
-      .select('*')
-      .order('country_name', { ascending: true })
-
-    if (teamData) {
-      setTeams(teamData as Team[])
-    }
-
-    // ── Score entry: find bracket for this group ─────────────
+    // ── Resolve bracket for this group and permissions ──
     const { data: contest } = await supabase
       .from('group_bracket_contests')
       .select('bracket_id')
       .eq('group_id', groupId)
       .single()
 
-    if (contest) {
+    if (!contest?.bracket_id) {
+      setError('No bracket is linked to this group.')
+      setLoading(false)
+      return
+    }
+
+    setBracketId(contest.bracket_id)
+
+    const { data: membership } = await supabase
+      .from('group_memberships')
+      .select('is_admin')
+      .eq('group_id', groupId)
+      .eq('user_id', user.id)
+      .maybeSingle()
+
+    const hasPoolAdminRole = Boolean(membership?.is_admin)
+    setIsPoolAdmin(hasPoolAdminRole)
+
+    const { data: siteAdmin } = await supabase
+      .from('site_admins')
+      .select('id')
+      .eq('user_id', user.id)
+      .maybeSingle()
+
+    const hasSiteAdminRole = Boolean(siteAdmin)
+    setIsSiteAdmin(hasSiteAdminRole)
+
+    const { data: bracketAdmin } = await supabase
+      .from('bracket_admins')
+      .select('id')
+      .eq('bracket_id', contest.bracket_id)
+      .eq('user_id', user.id)
+      .maybeSingle()
+
+    const hasBracketAdminRole = Boolean(bracketAdmin)
+    setIsBracketAdmin(hasBracketAdminRole)
+
+    const hasAnyAdminRole = hasPoolAdminRole || hasSiteAdminRole || hasBracketAdminRole
+    if (!hasAnyAdminRole) {
+      setError('Access denied. You are not assigned to this admin panel.')
+      setLoading(false)
+      return
+    }
+
+    if (hasPoolAdminRole || hasSiteAdminRole) {
+      setActiveTab('ledger')
+    } else if (hasBracketAdminRole) {
+      setActiveTab('scores')
+    }
+
+    setError(null)
+
+    // ── Payment ledger (pool admins + site admins) ───────────
+    if (hasPoolAdminRole || hasSiteAdminRole) {
+      const { data: memberData } = await supabase
+        .from('group_memberships')
+        .select('id, user_id, has_paid')
+        .eq('group_id', groupId)
+
+      if (memberData) {
+        setMembers(
+          memberData.map((m) => ({
+            membershipId: m.id,
+            userId: m.user_id,
+            displayName:
+              m.user_id === user.id
+                ? (user.email ?? `User ${m.user_id.slice(0, 6)}`)
+                : `Player ${m.user_id.slice(0, 6)}`,
+            hasPaid: m.has_paid,
+          }))
+        )
+      }
+    } else {
+      setMembers([])
+    }
+
+    // ── Score entry (bracket admins + site admins) ───────────
+    if (hasBracketAdminRole || hasSiteAdminRole) {
+      const { data: teamData } = await supabase
+        .from('teams')
+        .select('*')
+        .order('country_name', { ascending: true })
+
+      if (teamData) {
+        setTeams(teamData as Team[])
+      }
+
       const { data: matchData } = await supabase
         .from('bracket_matches')
         .select('*')
@@ -114,10 +181,37 @@ export default function AdminPage() {
             draftHomeScore: m.home_score,
             draftAwayScore: m.away_score,
             draftStatus: m.status,
+            draftKickoffTime: m.kickoff_time
+              ? new Date(m.kickoff_time).toISOString().slice(0, 16)
+              : '',
+            draftVenue: m.venue ?? '',
             saving: false,
           }))
         )
       }
+    } else {
+      setTeams([])
+      setMatches([])
+    }
+
+    if (hasBracketAdminRole || hasSiteAdminRole) {
+      const { data: bracketAdminData } = await supabase
+        .from('bracket_admins')
+        .select('id, user_id, created_at')
+        .eq('bracket_id', contest.bracket_id)
+        .order('created_at', { ascending: true })
+
+      if (bracketAdminData) {
+        setBracketAdmins(
+          bracketAdminData.map((admin) => ({
+            id: admin.id,
+            userId: admin.user_id,
+            createdAt: admin.created_at,
+          }))
+        )
+      }
+    } else {
+      setBracketAdmins([])
     }
 
     setLoading(false)
@@ -129,6 +223,11 @@ export default function AdminPage() {
 
   // ── Toggle payment status ────────────────────────────────────
   async function togglePayment(membershipId: string, currentStatus: boolean) {
+    if (!canManageLedger) {
+      setError('Only pool admins can manage payment ledger entries.')
+      return
+    }
+
     setTogglingId(membershipId)
     // Optimistic update
     setMembers((prev) =>
@@ -153,6 +252,67 @@ export default function AdminPage() {
       setError(updateErr.message)
     }
     setTogglingId(null)
+  }
+
+  async function addBracketAdmin() {
+    if (!canManageBracketAdmins) {
+      setError('Only score admins can manage bracket admin access.')
+      return
+    }
+
+    if (!bracketId) {
+      setError('Bracket not found for admin assignment.')
+      return
+    }
+
+    const userId = newBracketAdminUserId.trim()
+    if (!userId) {
+      setError('Enter a user ID to add as bracket admin.')
+      return
+    }
+
+    setAdminMutationLoading(true)
+    setError(null)
+    const supabase = createClient()
+
+    const { error: insertErr } = await supabase
+      .from('bracket_admins')
+      .insert({ bracket_id: bracketId, user_id: userId })
+
+    if (insertErr) {
+      setError(insertErr.message)
+      setAdminMutationLoading(false)
+      return
+    }
+
+    setNewBracketAdminUserId('')
+    await loadData()
+    setAdminMutationLoading(false)
+  }
+
+  async function removeBracketAdmin(rowId: string) {
+    if (!canManageBracketAdmins) {
+      setError('Only score admins can manage bracket admin access.')
+      return
+    }
+
+    setAdminMutationLoading(true)
+    setError(null)
+    const supabase = createClient()
+
+    const { error: deleteErr } = await supabase
+      .from('bracket_admins')
+      .delete()
+      .eq('id', rowId)
+
+    if (deleteErr) {
+      setError(deleteErr.message)
+      setAdminMutationLoading(false)
+      return
+    }
+
+    await loadData()
+    setAdminMutationLoading(false)
   }
 
   // ── Update match draft fields ────────────────────────────────
@@ -185,8 +345,25 @@ export default function AdminPage() {
     )
   }
 
+  function updateDraftKickoffTime(matchId: string, value: string) {
+    setMatches((prev) =>
+      prev.map((m) => (m.id === matchId ? { ...m, draftKickoffTime: value } : m))
+    )
+  }
+
+  function updateDraftVenue(matchId: string, value: string) {
+    setMatches((prev) =>
+      prev.map((m) => (m.id === matchId ? { ...m, draftVenue: value } : m))
+    )
+  }
+
   // ── Save match result ────────────────────────────────────────
   async function saveMatch(matchId: string) {
+    if (!canManageScores) {
+      setError('Only score admins can update official match results.')
+      return
+    }
+
     const match = matches.find((m) => m.id === matchId)
     if (!match) return
 
@@ -225,6 +402,10 @@ export default function AdminPage() {
           away_score: match.draftAwayScore,
           status: match.draftStatus,
           winning_team_id: winningTeamId,
+          kickoff_time: match.draftKickoffTime
+            ? new Date(match.draftKickoffTime).toISOString()
+            : null,
+          venue: match.draftVenue.trim() || null,
         },
         { onConflict: 'bracket_id,match_identifier' }
       )
@@ -305,6 +486,21 @@ export default function AdminPage() {
             Admin Access
           </span>
         </div>
+        {roleLabels.length > 0 && (
+          <div className="mt-2 flex items-center gap-1.5 flex-wrap">
+            <span className="text-[10px] uppercase tracking-widest text-zinc-600 font-semibold">
+              Your Access
+            </span>
+            {roleLabels.map((label) => (
+              <span
+                key={label}
+                className="text-[10px] px-2 py-0.5 rounded-full bg-zinc-800/80 text-zinc-300 ring-1 ring-zinc-700/80"
+              >
+                {label}
+              </span>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Inline error toast */}
@@ -316,30 +512,46 @@ export default function AdminPage() {
 
       {/* Tab bar */}
       <div className="flex border-b border-zinc-800/60 mt-1">
-        <button
-          onClick={() => setActiveTab('ledger')}
-          className={`flex-1 py-3 text-[13px] font-semibold transition-colors ${
-            activeTab === 'ledger'
-              ? 'text-amber-400 border-b-2 border-amber-400'
-              : 'text-zinc-500 hover:text-zinc-300'
-          }`}
-        >
-          Payment Ledger
-        </button>
-        <button
-          onClick={() => setActiveTab('scores')}
-          className={`flex-1 py-3 text-[13px] font-semibold transition-colors ${
-            activeTab === 'scores'
-              ? 'text-amber-400 border-b-2 border-amber-400'
-              : 'text-zinc-500 hover:text-zinc-300'
-          }`}
-        >
-          Score Entry
-        </button>
+        {canManageLedger && (
+          <button
+            onClick={() => setActiveTab('ledger')}
+            className={`flex-1 py-3 text-[13px] font-semibold transition-colors ${
+              activeTab === 'ledger'
+                ? 'text-amber-400 border-b-2 border-amber-400'
+                : 'text-zinc-500 hover:text-zinc-300'
+            }`}
+          >
+            Payment Ledger
+          </button>
+        )}
+        {canManageScores && (
+          <button
+            onClick={() => setActiveTab('scores')}
+            className={`flex-1 py-3 text-[13px] font-semibold transition-colors ${
+              activeTab === 'scores'
+                ? 'text-amber-400 border-b-2 border-amber-400'
+                : 'text-zinc-500 hover:text-zinc-300'
+            }`}
+          >
+            Score Entry
+          </button>
+        )}
+        {canManageBracketAdmins && (
+          <button
+            onClick={() => setActiveTab('admins')}
+            className={`flex-1 py-3 text-[13px] font-semibold transition-colors ${
+              activeTab === 'admins'
+                ? 'text-amber-400 border-b-2 border-amber-400'
+                : 'text-zinc-500 hover:text-zinc-300'
+            }`}
+          >
+            Bracket Admins
+          </button>
+        )}
       </div>
 
       {/* ── Tab: Payment Ledger ────────────────────────────── */}
-      {activeTab === 'ledger' && (
+      {activeTab === 'ledger' && canManageLedger && (
         <div className="flex flex-col divide-y divide-zinc-800/60">
           {/* Column headers */}
           <div className="grid grid-cols-[1fr_auto_auto] gap-3 px-4 py-2">
@@ -413,7 +625,7 @@ export default function AdminPage() {
       )}
 
       {/* ── Tab: Score Entry ───────────────────────────────── */}
-      {activeTab === 'scores' && (
+      {activeTab === 'scores' && canManageScores && (
         <div className="flex flex-col divide-y divide-zinc-800/60">
           {matches.length === 0 ? (
             <div className="px-4 py-12 text-center">
@@ -502,6 +714,32 @@ export default function AdminPage() {
                     </label>
                   </div>
 
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    <label className="flex flex-col gap-1">
+                      <span className="text-[10px] text-zinc-500 font-medium uppercase tracking-wide">
+                        Kickoff
+                      </span>
+                      <input
+                        type="datetime-local"
+                        value={match.draftKickoffTime}
+                        onChange={(e) => updateDraftKickoffTime(match.id, e.target.value)}
+                        className="bg-zinc-800 border border-zinc-700 text-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500"
+                      />
+                    </label>
+                    <label className="flex flex-col gap-1">
+                      <span className="text-[10px] text-zinc-500 font-medium uppercase tracking-wide">
+                        Venue
+                      </span>
+                      <input
+                        type="text"
+                        value={match.draftVenue}
+                        onChange={(e) => updateDraftVenue(match.id, e.target.value)}
+                        placeholder="e.g. MetLife Stadium"
+                        className="bg-zinc-800 border border-zinc-700 text-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500"
+                      />
+                    </label>
+                  </div>
+
                   {/* Score row */}
                   <div className="flex items-center gap-2">
                     {/* Home team */}
@@ -560,13 +798,70 @@ export default function AdminPage() {
                         Saving…
                       </>
                     ) : (
-                      'Save Result'
+                      'Save Match'
                     )}
                   </button>
                 </div>
               )
             })
           )}
+        </div>
+      )}
+
+      {activeTab === 'admins' && canManageBracketAdmins && (
+        <div className="px-4 py-4 flex flex-col gap-4">
+          <div className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-3">
+            <p className="text-[11px] text-zinc-500 uppercase tracking-wider font-semibold mb-2">
+              Add Bracket Admin
+            </p>
+            <div className="flex flex-col sm:flex-row gap-2">
+              <input
+                type="text"
+                value={newBracketAdminUserId}
+                onChange={(e) => setNewBracketAdminUserId(e.target.value)}
+                placeholder="User UUID"
+                className="flex-1 rounded-lg border border-zinc-700 bg-zinc-800/70 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
+              />
+              <button
+                onClick={() => void addBracketAdmin()}
+                disabled={adminMutationLoading}
+                className="rounded-lg bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-zinc-950 font-semibold text-sm px-4 py-2"
+              >
+                Add
+              </button>
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-zinc-800 divide-y divide-zinc-800/70 overflow-hidden">
+            <div className="px-3 py-2 bg-zinc-900/60">
+              <p className="text-[11px] text-zinc-500 uppercase tracking-wider font-semibold">
+                Current Bracket Admins
+              </p>
+            </div>
+            {bracketAdmins.length === 0 ? (
+              <div className="px-3 py-8 text-center text-zinc-600 text-sm">
+                No bracket admins configured.
+              </div>
+            ) : (
+              bracketAdmins.map((admin) => (
+                <div key={admin.id} className="px-3 py-3 flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-sm text-zinc-200 font-mono truncate">{admin.userId}</p>
+                    <p className="text-[11px] text-zinc-600">
+                      Added {new Date(admin.createdAt).toLocaleString()}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => void removeBracketAdmin(admin.id)}
+                    disabled={adminMutationLoading}
+                    className="rounded-lg bg-red-500/20 hover:bg-red-500/30 text-red-300 disabled:opacity-50 font-semibold text-xs px-3 py-1.5"
+                  >
+                    Remove
+                  </button>
+                </div>
+              ))
+            )}
+          </div>
         </div>
       )}
     </div>

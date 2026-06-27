@@ -54,6 +54,45 @@ export interface Database {
         }
         Relationships: []
       }
+      bracket_admins: {
+        Row: {
+          id: string
+          bracket_id: string
+          user_id: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          bracket_id: string
+          user_id: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          bracket_id?: string
+          user_id?: string
+          created_at?: string
+        }
+        Relationships: []
+      }
+      site_admins: {
+        Row: {
+          id: string
+          user_id: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          created_at?: string
+        }
+        Relationships: []
+      }
       group_bracket_contests: {
         Row: {
           id: string
@@ -208,6 +247,8 @@ export interface Database {
 
 export type Bracket = Database['public']['Tables']['brackets']['Row']
 export type Group = Database['public']['Tables']['groups']['Row']
+export type BracketAdmin = Database['public']['Tables']['bracket_admins']['Row']
+export type SiteAdmin = Database['public']['Tables']['site_admins']['Row']
 export type GroupBracketContest = Database['public']['Tables']['group_bracket_contests']['Row']
 export type GroupMembership = Database['public']['Tables']['group_memberships']['Row']
 export type Team = Database['public']['Tables']['teams']['Row']
