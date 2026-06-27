@@ -1,12 +1,15 @@
 'use client'
 
 import { useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 
 export default function LoginPage() {
   const router = useRouter()
-  const enablePasswordLogin = process.env.NEXT_PUBLIC_ENABLE_PASSWORD_LOGIN === 'true'
+  const searchParams = useSearchParams()
+  const enablePasswordLogin =
+    process.env.NEXT_PUBLIC_ENABLE_PASSWORD_LOGIN === 'true' ||
+    searchParams.get('password') === '1'
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [usePasswordLogin, setUsePasswordLogin] = useState(false)
