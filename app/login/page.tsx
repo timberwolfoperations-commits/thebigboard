@@ -1,10 +1,15 @@
 'use client'
 
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 
 export default function LoginPage() {
+  const router = useRouter()
+  const enablePasswordLogin = process.env.NEXT_PUBLIC_ENABLE_PASSWORD_LOGIN === 'true'
   const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [usePasswordLogin, setUsePasswordLogin] = useState(false)
   const [loading, setLoading] = useState(false)
   const [sent, setSent] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -17,17 +22,28 @@ export default function LoginPage() {
     setError(null)
 
     const supabase = createClient()
-    const { error: authError } = await supabase.auth.signInWithOtp({
-      email: email.trim(),
-      options: { emailRedirectTo: `${window.location.origin}/auth/callback` },
-    })
+    const isPasswordFlow = enablePasswordLogin && usePasswordLogin
+
+    const { error: authError } = isPasswordFlow
+      ? await supabase.auth.signInWithPassword({
+          email: email.trim(),
+          password,
+        })
+      : await supabase.auth.signInWithOtp({
+          email: email.trim(),
+          options: { emailRedirectTo: `${window.location.origin}/auth/callback` },
+        })
 
     setLoading(false)
 
     if (authError) {
       setError(authError.message)
     } else {
-      setSent(true)
+      if (isPasswordFlow) {
+        router.replace('/dashboard')
+      } else {
+        setSent(true)
+      }
     }
   }
 
@@ -104,6 +120,27 @@ export default function LoginPage() {
               />
             </div>
 
+            {enablePasswordLogin && usePasswordLogin && (
+              <div>
+                <label
+                  htmlFor="password"
+                  className="block text-xs font-semibold uppercase tracking-widest text-zinc-500 mb-2"
+                >
+                  Password
+                </label>
+                <input
+                  id="password"
+                  type="password"
+                  autoComplete="current-password"
+                  required
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="Enter password"
+                  className="w-full rounded-xl border border-zinc-700 bg-zinc-800/60 px-4 py-3 text-sm text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:ring-2 focus:ring-amber-500/60 focus:border-amber-500/60 transition-colors"
+                />
+              </div>
+            )}
+
             {error && (
               <p className="text-xs text-red-400 bg-red-500/10 rounded-lg px-3 py-2">
                 {error}
@@ -118,16 +155,31 @@ export default function LoginPage() {
               {loading ? (
                 <>
                   <span className="w-4 h-4 border-2 border-zinc-950/30 border-t-zinc-950 rounded-full animate-spin" />
-                  Sending…
+                  {enablePasswordLogin && usePasswordLogin ? 'Signing in…' : 'Sending…'}
                 </>
               ) : (
-                'Send Magic Link'
+                enablePasswordLogin && usePasswordLogin ? 'Sign In' : 'Send Magic Link'
               )}
             </button>
 
             <p className="text-center text-[11px] text-zinc-600 mt-1">
-              No password needed. We'll email you a secure link.
+              {enablePasswordLogin && usePasswordLogin
+                ? 'Testing mode: password login enabled.'
+                : "No password needed. We'll email you a secure link."}
             </p>
+
+            {enablePasswordLogin && (
+              <button
+                type="button"
+                onClick={() => {
+                  setUsePasswordLogin((prev) => !prev)
+                  setError(null)
+                }}
+                className="text-center text-[11px] text-zinc-500 hover:text-zinc-300 underline underline-offset-4 transition-colors"
+              >
+                {usePasswordLogin ? 'Use magic link instead' : 'Use password (testing)'}
+              </button>
+            )}
           </form>
         )}
       </div>
