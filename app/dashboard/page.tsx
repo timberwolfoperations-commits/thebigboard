@@ -11,6 +11,24 @@ interface PoolRow {
   lockDeadline: string | null
 }
 
+interface MembershipQueryRow {
+  id: string
+  group_id: string
+  groups: {
+    id: string
+    name: string
+    group_games: Array<{
+      game_id: string
+      games: {
+        slug: string
+        display_name: string
+        game_type: 'bracket' | 'nfl_survivor'
+        lock_deadline: string | null
+      }
+    }>
+  } | null
+}
+
 function formatDeadline(iso: string | null): string {
   if (!iso) return 'Open'
   const d = new Date(iso)
@@ -52,12 +70,11 @@ export default async function DashboardPage() {
       .eq('user_id', user.id)
 
     if (data) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      pools = (data as any[]).flatMap((membership: any) => {
+      pools = (data as MembershipQueryRow[]).flatMap((membership) => {
         const group = membership.groups
         if (!group) return []
 
-        return (group.group_games ?? []).map((link: any) => ({
+        return (group.group_games ?? []).map((link) => ({
           membershipId: membership.id,
           groupId: group.id,
           groupName: group.name,

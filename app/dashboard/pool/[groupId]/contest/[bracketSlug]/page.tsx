@@ -239,11 +239,13 @@ export default function ContestPage() {
         return
       }
 
+      const activeBracketId = game.bracket_id
+
       // 3. Fetch matches ordered by round/identifier
       const { data: matchData } = await supabase
         .from('bracket_matches')
         .select('*')
-        .eq('bracket_id', game.bracket_id)
+        .eq('bracket_id', activeBracketId)
         .order('match_identifier', { ascending: true })
 
       let resolvedMatches = (matchData ?? []) as BracketMatch[]
@@ -254,7 +256,7 @@ export default function ContestPage() {
       if (resolvedMatches.length === 0) {
         resolvedMatches = KNOCKOUT_FALLBACK_MATCHES.map((m) => ({
           ...m,
-          bracket_id: game.bracket_id!,
+          bracket_id: activeBracketId,
         }))
       }
 
@@ -266,7 +268,7 @@ export default function ContestPage() {
         .select('*')
         .eq('user_id', user.id)
         .eq('group_id', groupId)
-        .eq('bracket_id', game.bracket_id)
+        .eq('bracket_id', activeBracketId)
 
       if (!cancelled) setPicks((pickData ?? []) as BracketUserPick[])
 
@@ -288,7 +290,7 @@ export default function ContestPage() {
               .select('match_id, choice_team_id')
               .eq('user_id', member.user_id)
               .eq('group_id', groupId)
-              .eq('bracket_id', game.bracket_id)
+              .eq('bracket_id', activeBracketId)
 
             const correct = completedMatches.filter((m) =>
               memberPicks?.some(
@@ -318,7 +320,7 @@ export default function ContestPage() {
               event: '*',
               schema: 'public',
               table: 'bracket_matches',
-            filter: `bracket_id=eq.${game.bracket_id}`,
+            filter: `bracket_id=eq.${activeBracketId}`,
             },
             () => {
               void loadData(false)
