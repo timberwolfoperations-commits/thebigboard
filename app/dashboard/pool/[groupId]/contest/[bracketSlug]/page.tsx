@@ -10,6 +10,15 @@ import type { BracketMatch, BracketUserPick, Team } from '@/lib/types'
 
 const LOCK_DEADLINE = new Date('2026-06-28T23:00:00Z')
 
+interface GameRecord {
+  id: string
+  slug: string
+  display_name: string
+  game_type: 'bracket' | 'nfl_survivor'
+  lock_deadline: string | null
+  bracket_id: string | null
+}
+
 // Hardcoded fallback for the 16 standard World Cup knockout match slots.
 // Used only when the database returns no bracket_matches rows, so the
 // BracketTree component always has data to render.
@@ -43,12 +52,13 @@ interface ScoreEntry {
 export default function ContestPage() {
   const params = useParams()
   const groupId = params.groupId as string
-  const bracketSlug = params.bracketSlug as string
+  const gameSlug = params.bracketSlug as string
 
   const [userId, setUserId] = useState<string | null>(null)
   const [bracketId, setBracketId] = useState<string | null>(null)
   const [lockDeadline, setLockDeadline] = useState<Date>(LOCK_DEADLINE)
-  const [bracketDisplayName, setBracketDisplayName] = useState('')
+  const [gameDisplayName, setGameDisplayName] = useState('')
+  const [gameType, setGameType] = useState<'bracket' | 'nfl_survivor'>('bracket')
   const [groupName, setGroupName] = useState('')
   const [matches, setMatches] = useState<BracketMatch[]>([])
   const [teams, setTeams] = useState<Team[]>([])
@@ -158,53 +168,47 @@ export default function ContestPage() {
 
       setUserId(user.id)
 
-      // 1. Fetch the bracket linked to this group contest
-      //    Primary: look up via group_bracket_contests join table
-      //    Fallback: resolve bracket directly by URL slug
-      const { data: contest } = await supabase
-        .from('group_bracket_contests')
-        .select('bracket_id')
+      const { data: groupGameLinks } = await supabase
+        .from('group_games')
+        .select('game_id')
         .eq('group_id', groupId)
-        .single()
 
-      let bracket: {
-        id: string
-        slug: string
-        display_name: string
-        lock_deadline: string | null
-      } | null = null
+      let game: GameRecord | null = null
 
-      if (contest?.bracket_id) {
+      const groupGameIds = (groupGameLinks ?? []).map((link) => link.game_id)
+
+      if (groupGameIds.length > 0) {
         const { data } = await supabase
-          .from('brackets')
-          .select('id, slug, display_name, lock_deadline')
-          .eq('id', contest.bracket_id)
-          .single()
-        bracket = data
+          .from('games')
+          .select('id, slug, display_name, game_type, lock_deadline, bracket_id')
+          .in('id', groupGameIds)
+          .eq('slug', gameSlug)
+          .maybeSingle()
+        game = (data as GameRecord | null) ?? null
       }
 
-      // Fallback: resolve bracket directly by the URL slug
-      if (!bracket) {
+      if (!game) {
         const { data } = await supabase
-          .from('brackets')
-          .select('id, slug, display_name, lock_deadline')
-          .eq('slug', bracketSlug)
-          .single()
-        bracket = data
+          .from('games')
+          .select('id, slug, display_name, game_type, lock_deadline, bracket_id')
+          .eq('slug', gameSlug)
+          .maybeSingle()
+        game = (data as GameRecord | null) ?? null
       }
 
-      if (!bracket) {
+      if (!game) {
         if (!cancelled) {
-          setError('Tournament not found.')
+          setError('Game not found.')
           setLoading(false)
         }
         return
       }
 
-      setBracketId(bracket.id)
-      setBracketDisplayName(bracket.display_name)
-      if (bracket.lock_deadline) {
-        setLockDeadline(new Date(bracket.lock_deadline))
+      setGameDisplayName(game.display_name)
+      setGameType(game.game_type)
+      setBracketId(game.bracket_id)
+      if (game.lock_deadline) {
+        setLockDeadline(new Date(game.lock_deadline))
       }
 
       const { data: teamData } = await supabase
@@ -225,40 +229,34 @@ export default function ContestPage() {
 
       if (group && !cancelled) setGroupName(group.name)
 
+      if (game.game_type !== 'bracket' || !game.bracket_id) {
+        if (!cancelled) {
+          setMatches([])
+          setPicks([])
+          setLeaderboard([])
+          setLoading(false)
+        }
+        return
+      }
+
+      const activeBracketId = game.bracket_id
+
       // 3. Fetch matches ordered by round/identifier
       const { data: matchData } = await supabase
         .from('bracket_matches')
         .select('*')
-        .eq('bracket_id', bracket.id)
+        .eq('bracket_id', activeBracketId)
         .order('match_identifier', { ascending: true })
 
       let resolvedMatches = (matchData ?? []) as BracketMatch[]
 
       // Fallback: if no matches found, try resolving by slug directly
       // (handles case where bracket_id was resolved via slug fallback above)
-      if (resolvedMatches.length === 0 && bracket.slug) {
-        const { data: fallbackBracket } = await supabase
-          .from('brackets')
-          .select('id')
-          .eq('slug', bracket.slug)
-          .single()
-
-        if (fallbackBracket) {
-          const { data: fallbackMatches } = await supabase
-            .from('bracket_matches')
-            .select('*')
-            .eq('bracket_id', fallbackBracket.id)
-            .order('match_identifier', { ascending: true })
-
-          resolvedMatches = (fallbackMatches ?? []) as BracketMatch[]
-        }
-      }
-
       // Last-resort hardcoded fallback: 16 standard knockout slots
       if (resolvedMatches.length === 0) {
         resolvedMatches = KNOCKOUT_FALLBACK_MATCHES.map((m) => ({
           ...m,
-          bracket_id: bracket!.id,
+          bracket_id: activeBracketId,
         }))
       }
 
@@ -270,7 +268,7 @@ export default function ContestPage() {
         .select('*')
         .eq('user_id', user.id)
         .eq('group_id', groupId)
-        .eq('bracket_id', bracket.id)
+        .eq('bracket_id', activeBracketId)
 
       if (!cancelled) setPicks((pickData ?? []) as BracketUserPick[])
 
@@ -292,7 +290,7 @@ export default function ContestPage() {
               .select('match_id, choice_team_id')
               .eq('user_id', member.user_id)
               .eq('group_id', groupId)
-              .eq('bracket_id', bracket.id)
+              .eq('bracket_id', activeBracketId)
 
             const correct = completedMatches.filter((m) =>
               memberPicks?.some(
@@ -315,14 +313,14 @@ export default function ContestPage() {
 
       if (!channel) {
         channel = supabase
-          .channel(`contest:${groupId}:${bracket.id}`)
+        .channel(`contest:${groupId}:${game.id}`)
           .on(
             'postgres_changes',
             {
               event: '*',
               schema: 'public',
               table: 'bracket_matches',
-              filter: `bracket_id=eq.${bracket.id}`,
+            filter: `bracket_id=eq.${activeBracketId}`,
             },
             () => {
               void loadData(false)
@@ -377,7 +375,7 @@ export default function ContestPage() {
         void supabase.removeChannel(channel)
       }
     }
-  }, [groupId, bracketSlug])
+  }, [gameSlug, groupId])
 
   // ── Handle pick ────────────────────────────────────────────
   async function handlePick(matchId: string, teamId: string) {
@@ -483,6 +481,39 @@ export default function ContestPage() {
     )
   }
 
+  if (gameType !== 'bracket') {
+    return (
+      <div className="flex flex-col flex-1 pb-20">
+        <div className="px-4 pt-5 pb-4 border-b border-zinc-800/60">
+          <p className="text-xs uppercase tracking-widest text-zinc-500 mb-0.5">
+            {groupName}
+          </p>
+          <h2
+            className="text-xl font-bold text-zinc-100"
+            style={{ fontFamily: 'Georgia, "Times New Roman", serif' }}
+          >
+            {gameDisplayName}
+          </h2>
+          <div className="mt-2">
+            <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-widest text-zinc-400 bg-zinc-800/60 rounded-full px-2.5 py-1">
+              NFL Survivor
+            </span>
+          </div>
+        </div>
+
+        <div className="px-4 py-10">
+          <div className="rounded-2xl border border-zinc-800 bg-zinc-900/70 p-6 text-center">
+            <p className="text-sm font-semibold text-zinc-100">NFL Survivor is the next game type.</p>
+            <p className="text-sm text-zinc-500 mt-2">
+              This pool is linked correctly, but weekly picks, eliminations, and no-repeat team
+              rules have not been shipped yet.
+            </p>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="flex flex-col flex-1 pb-20">
       {/* Page header */}
@@ -494,8 +525,13 @@ export default function ContestPage() {
           className="text-xl font-bold text-zinc-100"
           style={{ fontFamily: 'Georgia, "Times New Roman", serif' }}
         >
-          {bracketDisplayName}
+          {gameDisplayName}
         </h2>
+        <div className="mt-2">
+          <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-widest text-zinc-400 bg-zinc-800/60 rounded-full px-2.5 py-1">
+            {gameType === 'bracket' ? 'Bracket Game' : 'NFL Survivor'}
+          </span>
+        </div>
         <div className="mt-2">
           <Link
             href={`/dashboard/pool/${groupId}/admin`}

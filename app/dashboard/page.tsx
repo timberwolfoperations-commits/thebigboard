@@ -5,9 +5,28 @@ interface PoolRow {
   membershipId: string
   groupId: string
   groupName: string
-  bracketSlug: string
+  gameSlug: string
   contestName: string
+  gameType: 'bracket' | 'nfl_survivor'
   lockDeadline: string | null
+}
+
+interface MembershipQueryRow {
+  id: string
+  group_id: string
+  groups: {
+    id: string
+    name: string
+    group_games: Array<{
+      game_id: string
+      games: {
+        slug: string
+        display_name: string
+        game_type: 'bracket' | 'nfl_survivor'
+        lock_deadline: string | null
+      }
+    }>
+  } | null
 }
 
 function formatDeadline(iso: string | null): string {
@@ -37,11 +56,12 @@ export default async function DashboardPage() {
         groups (
           id,
           name,
-          group_bracket_contests (
-            bracket_id,
-            brackets (
+          group_games (
+            game_id,
+            games (
               slug,
               display_name,
+              game_type,
               lock_deadline
             )
           )
@@ -50,18 +70,18 @@ export default async function DashboardPage() {
       .eq('user_id', user.id)
 
     if (data) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      pools = (data as any[]).flatMap((membership: any) => {
+      pools = (data as MembershipQueryRow[]).flatMap((membership) => {
         const group = membership.groups
         if (!group) return []
 
-        return group.group_bracket_contests.map((contest: any) => ({
+        return (group.group_games ?? []).map((link) => ({
           membershipId: membership.id,
           groupId: group.id,
           groupName: group.name,
-          bracketSlug: contest.brackets.slug,
-          contestName: contest.brackets.display_name,
-          lockDeadline: contest.brackets.lock_deadline,
+          gameSlug: link.games.slug,
+          contestName: link.games.display_name,
+          gameType: link.games.game_type,
+          lockDeadline: link.games.lock_deadline,
         }))
       })
     }
@@ -119,7 +139,7 @@ export default async function DashboardPage() {
             return (
               <Link
                 key={pool.membershipId}
-                href={`/dashboard/pool/${pool.groupId}/contest/${pool.bracketSlug}`}
+                href={`/dashboard/pool/${pool.groupId}/contest/${pool.gameSlug}`}
                 className="flex items-center gap-3 px-4 py-4 hover:bg-zinc-900/60 transition-colors active:bg-zinc-800/60"
               >
                 {/* Text */}
@@ -129,6 +149,9 @@ export default async function DashboardPage() {
                   </p>
                   <p className="text-xs text-zinc-500 mt-0.5 truncate">
                     {pool.contestName}
+                  </p>
+                  <p className="text-[11px] text-zinc-600 mt-1 uppercase tracking-wider">
+                    {pool.gameType === 'bracket' ? 'Bracket Game' : 'NFL Survivor'}
                   </p>
                 </div>
 
