@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { getIsSiteAdmin } from '@/lib/supabase/roles'
 import type { BracketMatch, Team, SurvivorPick, SurvivorGameState } from '@/lib/types'
 import { NFL_TEAMS_BY_ABBR } from '@/lib/nflTeams'
 
@@ -121,13 +122,7 @@ export default function AdminPage() {
     const hasPoolAdminRole = Boolean(membership?.is_admin)
     setIsPoolAdmin(hasPoolAdminRole)
 
-    const { data: siteAdmin } = await supabase
-      .from('site_admins')
-      .select('id')
-      .eq('user_id', user.id)
-      .maybeSingle()
-
-    const hasSiteAdminRole = Boolean(siteAdmin)
+    const hasSiteAdminRole = await getIsSiteAdmin(supabase)
     setIsSiteAdmin(hasSiteAdminRole)
 
     const bracketAdmin =

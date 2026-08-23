@@ -1,12 +1,36 @@
+ 'use client'
+
 import Link from 'next/link'
+import { useEffect, useState } from 'react'
+import { usePathname, useRouter } from 'next/navigation'
+import { createClient } from '@/lib/supabase/client'
 
 export default function Nav() {
+  const pathname = usePathname()
+  const router = useRouter()
+  const [menuOpen, setMenuOpen] = useState(false)
+  const [signingOut, setSigningOut] = useState(false)
+
+  useEffect(() => {
+    setMenuOpen(false)
+  }, [pathname])
+
+  async function handleSignOut() {
+    setSigningOut(true)
+    const supabase = createClient()
+    await supabase.auth.signOut()
+    router.replace('/login')
+    router.refresh()
+  }
+
   return (
     <header className="sticky top-0 z-50 w-full bg-zinc-950/90 backdrop-blur-md border-b border-zinc-800/60">
       <div className="relative flex items-center justify-between h-14 px-4 max-w-screen-sm mx-auto">
         {/* Far Left – Hamburger */}
         <button
           aria-label="Open menu"
+          aria-expanded={menuOpen}
+          onClick={() => setMenuOpen((open) => !open)}
           className="flex items-center justify-center w-10 h-10 rounded-xl text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 transition-colors"
         >
           <svg
@@ -60,6 +84,39 @@ export default function Nav() {
           </svg>
         </Link>
       </div>
+
+      {menuOpen && (
+        <div className="border-t border-zinc-800/60">
+          <nav className="max-w-screen-sm mx-auto px-4 py-3 flex flex-col gap-2">
+            <Link
+              href="/dashboard"
+              className="rounded-xl px-3 py-2 text-sm text-zinc-200 hover:bg-zinc-800 transition-colors"
+            >
+              Dashboard
+            </Link>
+            <Link
+              href="/dashboard/create-group"
+              className="rounded-xl px-3 py-2 text-sm text-zinc-200 hover:bg-zinc-800 transition-colors"
+            >
+              Create Pool
+            </Link>
+            <Link
+              href="/dashboard/join"
+              className="rounded-xl px-3 py-2 text-sm text-zinc-200 hover:bg-zinc-800 transition-colors"
+            >
+              Join Pool
+            </Link>
+            <button
+              type="button"
+              onClick={() => void handleSignOut()}
+              disabled={signingOut}
+              className="rounded-xl px-3 py-2 text-left text-sm text-zinc-200 hover:bg-zinc-800 transition-colors disabled:opacity-50"
+            >
+              {signingOut ? 'Signing Out…' : 'Sign Out'}
+            </button>
+          </nav>
+        </div>
+      )}
     </header>
   )
 }

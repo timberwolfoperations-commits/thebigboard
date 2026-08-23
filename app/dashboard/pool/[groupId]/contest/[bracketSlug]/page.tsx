@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { getIsSiteAdmin } from '@/lib/supabase/roles'
 import BracketTree from '@/components/BracketTree'
 import Scoreboard from '@/components/Scoreboard'
 import type { BracketMatch, BracketUserPick, Team } from '@/lib/types'
@@ -68,6 +69,7 @@ export default function ContestPage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [submitting, setSubmitting] = useState(false)
+  const [canOpenCommissionerPanel, setCanOpenCommissionerPanel] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const teamsById = useMemo(
@@ -210,6 +212,30 @@ export default function ContestPage() {
       setBracketId(game.bracket_id)
       if (game.lock_deadline) {
         setLockDeadline(new Date(game.lock_deadline))
+      }
+
+      const [{ data: membership }, isSiteAdmin, bracketAdminResult] = await Promise.all([
+        supabase
+          .from('group_memberships')
+          .select('is_admin')
+          .eq('group_id', groupId)
+          .eq('user_id', user.id)
+          .maybeSingle(),
+        getIsSiteAdmin(supabase),
+        game.bracket_id
+          ? supabase
+              .from('bracket_admins')
+              .select('id')
+              .eq('bracket_id', game.bracket_id)
+              .eq('user_id', user.id)
+              .maybeSingle()
+          : Promise.resolve({ data: null }),
+      ])
+
+      if (!cancelled) {
+        setCanOpenCommissionerPanel(
+          Boolean(membership?.is_admin) || isSiteAdmin || Boolean(bracketAdminResult.data)
+        )
       }
 
       // Redirect survivor games to the dedicated survivor page
@@ -539,14 +565,16 @@ export default function ContestPage() {
             {gameType === 'bracket' ? 'Bracket Game' : 'NFL Survivor'}
           </span>
         </div>
-        <div className="mt-2">
-          <Link
-            href={`/dashboard/pool/${groupId}/admin`}
-            className="inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-widest text-zinc-300 bg-zinc-800/70 hover:bg-zinc-700/80 rounded-full px-2.5 py-1 transition-colors"
-          >
-            Commissioner Panel
-          </Link>
-        </div>
+        {canOpenCommissionerPanel && (
+          <div className="mt-2">
+            <Link
+              href={`/dashboard/pool/${groupId}/admin`}
+              className="inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-widest text-zinc-300 bg-zinc-800/70 hover:bg-zinc-700/80 rounded-full px-2.5 py-1 transition-colors"
+            >
+              Commissioner Panel
+            </Link>
+          </div>
+        )}
 
         {/* Lock status */}
         <div className="mt-2 flex items-center gap-2">

@@ -90,10 +90,35 @@ export default async function DashboardPage() {
   return (
     <div className="flex flex-col flex-1 pb-20">
       {/* Section header */}
-      <div className="px-4 pt-6 pb-3">
-        <span className="text-[11px] font-semibold uppercase tracking-widest text-zinc-500">
-          Active Pools
-        </span>
+      <div className="px-4 pt-6 pb-3 flex flex-col gap-4">
+        <div>
+          <span className="text-[11px] font-semibold uppercase tracking-widest text-zinc-500">
+            Your Pools
+          </span>
+          <p className="text-sm text-zinc-500 mt-1">
+            A game is the official contest. A pool is your private group for that game.
+          </p>
+        </div>
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+          <Link
+            href="/dashboard/create-group"
+            className="inline-flex items-center justify-center rounded-xl bg-amber-500 hover:bg-amber-400 text-zinc-950 font-semibold text-sm px-4 py-3 transition-colors"
+          >
+            Create Pool
+          </Link>
+          <Link
+            href="/dashboard/join"
+            className="inline-flex items-center justify-center rounded-xl border border-zinc-700 bg-zinc-900/80 hover:bg-zinc-800 text-zinc-100 font-semibold text-sm px-4 py-3 transition-colors"
+          >
+            Join Pool
+          </Link>
+          <Link
+            href="/dashboard/create-group?mode=test"
+            className="inline-flex items-center justify-center rounded-xl border border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/15 text-emerald-300 font-semibold text-sm px-4 py-3 transition-colors"
+          >
+            Explore with a Test Pool
+          </Link>
+        </div>
       </div>
 
       {/* Pool list */}
@@ -120,17 +145,8 @@ export default async function DashboardPage() {
             </div>
             <p className="text-zinc-400 font-medium text-sm mb-1">No active pools</p>
             <p className="text-zinc-600 text-xs max-w-xs">
-              Create a pool or ask a friend for an invite code to get started.
+              Create your own pool, join one with an invite code, or make a test pool to explore the app.
             </p>
-            <Link
-              href="/dashboard/create-group"
-              className="mt-5 inline-flex items-center gap-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-zinc-950 font-semibold text-sm px-5 py-2.5 transition-colors"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
-              </svg>
-              Create a Pool
-            </Link>
           </div>
         ) : (
           pools.map((pool) => {

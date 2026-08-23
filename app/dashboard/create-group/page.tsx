@@ -1,8 +1,9 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { getIsSiteAdmin } from '@/lib/supabase/roles'
 
 interface ManagedGame {
   id: string
@@ -45,8 +46,12 @@ function formatDeadline(iso: string | null): string {
 
 export default function CreateGroupPage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [games, setGames] = useState<ManagedGame[]>([])
   const [brackets, setBrackets] = useState<BracketOption[]>([])
+  const [poolType, setPoolType] = useState<'bracket' | 'nfl_survivor'>(() => {
+    return searchParams.get('poolType') === 'nfl_survivor' ? 'nfl_survivor' : 'bracket'
+  })
   const [selectedGameId, setSelectedGameId] = useState('')
   const [poolName, setPoolName] = useState('')
   const [gameName, setGameName] = useState('')
@@ -69,12 +74,8 @@ export default function CreateGroupPage() {
       return
     }
 
-    const [{ data: siteAdmin }, { data: gameData }, { data: bracketData }] = await Promise.all([
-      supabase
-        .from('site_admins')
-        .select('id')
-        .eq('user_id', user.id)
-        .maybeSingle(),
+    const [isSiteAdminResult, { data: gameData }, { data: bracketData }] = await Promise.all([
+      getIsSiteAdmin(supabase),
       supabase
         .from('games')
         .select('id, slug, display_name, game_type, status, bracket_id, lock_deadline')
@@ -86,13 +87,9 @@ export default function CreateGroupPage() {
         .order('display_name', { ascending: true }),
     ])
 
-    setIsSiteAdmin(Boolean(siteAdmin))
+    setIsSiteAdmin(isSiteAdminResult)
     setGames((gameData ?? []) as ManagedGame[])
     setBrackets((bracketData ?? []) as BracketOption[])
-
-    if (!selectedGameId && gameData && gameData.length > 0) {
-      setSelectedGameId(gameData[0].id)
-    }
 
     if (!selectedBracketId && bracketData && bracketData.length > 0) {
       setSelectedBracketId(bracketData[0].id)
@@ -118,9 +115,34 @@ export default function CreateGroupPage() {
   }, [loadOptions])
 
   const selectedGame = useMemo(
-    () => games.find((game) => game.id === selectedGameId) ?? null,
-    [games, selectedGameId]
+    () => games.find((game) => game.id === selectedGameId && game.game_type === poolType) ?? null,
+    [games, poolType, selectedGameId]
   )
+
+  const bracketGames = useMemo(
+    () => games.filter((game) => game.game_type === 'bracket'),
+    [games]
+  )
+
+  const survivorGames = useMemo(
+    () => games.filter((game) => game.game_type === 'nfl_survivor'),
+    [games]
+  )
+
+  const availablePoolGames = poolType === 'bracket' ? bracketGames : survivorGames
+  const isTestMode = searchParams.get('mode') === 'test'
+
+  useEffect(() => {
+    if (isTestMode && !poolName) {
+      setPoolName(poolType === 'nfl_survivor' ? 'Test Survivor Pool' : 'Test Bracket Pool')
+    }
+  }, [isTestMode, poolName, poolType])
+
+  useEffect(() => {
+    if (!availablePoolGames.some((game) => game.id === selectedGameId)) {
+      setSelectedGameId(availablePoolGames[0]?.id ?? '')
+    }
+  }, [availablePoolGames, selectedGameId])
 
   async function handleCreatePool(e: React.FormEvent) {
     e.preventDefault()
@@ -249,10 +271,10 @@ export default function CreateGroupPage() {
           className="text-2xl font-bold text-zinc-100"
           style={{ fontFamily: 'Georgia, "Times New Roman", serif' }}
         >
-          Official Games & Pools
+          Publish Games, Then Create Pools
         </h2>
         <p className="text-sm text-zinc-500 mt-1">
-          Site admins publish the official games. Players create pools against those games.
+          Step 1: publish an official game. Step 2: create a player pool for that game.
         </p>
       </div>
 
@@ -260,11 +282,11 @@ export default function CreateGroupPage() {
         <section className="rounded-2xl border border-zinc-800 bg-zinc-900/70 p-5">
           <div className="mb-5">
             <p className="text-[11px] font-semibold uppercase tracking-widest text-amber-400">
-              Site Admin
+              Step 1 · Site Admin
             </p>
             <h3 className="text-lg font-semibold text-zinc-100 mt-1">Create Official Game</h3>
             <p className="text-sm text-zinc-500 mt-1">
-              Create site-managed games once, then let users create separate pools for each one.
+              Publish the official bracket or survivor game once, then let everyone create their own pools from it.
             </p>
           </div>
 
@@ -322,7 +344,7 @@ export default function CreateGroupPage() {
                 className="w-full rounded-xl border border-zinc-700 bg-zinc-800/60 px-4 py-3 text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-amber-500/60 focus:border-amber-500/60 transition-colors appearance-none"
               >
                 <option value="bracket">Bracket</option>
-                <option value="nfl_survivor">NFL Survivor (coming soon)</option>
+                <option value="nfl_survivor">NFL Survivor</option>
               </select>
             </div>
 
@@ -369,13 +391,19 @@ export default function CreateGroupPage() {
       <section className="rounded-2xl border border-zinc-800 bg-zinc-900/70 p-5">
         <div className="mb-5">
           <p className="text-[11px] font-semibold uppercase tracking-widest text-zinc-500">
-            Player Setup
+            Step 2 · Player Setup
           </p>
           <h3 className="text-lg font-semibold text-zinc-100 mt-1">Create a Pool</h3>
           <p className="text-sm text-zinc-500 mt-1">
-            Pick one of the active site-managed games and create a pool for your players.
+            Choose the type of pool you want, then attach it to an official game that is already live.
           </p>
         </div>
+
+        {isTestMode && (
+          <div className="mb-5 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-300">
+            Test mode: create a throwaway pool so you can click through the app and learn the flow.
+          </div>
+        )}
 
         {isLoadingOptions ? (
           <div className="flex items-center justify-center py-10">
@@ -392,6 +420,36 @@ export default function CreateGroupPage() {
           </div>
         ) : (
           <form onSubmit={handleCreatePool} className="flex flex-col gap-5">
+            <div>
+              <p className="block text-xs font-semibold uppercase tracking-widest text-zinc-500 mb-2">
+                Pool Type
+              </p>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setPoolType('bracket')}
+                  className={`rounded-xl border px-4 py-3 text-sm font-semibold transition-colors ${
+                    poolType === 'bracket'
+                      ? 'border-amber-500/60 bg-amber-500/15 text-amber-300'
+                      : 'border-zinc-700 bg-zinc-800/50 text-zinc-300 hover:bg-zinc-800'
+                  }`}
+                >
+                  Create Bracket Pool
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPoolType('nfl_survivor')}
+                  className={`rounded-xl border px-4 py-3 text-sm font-semibold transition-colors ${
+                    poolType === 'nfl_survivor'
+                      ? 'border-amber-500/60 bg-amber-500/15 text-amber-300'
+                      : 'border-zinc-700 bg-zinc-800/50 text-zinc-300 hover:bg-zinc-800'
+                  }`}
+                >
+                  Create Survivor Pool
+                </button>
+              </div>
+            </div>
+
             <div>
               <label
                 htmlFor="poolName"
@@ -415,20 +473,26 @@ export default function CreateGroupPage() {
                 htmlFor="game"
                 className="block text-xs font-semibold uppercase tracking-widest text-zinc-500 mb-2"
               >
-                Official Game
+                Official {poolType === 'bracket' ? 'Bracket' : 'Survivor'} Game
               </label>
-              <select
-                id="game"
-                value={selectedGameId}
-                onChange={(e) => setSelectedGameId(e.target.value)}
-                className="w-full rounded-xl border border-zinc-700 bg-zinc-800/60 px-4 py-3 text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-amber-500/60 focus:border-amber-500/60 transition-colors appearance-none"
-              >
-                {games.map((game) => (
-                  <option key={game.id} value={game.id}>
-                    {game.display_name}
-                  </option>
-                ))}
-              </select>
+              {availablePoolGames.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-zinc-700 px-4 py-5 text-sm text-zinc-400">
+                  No active {poolType === 'bracket' ? 'bracket' : 'survivor'} games are available yet.
+                </div>
+              ) : (
+                <select
+                  id="game"
+                  value={selectedGameId}
+                  onChange={(e) => setSelectedGameId(e.target.value)}
+                  className="w-full rounded-xl border border-zinc-700 bg-zinc-800/60 px-4 py-3 text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-amber-500/60 focus:border-amber-500/60 transition-colors appearance-none"
+                >
+                  {availablePoolGames.map((game) => (
+                    <option key={game.id} value={game.id}>
+                      {game.display_name}
+                    </option>
+                  ))}
+                </select>
+              )}
             </div>
 
             {selectedGame && (
@@ -451,10 +515,14 @@ export default function CreateGroupPage() {
 
             <button
               type="submit"
-              disabled={creatingPool}
+              disabled={creatingPool || !selectedGame}
               className="w-full rounded-xl bg-amber-500 hover:bg-amber-400 active:bg-amber-600 disabled:opacity-50 disabled:cursor-not-allowed text-zinc-950 font-semibold text-sm py-3.5 transition-colors flex items-center justify-center gap-2"
             >
-              {creatingPool ? 'Creating…' : 'Create Pool'}
+              {creatingPool
+                ? 'Creating…'
+                : poolType === 'bracket'
+                ? 'Create Bracket Pool'
+                : 'Create Survivor Pool'}
             </button>
           </form>
         )}
