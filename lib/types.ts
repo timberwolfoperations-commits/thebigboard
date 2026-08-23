@@ -291,6 +291,63 @@ export interface Database {
         }
         Relationships: []
       }
+      survivor_picks: {
+        Row: {
+          id: string
+          user_id: string
+          game_id: string
+          group_id: string
+          week: number
+          team: string
+          result: 'pending' | 'win' | 'loss'
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          game_id: string
+          group_id: string
+          week: number
+          team: string
+          result?: 'pending' | 'win' | 'loss'
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          game_id?: string
+          group_id?: string
+          week?: number
+          team?: string
+          result?: 'pending' | 'win' | 'loss'
+          created_at?: string
+        }
+        Relationships: []
+      }
+      survivor_game_state: {
+        Row: {
+          id: string
+          game_id: string
+          group_id: string
+          current_week: number
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          game_id: string
+          group_id: string
+          current_week?: number
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          game_id?: string
+          group_id?: string
+          current_week?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
     }
     Views: Record<string, never>
     Functions: Record<string, never>
@@ -310,3 +367,5 @@ export type GroupMembership = Database['public']['Tables']['group_memberships'][
 export type Team = Database['public']['Tables']['teams']['Row']
 export type BracketMatch = Database['public']['Tables']['bracket_matches']['Row']
 export type BracketUserPick = Database['public']['Tables']['bracket_user_picks']['Row']
+export type SurvivorPick = Database['public']['Tables']['survivor_picks']['Row']
+export type SurvivorGameState = Database['public']['Tables']['survivor_game_state']['Row']

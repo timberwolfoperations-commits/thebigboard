@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import type { BracketMatch, Team } from '@/lib/types'
+import type { BracketMatch, Team, SurvivorPick, SurvivorGameState } from '@/lib/types'
+import { NFL_TEAMS_BY_ABBR } from '@/lib/nflTeams'
 
 // ── Types ──────────────────────────────────────────────────────
 interface MemberRow {
@@ -28,7 +29,7 @@ interface MatchEntry extends BracketMatch {
   saving: boolean
 }
 
-type ActiveTab = 'ledger' | 'scores' | 'admins'
+type ActiveTab = 'ledger' | 'scores' | 'admins' | 'survivor'
 
 // ── Component ──────────────────────────────────────────────────
 export default function AdminPage() {
@@ -51,10 +52,17 @@ export default function AdminPage() {
   const [teams, setTeams] = useState<Team[]>([])
   const [togglingId, setTogglingId] = useState<string | null>(null)
   const [adminMutationLoading, setAdminMutationLoading] = useState(false)
+  // Survivor state
+  const [survivorPicks, setSurvivorPicks] = useState<SurvivorPick[]>([])
+  const [survivorCurrentWeek, setSurvivorCurrentWeek] = useState(1)
+  const [survivorDraftWeek, setSurvivorDraftWeek] = useState(1)
+  const [survivorGameId, setSurvivorGameId] = useState<string | null>(null)
+  const [survivorSaving, setSurvivorSaving] = useState(false)
 
   const canManageLedger = isPoolAdmin || isSiteAdmin
   const canManageScores = gameType === 'bracket' && (isPoolAdmin || isBracketAdmin || isSiteAdmin)
   const canManageBracketAdmins = gameType === 'bracket' && (isBracketAdmin || isSiteAdmin)
+  const canManageSurvivor = gameType === 'nfl_survivor' && (isPoolAdmin || isSiteAdmin)
   const roleLabels = [
     isSiteAdmin ? 'Site Admin' : null,
     isBracketAdmin ? 'Score Admin' : null,
@@ -148,11 +156,7 @@ export default function AdminPage() {
       setActiveTab('scores')
     }
 
-    setError(
-      game.game_type === 'bracket'
-        ? null
-        : 'This pool uses the upcoming NFL Survivor game type. Score-entry tools are not available yet.'
-    )
+    setError(null)
 
     // ── Payment ledger (pool admins + site admins) ───────────
     if (hasPoolAdminRole || hasSiteAdminRole) {
@@ -233,6 +237,34 @@ export default function AdminPage() {
       }
     } else {
       setBracketAdmins([])
+    }
+
+    // ── Survivor data ─────────────────────────────────────
+    if (game.game_type === 'nfl_survivor' && (hasPoolAdminRole || hasSiteAdminRole)) {
+      setSurvivorGameId(game.id)
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: stateData } = await (supabase as any)
+        .from('survivor_game_state')
+        .select('current_week')
+        .eq('game_id', game.id)
+        .eq('group_id', groupId)
+        .maybeSingle()
+
+      const week = (stateData as SurvivorGameState | null)?.current_week ?? 1
+      setSurvivorCurrentWeek(week)
+      setSurvivorDraftWeek(week)
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: picksData } = await (supabase as any)
+        .from('survivor_picks')
+        .select('*')
+        .eq('game_id', game.id)
+        .eq('group_id', groupId)
+
+      setSurvivorPicks((picksData ?? []) as SurvivorPick[])
+    } else {
+      setSurvivorPicks([])
     }
 
     setLoading(false)
@@ -569,6 +601,18 @@ export default function AdminPage() {
             Bracket Admins
           </button>
         )}
+        {canManageSurvivor && (
+          <button
+            onClick={() => setActiveTab('survivor')}
+            className={`flex-1 py-3 text-[13px] font-semibold transition-colors ${
+              activeTab === 'survivor'
+                ? 'text-amber-400 border-b-2 border-amber-400'
+                : 'text-zinc-500 hover:text-zinc-300'
+            }`}
+          >
+            Survivor
+          </button>
+        )}
       </div>
 
       {/* ── Tab: Payment Ledger ────────────────────────────── */}
@@ -829,6 +873,47 @@ export default function AdminPage() {
         </div>
       )}
 
+      {activeTab === 'survivor' && canManageSurvivor && (
+        <SurvivorAdminTab
+          groupId={groupId}
+          gameId={survivorGameId}
+          currentWeek={survivorCurrentWeek}
+          draftWeek={survivorDraftWeek}
+          picks={survivorPicks}
+          saving={survivorSaving}
+          onDraftWeekChange={setSurvivorDraftWeek}
+          onSetWeek={async (week) => {
+            if (!survivorGameId) return
+            setSurvivorSaving(true)
+            setError(null)
+            const supabase = createClient()
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const { error: upsertErr } = await (supabase as any)
+              .from('survivor_game_state')
+              .upsert(
+                { game_id: survivorGameId, group_id: groupId, current_week: week, updated_at: new Date().toISOString() },
+                { onConflict: 'game_id,group_id' }
+              )
+            if (upsertErr) setError(upsertErr.message)
+            else await loadData()
+            setSurvivorSaving(false)
+          }}
+          onMarkResult={async (pickId, result) => {
+            setSurvivorSaving(true)
+            setError(null)
+            const supabase = createClient()
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const { error: updateErr } = await (supabase as any)
+              .from('survivor_picks')
+              .update({ result })
+              .eq('id', pickId)
+            if (updateErr) setError(updateErr.message)
+            else await loadData()
+            setSurvivorSaving(false)
+          }}
+        />
+      )}
+
       {activeTab === 'admins' && canManageBracketAdmins && (
         <div className="px-4 py-4 flex flex-col gap-4">
           <div className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-3">
@@ -882,6 +967,155 @@ export default function AdminPage() {
                 </div>
               ))
             )}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Survivor Admin Tab ────────────────────────────────────────
+interface SurvivorAdminTabProps {
+  groupId: string
+  gameId: string | null
+  currentWeek: number
+  draftWeek: number
+  picks: SurvivorPick[]
+  saving: boolean
+  onDraftWeekChange: (week: number) => void
+  onSetWeek: (week: number) => Promise<void>
+  onMarkResult: (pickId: string, result: 'pending' | 'win' | 'loss') => Promise<void>
+}
+
+function SurvivorAdminTab({
+  currentWeek,
+  draftWeek,
+  picks,
+  saving,
+  onDraftWeekChange,
+  onSetWeek,
+  onMarkResult,
+}: SurvivorAdminTabProps) {
+  const weekPicks = picks.filter((p) => p.week === currentWeek)
+  const weeks = Array.from(new Set(picks.map((p) => p.week))).sort((a, b) => a - b)
+
+  return (
+    <div className="px-4 py-4 flex flex-col gap-5">
+      {/* Set current week */}
+      <div className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-4 flex flex-col gap-3">
+        <p className="text-[11px] text-zinc-500 uppercase tracking-widest font-semibold">
+          Current Week
+        </p>
+        <div className="flex items-center gap-3">
+          <input
+            type="number"
+            min={1}
+            max={18}
+            value={draftWeek}
+            onChange={(e) => onDraftWeekChange(Math.min(18, Math.max(1, parseInt(e.target.value) || 1)))}
+            className="w-20 bg-zinc-800 border border-zinc-700 text-zinc-100 text-center text-lg font-bold rounded-xl px-3 py-2 focus:outline-none focus:ring-1 focus:ring-amber-500"
+          />
+          <span className="text-zinc-500 text-sm">of 18</span>
+          <button
+            onClick={() => void onSetWeek(draftWeek)}
+            disabled={saving || draftWeek === currentWeek}
+            className="ml-auto rounded-lg bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-zinc-950 font-semibold text-sm px-4 py-2 transition-colors"
+          >
+            {saving ? 'Saving…' : 'Set Week'}
+          </button>
+        </div>
+        <p className="text-xs text-zinc-600">
+          Currently on Week {currentWeek}. Advancing the week opens picks for the new week.
+        </p>
+      </div>
+
+      {/* Week pick results */}
+      <div className="rounded-xl border border-zinc-800 overflow-hidden">
+        <div className="px-4 py-3 bg-zinc-900/60 border-b border-zinc-800">
+          <p className="text-[11px] text-zinc-500 uppercase tracking-widest font-semibold">
+            Week {currentWeek} Picks · Enter Results
+          </p>
+        </div>
+        {weekPicks.length === 0 ? (
+          <div className="px-4 py-8 text-center text-zinc-600 text-sm">
+            No picks submitted for Week {currentWeek} yet.
+          </div>
+        ) : (
+          <div className="divide-y divide-zinc-800/60">
+            {weekPicks.map((pick) => {
+              const team = NFL_TEAMS_BY_ABBR[pick.team]
+              return (
+                <div key={pick.id} className="px-4 py-3 flex items-center gap-3">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-zinc-200 truncate">
+                      {`Player ${pick.user_id.slice(0, 6)}`}
+                    </p>
+                    <p className="text-xs text-zinc-500 mt-0.5">
+                      {pick.team}{team ? ` · ${team.city} ${team.name}` : ''}
+                    </p>
+                  </div>
+                  <div className="flex gap-1.5 shrink-0">
+                    {(['pending', 'win', 'loss'] as const).map((result) => (
+                      <button
+                        key={result}
+                        disabled={saving}
+                        onClick={() => void onMarkResult(pick.id, result)}
+                        className={`text-[10px] font-bold uppercase tracking-wide px-2.5 py-1 rounded-full transition-colors ${
+                          pick.result === result
+                            ? result === 'win'
+                              ? 'bg-green-500/30 text-green-300 ring-1 ring-green-500/50'
+                              : result === 'loss'
+                              ? 'bg-red-500/30 text-red-300 ring-1 ring-red-500/50'
+                              : 'bg-amber-500/20 text-amber-400 ring-1 ring-amber-500/30'
+                            : 'bg-zinc-800/60 text-zinc-500 hover:text-zinc-300'
+                        }`}
+                      >
+                        {result}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Pick history by week */}
+      {weeks.length > 0 && (
+        <div className="rounded-xl border border-zinc-800 overflow-hidden">
+          <div className="px-4 py-3 bg-zinc-900/60 border-b border-zinc-800">
+            <p className="text-[11px] text-zinc-500 uppercase tracking-widest font-semibold">
+              All Pick History
+            </p>
+          </div>
+          <div className="divide-y divide-zinc-800/40">
+            {weeks.map((week) => (
+              <div key={week} className="px-4 py-2">
+                <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-600 mb-1">
+                  Week {week}
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {picks.filter((p) => p.week === week).map((pick) => {
+                    const nflTeam = NFL_TEAMS_BY_ABBR[pick.team]
+                    return (
+                      <span
+                        key={pick.id}
+                        className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${
+                          pick.result === 'win'
+                            ? 'bg-green-900/30 text-green-400'
+                            : pick.result === 'loss'
+                            ? 'bg-red-900/30 text-red-400 line-through'
+                            : 'bg-zinc-800/60 text-zinc-400'
+                        }`}
+                      >
+                        {nflTeam ? `${nflTeam.city} ${nflTeam.name}` : pick.team}
+                      </span>
+                    )
+                  })}
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       )}

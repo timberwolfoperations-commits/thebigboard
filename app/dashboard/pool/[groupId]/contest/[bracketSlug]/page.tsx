@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { useParams } from 'next/navigation'
+import { useParams, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import BracketTree from '@/components/BracketTree'
 import Scoreboard from '@/components/Scoreboard'
@@ -51,6 +51,7 @@ interface ScoreEntry {
 
 export default function ContestPage() {
   const params = useParams()
+  const router = useRouter()
   const groupId = params.groupId as string
   const gameSlug = params.bracketSlug as string
 
@@ -209,6 +210,12 @@ export default function ContestPage() {
       setBracketId(game.bracket_id)
       if (game.lock_deadline) {
         setLockDeadline(new Date(game.lock_deadline))
+      }
+
+      // Redirect survivor games to the dedicated survivor page
+      if (game.game_type === 'nfl_survivor') {
+        router.replace(`/dashboard/pool/${groupId}/contest/${gameSlug}/survivor`)
+        return
       }
 
       const { data: teamData } = await supabase
