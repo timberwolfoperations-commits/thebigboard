@@ -1,19 +1,14 @@
- 'use client'
+'use client'
 
 import Link from 'next/link'
-import { useEffect, useState } from 'react'
-import { usePathname, useRouter } from 'next/navigation'
+import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 
 export default function Nav() {
-  const pathname = usePathname()
   const router = useRouter()
   const [menuOpen, setMenuOpen] = useState(false)
   const [signingOut, setSigningOut] = useState(false)
-
-  useEffect(() => {
-    setMenuOpen(false)
-  }, [pathname])
 
   async function handleSignOut() {
     setSigningOut(true)
@@ -90,18 +85,21 @@ export default function Nav() {
           <nav className="max-w-screen-sm mx-auto px-4 py-3 flex flex-col gap-2">
             <Link
               href="/dashboard"
+              onClick={() => setMenuOpen(false)}
               className="rounded-xl px-3 py-2 text-sm text-zinc-200 hover:bg-zinc-800 transition-colors"
             >
               Dashboard
             </Link>
             <Link
               href="/dashboard/create-group"
+              onClick={() => setMenuOpen(false)}
               className="rounded-xl px-3 py-2 text-sm text-zinc-200 hover:bg-zinc-800 transition-colors"
             >
               Create Pool
             </Link>
             <Link
               href="/dashboard/join"
+              onClick={() => setMenuOpen(false)}
               className="rounded-xl px-3 py-2 text-sm text-zinc-200 hover:bg-zinc-800 transition-colors"
             >
               Join Pool

@@ -53,7 +53,15 @@ export default function CreateGroupPage() {
     return searchParams.get('poolType') === 'nfl_survivor' ? 'nfl_survivor' : 'bracket'
   })
   const [selectedGameId, setSelectedGameId] = useState('')
-  const [poolName, setPoolName] = useState('')
+  const [poolName, setPoolName] = useState(() => {
+    if (searchParams.get('mode') !== 'test') {
+      return ''
+    }
+
+    return searchParams.get('poolType') === 'nfl_survivor'
+      ? 'Test Survivor Pool'
+      : 'Test Bracket Pool'
+  })
   const [gameName, setGameName] = useState('')
   const [gameSlug, setGameSlug] = useState('')
   const [gameType, setGameType] = useState<'bracket' | 'nfl_survivor'>('bracket')
@@ -94,7 +102,7 @@ export default function CreateGroupPage() {
     if (!selectedBracketId && bracketData && bracketData.length > 0) {
       setSelectedBracketId(bracketData[0].id)
     }
-  }, [router, selectedBracketId, selectedGameId])
+  }, [router, selectedBracketId])
 
   useEffect(() => {
     let mounted = true
@@ -114,11 +122,6 @@ export default function CreateGroupPage() {
     }
   }, [loadOptions])
 
-  const selectedGame = useMemo(
-    () => games.find((game) => game.id === selectedGameId && game.game_type === poolType) ?? null,
-    [games, poolType, selectedGameId]
-  )
-
   const bracketGames = useMemo(
     () => games.filter((game) => game.game_type === 'bracket'),
     [games]
@@ -128,21 +131,19 @@ export default function CreateGroupPage() {
     () => games.filter((game) => game.game_type === 'nfl_survivor'),
     [games]
   )
-
   const availablePoolGames = poolType === 'bracket' ? bracketGames : survivorGames
+  const effectiveSelectedGameId =
+    availablePoolGames.some((game) => game.id === selectedGameId)
+      ? selectedGameId
+      : availablePoolGames[0]?.id ?? ''
+  const selectedGame = useMemo(
+    () =>
+      games.find(
+        (game) => game.id === effectiveSelectedGameId && game.game_type === poolType
+      ) ?? null,
+    [effectiveSelectedGameId, games, poolType]
+  )
   const isTestMode = searchParams.get('mode') === 'test'
-
-  useEffect(() => {
-    if (isTestMode && !poolName) {
-      setPoolName(poolType === 'nfl_survivor' ? 'Test Survivor Pool' : 'Test Bracket Pool')
-    }
-  }, [isTestMode, poolName, poolType])
-
-  useEffect(() => {
-    if (!availablePoolGames.some((game) => game.id === selectedGameId)) {
-      setSelectedGameId(availablePoolGames[0]?.id ?? '')
-    }
-  }, [availablePoolGames, selectedGameId])
 
   async function handleCreatePool(e: React.FormEvent) {
     e.preventDefault()
@@ -482,7 +483,7 @@ export default function CreateGroupPage() {
               ) : (
                 <select
                   id="game"
-                  value={selectedGameId}
+                  value={effectiveSelectedGameId}
                   onChange={(e) => setSelectedGameId(e.target.value)}
                   className="w-full rounded-xl border border-zinc-700 bg-zinc-800/60 px-4 py-3 text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-amber-500/60 focus:border-amber-500/60 transition-colors appearance-none"
                 >

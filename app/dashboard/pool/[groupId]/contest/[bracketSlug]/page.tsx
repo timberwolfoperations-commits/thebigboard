@@ -408,7 +408,7 @@ export default function ContestPage() {
         void supabase.removeChannel(channel)
       }
     }
-  }, [gameSlug, groupId])
+  }, [gameSlug, groupId, router])
 
   // ── Handle pick ────────────────────────────────────────────
   async function handlePick(matchId: string, teamId: string) {
