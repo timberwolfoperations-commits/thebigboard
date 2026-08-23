@@ -42,6 +42,7 @@ export default function AdminPage() {
   const [members, setMembers] = useState<MemberRow[]>([])
   const [matches, setMatches] = useState<MatchEntry[]>([])
   const [bracketId, setBracketId] = useState<string | null>(null)
+  const [gameType, setGameType] = useState<'bracket' | 'nfl_survivor'>('bracket')
   const [bracketAdmins, setBracketAdmins] = useState<BracketAdminRow[]>([])
   const [newBracketAdminUserId, setNewBracketAdminUserId] = useState('')
   const [isPoolAdmin, setIsPoolAdmin] = useState(false)
@@ -52,8 +53,8 @@ export default function AdminPage() {
   const [adminMutationLoading, setAdminMutationLoading] = useState(false)
 
   const canManageLedger = isPoolAdmin || isSiteAdmin
-  const canManageScores = isPoolAdmin || isBracketAdmin || isSiteAdmin
-  const canManageBracketAdmins = isBracketAdmin || isSiteAdmin
+  const canManageScores = gameType === 'bracket' && (isPoolAdmin || isBracketAdmin || isSiteAdmin)
+  const canManageBracketAdmins = gameType === 'bracket' && (isBracketAdmin || isSiteAdmin)
   const roleLabels = [
     isSiteAdmin ? 'Site Admin' : null,
     isBracketAdmin ? 'Score Admin' : null,
@@ -74,20 +75,33 @@ export default function AdminPage() {
       return
     }
 
-    // ── Resolve bracket for this group and permissions ──
-    const { data: contest } = await supabase
-      .from('group_bracket_contests')
-      .select('bracket_id')
+    // ── Resolve game for this group and permissions ──
+    const { data: groupGameLink } = await supabase
+      .from('group_games')
+      .select('game_id')
       .eq('group_id', groupId)
-      .single()
+      .maybeSingle()
 
-    if (!contest?.bracket_id) {
-      setError('No bracket is linked to this group.')
+    if (!groupGameLink?.game_id) {
+      setError('No official game is linked to this pool.')
       setLoading(false)
       return
     }
 
-    setBracketId(contest.bracket_id)
+    const { data: game } = await supabase
+      .from('games')
+      .select('id, game_type, bracket_id')
+      .eq('id', groupGameLink.game_id)
+      .maybeSingle()
+
+    if (!game) {
+      setError('Linked game could not be loaded.')
+      setLoading(false)
+      return
+    }
+
+    setGameType(game.game_type)
+    setBracketId(game.bracket_id)
 
     const { data: membership } = await supabase
       .from('group_memberships')
@@ -108,14 +122,17 @@ export default function AdminPage() {
     const hasSiteAdminRole = Boolean(siteAdmin)
     setIsSiteAdmin(hasSiteAdminRole)
 
-    const { data: bracketAdmin } = await supabase
-      .from('bracket_admins')
-      .select('id')
-      .eq('bracket_id', contest.bracket_id)
-      .eq('user_id', user.id)
-      .maybeSingle()
+    const bracketAdmin =
+      game.bracket_id
+        ? await supabase
+            .from('bracket_admins')
+            .select('id')
+            .eq('bracket_id', game.bracket_id)
+            .eq('user_id', user.id)
+            .maybeSingle()
+        : { data: null }
 
-    const hasBracketAdminRole = Boolean(bracketAdmin)
+    const hasBracketAdminRole = Boolean(bracketAdmin.data)
     setIsBracketAdmin(hasBracketAdminRole)
 
     const hasAnyAdminRole = hasPoolAdminRole || hasSiteAdminRole || hasBracketAdminRole
@@ -127,11 +144,15 @@ export default function AdminPage() {
 
     if (hasPoolAdminRole || hasSiteAdminRole) {
       setActiveTab('ledger')
-    } else if (hasBracketAdminRole) {
+    } else if (hasBracketAdminRole && game.game_type === 'bracket') {
       setActiveTab('scores')
     }
 
-    setError(null)
+    setError(
+      game.game_type === 'bracket'
+        ? null
+        : 'This pool uses the upcoming NFL Survivor game type. Score-entry tools are not available yet.'
+    )
 
     // ── Payment ledger (pool admins + site admins) ───────────
     if (hasPoolAdminRole || hasSiteAdminRole) {
@@ -158,7 +179,7 @@ export default function AdminPage() {
     }
 
     // ── Score entry (pool admins + bracket admins + site admins) ───────────
-    if (hasPoolAdminRole || hasBracketAdminRole || hasSiteAdminRole) {
+    if ((hasPoolAdminRole || hasBracketAdminRole || hasSiteAdminRole) && game.game_type === 'bracket' && game.bracket_id) {
       const { data: teamData } = await supabase
         .from('teams')
         .select('*')
@@ -171,7 +192,7 @@ export default function AdminPage() {
       const { data: matchData } = await supabase
         .from('bracket_matches')
         .select('*')
-        .eq('bracket_id', contest.bracket_id)
+        .eq('bracket_id', game.bracket_id)
         .order('match_identifier', { ascending: true })
 
       if (matchData) {
@@ -194,11 +215,11 @@ export default function AdminPage() {
       setMatches([])
     }
 
-    if (hasBracketAdminRole || hasSiteAdminRole) {
+    if ((hasBracketAdminRole || hasSiteAdminRole) && game.game_type === 'bracket' && game.bracket_id) {
       const { data: bracketAdminData } = await supabase
         .from('bracket_admins')
         .select('id, user_id, created_at')
-        .eq('bracket_id', contest.bracket_id)
+        .eq('bracket_id', game.bracket_id)
         .order('created_at', { ascending: true })
 
       if (bracketAdminData) {

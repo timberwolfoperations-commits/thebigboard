@@ -54,6 +54,42 @@ export interface Database {
         }
         Relationships: []
       }
+      games: {
+        Row: {
+          id: string
+          slug: string
+          display_name: string
+          game_type: 'bracket' | 'nfl_survivor'
+          status: 'draft' | 'active' | 'closed' | 'archived'
+          bracket_id: string | null
+          lock_deadline: string | null
+          created_by: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          slug: string
+          display_name: string
+          game_type?: 'bracket' | 'nfl_survivor'
+          status?: 'draft' | 'active' | 'closed' | 'archived'
+          bracket_id?: string | null
+          lock_deadline?: string | null
+          created_by?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          slug?: string
+          display_name?: string
+          game_type?: 'bracket' | 'nfl_survivor'
+          status?: 'draft' | 'active' | 'closed' | 'archived'
+          bracket_id?: string | null
+          lock_deadline?: string | null
+          created_by?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
       bracket_admins: {
         Row: {
           id: string
@@ -108,6 +144,24 @@ export interface Database {
           id?: string
           group_id?: string
           bracket_id?: string
+        }
+        Relationships: []
+      }
+      group_games: {
+        Row: {
+          id: string
+          group_id: string
+          game_id: string
+        }
+        Insert: {
+          id?: string
+          group_id: string
+          game_id: string
+        }
+        Update: {
+          id?: string
+          group_id?: string
+          game_id?: string
         }
         Relationships: []
       }
@@ -247,9 +301,11 @@ export interface Database {
 
 export type Bracket = Database['public']['Tables']['brackets']['Row']
 export type Group = Database['public']['Tables']['groups']['Row']
+export type Game = Database['public']['Tables']['games']['Row']
 export type BracketAdmin = Database['public']['Tables']['bracket_admins']['Row']
 export type SiteAdmin = Database['public']['Tables']['site_admins']['Row']
 export type GroupBracketContest = Database['public']['Tables']['group_bracket_contests']['Row']
+export type GroupGame = Database['public']['Tables']['group_games']['Row']
 export type GroupMembership = Database['public']['Tables']['group_memberships']['Row']
 export type Team = Database['public']['Tables']['teams']['Row']
 export type BracketMatch = Database['public']['Tables']['bracket_matches']['Row']
