@@ -4,8 +4,23 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 
+function sanitizeNextPath(value: string | null): string {
+  if (!value || !value.startsWith('/') || value.startsWith('//')) {
+    return '/dashboard'
+  }
+
+  return value
+}
+
 export default function LoginPage() {
   const router = useRouter()
+  const [nextPath] = useState(() => {
+    if (typeof window === 'undefined') {
+      return '/dashboard'
+    }
+
+    return sanitizeNextPath(new URLSearchParams(window.location.search).get('next'))
+  })
   const [passwordQueryEnabled] = useState(() => {
     if (typeof window === 'undefined') {
       return false
@@ -41,7 +56,9 @@ export default function LoginPage() {
         })
       : await supabase.auth.signInWithOtp({
           email: email.trim(),
-          options: { emailRedirectTo: `${window.location.origin}/auth/callback` },
+          options: {
+            emailRedirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(nextPath)}`,
+          },
         })
 
     setLoading(false)
@@ -50,7 +67,7 @@ export default function LoginPage() {
       setError(authError.message)
     } else {
       if (isPasswordFlow) {
-        router.replace('/dashboard')
+        router.replace(nextPath)
       } else {
         setSent(true)
       }

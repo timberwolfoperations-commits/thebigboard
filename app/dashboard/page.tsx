@@ -45,29 +45,45 @@ export default async function DashboardPage() {
   const { data: { user } } = await supabase.auth.getUser()
 
   let pools: PoolRow[] = []
+  let canAccessGameAdmin = false
 
   if (user) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data } = await (supabase as any)
-      .from('group_memberships')
-      .select(`
-        id,
-        group_id,
-        groups (
+    const [{ data }, { data: siteAdmin }, { data: bracketAdmin }] = await Promise.all([
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (supabase as any)
+        .from('group_memberships')
+        .select(`
           id,
-          name,
-          group_games (
-            game_id,
-            games (
-              slug,
-              display_name,
-              game_type,
-              lock_deadline
+          group_id,
+          groups (
+            id,
+            name,
+            group_games (
+              game_id,
+              games (
+                slug,
+                display_name,
+                game_type,
+                lock_deadline
+              )
             )
           )
-        )
-      `)
-      .eq('user_id', user.id)
+        `)
+        .eq('user_id', user.id),
+      supabase
+        .from('site_admins')
+        .select('id')
+        .eq('user_id', user.id)
+        .maybeSingle(),
+      supabase
+        .from('bracket_admins')
+        .select('id')
+        .eq('user_id', user.id)
+        .limit(1)
+        .maybeSingle(),
+    ])
+
+    canAccessGameAdmin = Boolean(siteAdmin || bracketAdmin)
 
     if (data) {
       pools = (data as MembershipQueryRow[]).flatMap((membership) => {
@@ -94,6 +110,16 @@ export default async function DashboardPage() {
         <span className="text-[11px] font-semibold uppercase tracking-widest text-zinc-500">
           Active Pools
         </span>
+        {canAccessGameAdmin && (
+          <div className="mt-3">
+            <Link
+              href="/dashboard/admin"
+              className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/10 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-widest text-amber-400 ring-1 ring-amber-500/30"
+            >
+              Open Game Admin
+            </Link>
+          </div>
+        )}
       </div>
 
       {/* Pool list */}

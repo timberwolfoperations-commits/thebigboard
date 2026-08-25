@@ -4,8 +4,9 @@ import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import PoolInviteCard from '@/components/PoolInviteCard'
 import { NFL_TEAMS, NFL_TEAMS_BY_ABBR } from '@/lib/nflTeams'
-import type { SurvivorPick, SurvivorGameState } from '@/lib/types'
+import type { SurvivorPick } from '@/lib/types'
 
 interface ParticipantRow {
   userId: string
@@ -25,6 +26,7 @@ export default function SurvivorPage() {
   const [gameId, setGameId] = useState<string | null>(null)
   const [gameDisplayName, setGameDisplayName] = useState('')
   const [groupName, setGroupName] = useState('')
+  const [inviteCode, setInviteCode] = useState('')
   const [currentWeek, setCurrentWeek] = useState(1)
   const [myPicks, setMyPicks] = useState<SurvivorPick[]>([])
   const [participants, setParticipants] = useState<ParticipantRow[]>([])
@@ -49,7 +51,7 @@ export default function SurvivorPage() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: gameData } = await (supabase as any)
       .from('games')
-      .select('id, display_name')
+      .select('id, display_name, current_week')
       .eq('slug', gameSlug)
       .maybeSingle()
 
@@ -61,27 +63,19 @@ export default function SurvivorPage() {
 
     setGameId(gameData.id as string)
     setGameDisplayName(gameData.display_name as string)
+    setCurrentWeek((gameData.current_week as number | null) ?? 1)
 
     // Group name
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: groupData } = await (supabase as any)
       .from('groups')
-      .select('name')
+      .select('name, invite_code')
       .eq('id', groupId)
       .maybeSingle()
-    if (groupData) setGroupName(groupData.name as string)
-
-    // Current week state
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: stateData } = await (supabase as any)
-      .from('survivor_game_state')
-      .select('current_week')
-      .eq('game_id', gameData.id)
-      .eq('group_id', groupId)
-      .maybeSingle()
-
-    const week = (stateData as SurvivorGameState | null)?.current_week ?? 1
-    setCurrentWeek(week)
+    if (groupData) {
+      setGroupName(groupData.name as string)
+      setInviteCode(groupData.invite_code as string)
+    }
 
     // My picks
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -116,7 +110,7 @@ export default function SurvivorPage() {
     const participantList: ParticipantRow[] = members.map((m) => {
       const userPicks = allPicks.filter((p) => p.user_id === m.user_id)
       const isEliminated = userPicks.some((p) => p.result === 'loss')
-      const weekPick = userPicks.find((p) => p.week === week)
+      const weekPick = userPicks.find((p) => p.week === ((gameData.current_week as number | null) ?? 1))
       const isCurrentUser = m.user_id === user.id
       return {
         userId: m.user_id,
@@ -207,7 +201,27 @@ export default function SurvivorPage() {
         </Link>
         <h1 className="text-lg font-bold text-zinc-100 mt-2">{gameDisplayName}</h1>
         <p className="text-xs text-zinc-500">{groupName}</p>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <Link
+            href={`/dashboard/pool/${groupId}/admin`}
+            className="inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-widest text-zinc-300 bg-zinc-800/70 hover:bg-zinc-700/80 rounded-full px-2.5 py-1 transition-colors"
+          >
+            Pool Admin
+          </Link>
+          <Link
+            href="/dashboard/admin"
+            className="inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-widest text-zinc-300 bg-zinc-800/70 hover:bg-zinc-700/80 rounded-full px-2.5 py-1 transition-colors"
+          >
+            Game Admin
+          </Link>
+        </div>
       </div>
+
+      {inviteCode && (
+        <div className="px-4 mt-3">
+          <PoolInviteCard groupName={groupName || gameDisplayName} inviteCode={inviteCode} />
+        </div>
+      )}
 
       {/* Status banner */}
       {isEliminated && (

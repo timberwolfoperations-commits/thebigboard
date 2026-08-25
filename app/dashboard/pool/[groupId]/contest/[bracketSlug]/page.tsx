@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import BracketTree from '@/components/BracketTree'
+import PoolInviteCard from '@/components/PoolInviteCard'
 import Scoreboard from '@/components/Scoreboard'
 import type { BracketMatch, BracketUserPick, Team } from '@/lib/types'
 
@@ -61,6 +62,7 @@ export default function ContestPage() {
   const [gameDisplayName, setGameDisplayName] = useState('')
   const [gameType, setGameType] = useState<'bracket' | 'nfl_survivor'>('bracket')
   const [groupName, setGroupName] = useState('')
+  const [inviteCode, setInviteCode] = useState('')
   const [matches, setMatches] = useState<BracketMatch[]>([])
   const [teams, setTeams] = useState<Team[]>([])
   const [picks, setPicks] = useState<BracketUserPick[]>([])
@@ -230,11 +232,14 @@ export default function ContestPage() {
       // 2. Fetch group name
       const { data: group } = await supabase
         .from('groups')
-        .select('name')
+        .select('name, invite_code')
         .eq('id', groupId)
         .single()
 
-      if (group && !cancelled) setGroupName(group.name)
+      if (group && !cancelled) {
+        setGroupName(group.name)
+        setInviteCode(group.invite_code)
+      }
 
       if (game.game_type !== 'bracket' || !game.bracket_id) {
         if (!cancelled) {
@@ -544,7 +549,13 @@ export default function ContestPage() {
             href={`/dashboard/pool/${groupId}/admin`}
             className="inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-widest text-zinc-300 bg-zinc-800/70 hover:bg-zinc-700/80 rounded-full px-2.5 py-1 transition-colors"
           >
-            Commissioner Panel
+            Pool Admin
+          </Link>
+          <Link
+            href="/dashboard/admin"
+            className="ml-2 inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-widest text-zinc-300 bg-zinc-800/70 hover:bg-zinc-700/80 rounded-full px-2.5 py-1 transition-colors"
+          >
+            Game Admin
           </Link>
         </div>
 
@@ -572,6 +583,12 @@ export default function ContestPage() {
           )}
         </div>
       </div>
+
+      {inviteCode && (
+        <div className="px-4 pt-4">
+          <PoolInviteCard groupName={groupName || gameDisplayName} inviteCode={inviteCode} />
+        </div>
+      )}
 
       {/* STATE A: Locked – show static bracket + scoreboard */}
       {isLocked ? (
@@ -613,7 +630,7 @@ export default function ContestPage() {
           />
             {effectiveMatches.some((match) => !match.home_team_id || !match.away_team_id) && (
               <p className="px-4 mt-3 text-[11px] text-zinc-500">
-                Some matches are missing teams and can&apos;t be picked yet. Use Commissioner Panel to load teams.
+                Some matches are missing teams and can&apos;t be picked yet. Use Game Admin to load teams.
               </p>
             )}
             <div className="px-4 mt-4">

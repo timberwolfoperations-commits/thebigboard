@@ -223,6 +223,8 @@ export default function CreateGroupPage() {
         status: 'active',
         bracket_id: selectedBracket?.id ?? null,
         lock_deadline: selectedBracket?.lock_deadline ?? null,
+        current_week: 1,
+        season_year: gameType === 'nfl_survivor' ? new Date().getFullYear() : null,
         created_by: user.id,
       })
 
@@ -322,7 +324,7 @@ export default function CreateGroupPage() {
                 className="w-full rounded-xl border border-zinc-700 bg-zinc-800/60 px-4 py-3 text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-amber-500/60 focus:border-amber-500/60 transition-colors appearance-none"
               >
                 <option value="bracket">Bracket</option>
-                <option value="nfl_survivor">NFL Survivor (coming soon)</option>
+                <option value="nfl_survivor">NFL Survivor</option>
               </select>
             </div>
 

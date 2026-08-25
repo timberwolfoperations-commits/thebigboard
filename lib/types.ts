@@ -63,6 +63,8 @@ export interface Database {
           status: 'draft' | 'active' | 'closed' | 'archived'
           bracket_id: string | null
           lock_deadline: string | null
+          current_week: number
+          season_year: number | null
           created_by: string | null
           created_at: string
         }
@@ -74,6 +76,8 @@ export interface Database {
           status?: 'draft' | 'active' | 'closed' | 'archived'
           bracket_id?: string | null
           lock_deadline?: string | null
+          current_week?: number
+          season_year?: number | null
           created_by?: string | null
           created_at?: string
         }
@@ -85,6 +89,8 @@ export interface Database {
           status?: 'draft' | 'active' | 'closed' | 'archived'
           bracket_id?: string | null
           lock_deadline?: string | null
+          current_week?: number
+          season_year?: number | null
           created_by?: string | null
           created_at?: string
         }
@@ -348,9 +354,62 @@ export interface Database {
         }
         Relationships: []
       }
+      nfl_matchups: {
+        Row: {
+          id: string
+          season_year: number
+          week: number
+          home_team: string
+          away_team: string
+          kickoff_time: string | null
+          status: 'scheduled' | 'completed'
+          winning_team: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          season_year: number
+          week: number
+          home_team: string
+          away_team: string
+          kickoff_time?: string | null
+          status?: 'scheduled' | 'completed'
+          winning_team?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          season_year?: number
+          week?: number
+          home_team?: string
+          away_team?: string
+          kickoff_time?: string | null
+          status?: 'scheduled' | 'completed'
+          winning_team?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
     }
     Views: Record<string, never>
-    Functions: Record<string, never>
+    Functions: {
+      apply_nfl_week_results: {
+        Args: {
+          target_game_id: string
+          target_week: number
+        }
+        Returns: number
+      }
+      join_group_by_invite: {
+        Args: {
+          invite: string
+        }
+        Returns: string
+      }
+    }
     Enums: Record<string, never>
     CompositeTypes: Record<string, never>
   }
@@ -369,3 +428,4 @@ export type BracketMatch = Database['public']['Tables']['bracket_matches']['Row'
 export type BracketUserPick = Database['public']['Tables']['bracket_user_picks']['Row']
 export type SurvivorPick = Database['public']['Tables']['survivor_picks']['Row']
 export type SurvivorGameState = Database['public']['Tables']['survivor_game_state']['Row']
+export type NflMatchup = Database['public']['Tables']['nfl_matchups']['Row']
