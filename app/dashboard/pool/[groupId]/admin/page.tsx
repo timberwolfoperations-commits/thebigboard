@@ -90,7 +90,7 @@ export default function PoolAdminPage() {
   }, [groupId, router])
 
   useEffect(() => {
-    void loadData()
+    void Promise.resolve().then(loadData)
   }, [loadData])
 
   async function togglePayment(membershipId: string, currentStatus: boolean) {

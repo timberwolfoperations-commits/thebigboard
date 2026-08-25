@@ -7,11 +7,10 @@ import { createClient } from '@/lib/supabase/client'
 import { NFL_TEAMS, NFL_TEAMS_BY_ABBR } from '@/lib/nflTeams'
 import type { BracketAdmin, BracketMatch, Game, NflMatchup, Team } from '@/lib/types'
 
-interface ManagedGame
-  extends Pick<
-    Game,
-    'id' | 'slug' | 'display_name' | 'game_type' | 'status' | 'bracket_id' | 'current_week' | 'season_year'
-  > {}
+type ManagedGame = Pick<
+  Game,
+  'id' | 'slug' | 'display_name' | 'game_type' | 'status' | 'bracket_id' | 'current_week' | 'season_year'
+>
 
 interface MatchEntry extends BracketMatch {
   draftHomeScore: number
@@ -226,11 +225,11 @@ export default function GameAdminPage() {
   }, [selectedGame, selectedWeek])
 
   useEffect(() => {
-    void loadBaseData()
+    void Promise.resolve().then(loadBaseData)
   }, [loadBaseData])
 
   useEffect(() => {
-    void loadSelectedGame()
+    void Promise.resolve().then(loadSelectedGame)
   }, [loadSelectedGame])
 
   function updateDraftScore(matchId: string, field: 'draftHomeScore' | 'draftAwayScore', value: number) {

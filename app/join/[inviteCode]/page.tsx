@@ -32,12 +32,20 @@ export default async function JoinByInvitePage({
 
   const { data: groupGame } = await supabase
     .from('group_games')
-    .select('games ( slug )')
+    .select('game_id')
     .eq('group_id', groupId)
     .limit(1)
     .maybeSingle()
 
-  const slug = (groupGame?.games as { slug: string } | null)?.slug
+  const { data: game } = groupGame?.game_id
+    ? await supabase
+        .from('games')
+        .select('slug')
+        .eq('id', groupGame.game_id)
+        .maybeSingle()
+    : { data: null }
+
+  const slug = game?.slug
   if (!slug) {
     redirect(sanitizeNextPath('/dashboard'))
   }
