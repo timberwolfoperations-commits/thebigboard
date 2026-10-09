@@ -1,0 +1,13 @@
+# NEVER commit real secrets. Copy .env.local.example to .env.local and fill it in.
+.env.local
+.env*.local
+
+node_modules/
+.next/
+out/
+build/
+dist/
+
+.DS_Store
+*.log
+.vercel
