@@ -120,15 +120,8 @@ export default async function GroupPage({ params }: { params: Promise<{ id: stri
 
   return (
     <div className="space-y-8">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="font-display text-4xl font-bold uppercase leading-none tracking-wide">{group.name}</h1>
-          <p className="text-sm text-slate-500">
-            {memberList.length} {memberList.length === 1 ? "member" : "members"}
-            {myRole === "admin" ? " · you're an admin" : ""}
-          </p>
-        </div>
-        <div className="flex shrink-0 gap-2">
+      <div className="space-y-4">
+        <div className="flex justify-center gap-2">
           <CopyButton text={inviteUrl} label="Copy invite link" />
           <Link
             href={`/groups/${id}/bets/new`}
@@ -136,6 +129,13 @@ export default async function GroupPage({ params }: { params: Promise<{ id: stri
           >
             + New bet
           </Link>
+        </div>
+        <div className="text-center">
+          <h1 className="font-display text-4xl font-bold uppercase leading-none tracking-wide">{group.name}</h1>
+          <p className="mt-1 text-sm text-slate-500">
+            {memberList.length} {memberList.length === 1 ? "member" : "members"}
+            {myRole === "admin" ? " · you're an admin" : ""}
+          </p>
         </div>
       </div>
 
