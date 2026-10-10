@@ -1,7 +1,16 @@
 @import "tailwindcss";
 
+@theme inline {
+  --font-display: var(--font-barlow);
+}
+
+@theme {
+  --color-accent: #c2410c;
+  --color-accent-deep: #7c2d12;
+}
+
 body {
-  background-color: #f8fafc;
+  background-color: #faf9f7;
   color: #0f172a;
   -webkit-font-smoothing: antialiased;
 }

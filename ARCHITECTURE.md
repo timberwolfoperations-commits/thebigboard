@@ -120,6 +120,20 @@ exactly one function there. If you want to know "what happens when someone
 approves?", read `approveSettlement` — it's ~20 lines. New features go there
 first, UI second.
 
+## The look (design tokens — don't drift from these)
+
+- **Display font:** Barlow Condensed, via the `font-display` class. Headlines,
+  group names, bet titles, leaderboard numbers, section headers. Body text stays
+  the default sans.
+- **Accent color:** burnt orange (`text-accent` / `bg-accent` / `border-accent`,
+  `#c2410c`). Used sparingly: the leader's points, winner names, section
+  numbers on the landing page. Buttons stay near-black.
+- **No emojis as icons.** The logo is a black square with a "B". If you need an
+  icon, use type or a simple shape.
+- **Voice:** confident, trash-talk-adjacent, never corporate. "No action on the
+  board. Fix that." — not "Nothing running. Start something."
+- Background is warm off-white (`#faf9f7`), not slate gray.
+
 ## The simplicity contract (for future AI help)
 
 Paste this into any AI coding prompt for this repo:

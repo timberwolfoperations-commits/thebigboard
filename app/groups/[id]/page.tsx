@@ -122,7 +122,7 @@ export default async function GroupPage({ params }: { params: Promise<{ id: stri
     <div className="space-y-8">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-black tracking-tight">{group.name}</h1>
+          <h1 className="font-display text-4xl font-bold uppercase leading-none tracking-wide">{group.name}</h1>
           <p className="text-sm text-slate-500">
             {memberList.length} {memberList.length === 1 ? "member" : "members"}
             {myRole === "admin" ? " · you're an admin" : ""}
@@ -142,7 +142,7 @@ export default async function GroupPage({ params }: { params: Promise<{ id: stri
 
       {deadbeats.length > 0 && (
         <div>
-          <SectionTitle>💀 Deadbeat Board</SectionTitle>
+          <SectionTitle>Deadbeat Board</SectionTitle>
           <div className="space-y-2">
             {deadbeats.map((b) => (
               <Link key={b.id} href={`/groups/${id}/bets/${b.id}`}>
@@ -165,7 +165,7 @@ export default async function GroupPage({ params }: { params: Promise<{ id: stri
 
       {disputed.length > 0 && (
         <div>
-          <SectionTitle>🚩 Disputed — needs an admin</SectionTitle>
+          <SectionTitle>Disputed — needs an admin</SectionTitle>
           <div className="space-y-2">
             {disputed.map((b) => (
               <BetRow key={b.id} groupId={id} bet={b} nameOf={nameOf} />
@@ -177,7 +177,7 @@ export default async function GroupPage({ params }: { params: Promise<{ id: stri
       <div>
         <SectionTitle>Open bets</SectionTitle>
         {open.length === 0 ? (
-          <Card><p className="text-sm text-slate-500">Nothing running. Start something.</p></Card>
+          <Card><p className="text-sm text-slate-500">No action on the board. Fix that.</p></Card>
         ) : (
           <div className="space-y-2">{open.map((b) => <BetRow key={b.id} groupId={id} bet={b} nameOf={nameOf} />)}</div>
         )}
@@ -200,14 +200,20 @@ export default async function GroupPage({ params }: { params: Promise<{ id: stri
               key={m.user_id}
               className={`flex items-center justify-between px-5 py-3 ${i > 0 ? "border-t border-slate-100" : ""} ${m.user_id === user.id ? "bg-slate-50" : ""}`}
             >
-              <p className="text-sm font-medium">
-                <span className="mr-2 text-slate-400">{i + 1}</span>
-                {m.name}
-                {m.user_id === user.id && <span className="ml-1 text-xs text-slate-400">(you)</span>}
+              <p className="flex items-baseline gap-2.5">
+                <span className="font-display text-lg font-semibold tabular-nums text-slate-400">{i + 1}</span>
+                <span className="text-sm font-medium">
+                  {m.name}
+                  {m.user_id === user.id && <span className="ml-1 text-xs text-slate-400">(you)</span>}
+                </span>
               </p>
-              <p className="text-sm">
-                <span className="font-bold">{m.points}</span>
-                <span className="text-slate-400"> pts · {m.wins} wins</span>
+              <p className="flex items-baseline gap-1.5">
+                <span className={`font-display text-3xl font-bold tabular-nums leading-none ${i === 0 ? "text-accent" : ""}`}>
+                  {m.points}
+                </span>
+                <span className="text-xs text-slate-400">
+                  pts · {m.wins} {m.wins === 1 ? "win" : "wins"}
+                </span>
               </p>
             </div>
           ))}
@@ -239,13 +245,13 @@ function BetRow({
     <Link href={`/groups/${groupId}/bets/${bet.id}`}>
       <Card className="transition hover:border-slate-400">
         <div className="flex items-center justify-between gap-2">
-          <p className="font-semibold">{bet.title}</p>
+          <p className="font-display text-lg font-semibold uppercase tracking-wide">{bet.title}</p>
           <StatusBadge status={bet.status} />
         </div>
         <p className="mt-1 text-sm text-slate-600">
           {bet.participants.map((p: any) => nameOf(p.user_id)).join(" vs ")} · {bet.points} pts
           {bet.status === "settled" && bet.proposed_winner_id && (
-            <span className="font-semibold text-green-700"> · 🏆 {nameOf(bet.proposed_winner_id)}</span>
+            <span className="font-semibold text-accent"> · {nameOf(bet.proposed_winner_id)} wins</span>
           )}
         </p>
       </Card>

@@ -78,7 +78,7 @@ export default async function NewBetPage({ params }: { params: Promise<{ id: str
             </div>
           </div>
 
-          <SubmitButton>Lock it in 🤝</SubmitButton>
+          <SubmitButton>Lock it in</SubmitButton>
         </form>
       </Card>
     </div>

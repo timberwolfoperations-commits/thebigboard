@@ -28,7 +28,7 @@ export default async function Dashboard() {
         {groups.length === 0 ? (
           <Card>
             <p className="text-sm text-slate-600">
-              No groups yet. Create one for your crew, or paste an invite link
+              No groups. Start one for the crew — or paste an invite link
               from a friend.
             </p>
           </Card>
@@ -38,7 +38,7 @@ export default async function Dashboard() {
               <Link key={g.id} href={`/groups/${g.id}`}>
                 <Card className="transition hover:border-slate-400">
                   <div className="flex items-center justify-between">
-                    <p className="font-semibold">{g.name}</p>
+                    <p className="font-display text-xl font-semibold uppercase tracking-wide">{g.name}</p>
                     {g.role === "admin" && (
                       <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-600">
                         admin

@@ -69,7 +69,7 @@ export default async function BetPage({
 
       <Card>
         <div className="flex items-start justify-between gap-3">
-          <h1 className="text-xl font-black tracking-tight">{detail.title}</h1>
+          <h1 className="font-display text-3xl font-bold uppercase leading-none tracking-wide">{detail.title}</h1>
           <StatusBadge status={detail.status} />
         </div>
         {detail.description && <p className="mt-2 text-sm text-slate-600">{detail.description}</p>}
@@ -92,7 +92,7 @@ export default async function BetPage({
                   </span>
                 )}
                 {detail.status === "settled" && detail.proposed_winner_id === p.user_id && (
-                  <span className="font-semibold text-green-700">🏆 winner</span>
+                  <span className="font-display text-sm font-bold uppercase tracking-wider text-accent">Winner</span>
                 )}
               </div>
             ))}
@@ -170,9 +170,9 @@ export default async function BetPage({
       )}
 
       {detail.status === "settled" && winnerName && (
-        <Card className="border-green-200 bg-green-50">
-          <p className="text-sm font-semibold text-green-800">
-            🏆 {winnerName} takes {detail.points} points.
+        <Card className="border-accent/40 bg-orange-50">
+          <p className="font-display text-2xl font-bold uppercase leading-none tracking-wide">
+            {winnerName} <span className="text-accent">takes {detail.points} pts</span>
           </p>
         </Card>
       )}

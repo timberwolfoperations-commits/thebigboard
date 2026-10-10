@@ -12,7 +12,11 @@ export function Card({ children, className = "" }: { children: ReactNode; classN
 }
 
 export function SectionTitle({ children }: { children: ReactNode }) {
-  return <h2 className="mb-3 text-sm font-bold uppercase tracking-widest text-slate-500">{children}</h2>;
+  return (
+    <h2 className="mb-3 font-display text-xl font-semibold uppercase tracking-wider text-slate-900">
+      {children}
+    </h2>
+  );
 }
 
 export function Field({
