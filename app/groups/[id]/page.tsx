@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { settleOverdueBets } from "@/lib/actions";
 import { GRACE_DAYS } from "@/lib/config";
 import { Card, SectionTitle, StatusBadge } from "@/components/ui";
+import CopyButton from "@/components/copy-button";
 
 function daysOverdue(settleDate: string) {
   const ms = Date.now() - new Date(settleDate + "T23:59:59").getTime();
@@ -135,15 +136,9 @@ export default async function GroupPage({ params }: { params: Promise<{ id: stri
         </Link>
       </div>
 
-      <Card className="bg-slate-50">
-        <p className="text-sm font-medium text-slate-700">Invite link — send it to the crew:</p>
-        <code className="mt-1 block break-all rounded-lg bg-white p-2 text-xs text-slate-600">
-          {inviteUrl}
-        </code>
-        <p className="mt-1 text-xs text-slate-500">
-          Anyone with the link can join. One tap, they&rsquo;re in.
-        </p>
-      </Card>
+      <div className="mb-8">
+        <CopyButton text={inviteUrl} label="Copy invite link" />
+      </div>
 
       {deadbeats.length > 0 && (
         <div>
