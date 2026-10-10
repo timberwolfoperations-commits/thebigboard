@@ -100,6 +100,9 @@ $$;
 -- ------------------------------------------------------- bootstrap actions
 -- Creating and joining groups are the two moments a user is NOT yet a member,
 -- so plain RLS can't authorize them. These functions do it safely instead.
+-- NOTE: OUT parameter names are part of the return type, so CREATE OR REPLACE
+-- cannot rename them — drop first.
+drop function if exists create_group(text);
 create or replace function create_group(p_name text)
 returns table (new_group_id uuid, new_invite_token text)
 language plpgsql security definer set search_path = public as $$
