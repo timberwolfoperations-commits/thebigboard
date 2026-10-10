@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
+import { headers } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
 import {
   proposeOutcome,
@@ -12,6 +13,7 @@ import {
   type BetDetail,
 } from "@/lib/actions";
 import { Card, SectionTitle, Field, inputClass, SubmitButton, DangerButton, StatusBadge } from "@/components/ui";
+import CopyButton from "@/components/copy-button";
 
 export default async function BetPage({
   params,
@@ -61,6 +63,10 @@ export default async function BetPage({
   const dispute = disputeBet.bind(null, betId);
   const accept = respondToBet.bind(null, betId, true);
   const decline = respondToBet.bind(null, betId, false);
+
+  const host = (await headers()).get("host") ?? "";
+  const proto = host.startsWith("localhost") ? "http" : "https";
+  const betInviteUrl = `${proto}://${host}/join/bet/${detail.invite_token}`;
   const forceSettle = adminForceSettle.bind(null, betId);
   const voidBet = adminVoidBet.bind(null, betId);
   const resolveDispute = adminResolveDispute.bind(null, betId);
@@ -80,6 +86,14 @@ export default async function BetPage({
         <p className="mt-3 text-sm text-slate-500">
           {detail.points} points · settles {detail.settle_date}
         </p>
+        {detail.status === "pending" && (
+          <div className="mt-4">
+            <CopyButton text={betInviteUrl} label="Copy bet invite link" />
+            <p className="mt-2 text-xs text-slate-500">
+              Text it to someone — they&rsquo;ll see the bet first and join in one tap.
+            </p>
+          </div>
+        )}
 
         <div className="mt-4">
           <SectionTitle>In the bet</SectionTitle>

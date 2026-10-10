@@ -1,5 +1,6 @@
 "use server";
 
+import { randomBytes } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
@@ -45,6 +46,7 @@ export interface BetDetail {
   description: string | null;
   points: number;
   created_by: string;
+  invite_token: string;
   status: "pending" | "open" | "awaiting" | "settled" | "disputed" | "void";
   settle_date: string;
   proposed_winner_id: string | null;
@@ -129,7 +131,7 @@ export async function createBet(groupId: string, formData: FormData) {
 
   if (!title) throw new Error("Your bet needs a title.");
   if (!settleDate) throw new Error("Pick a settle date.");
-  if (unique.length < 2) throw new Error("A bet needs at least 2 people in it.");
+  if (unique.length < 1) throw new Error("A bet needs at least one person in it.");
 
   // Everyone in the bet must belong to the group.
   const { data: members } = await supabase
@@ -151,6 +153,8 @@ export async function createBet(groupId: string, formData: FormData) {
       created_by: user.id,
       settle_date: settleDate,
       status: "pending",
+      // 12 URL-safe characters — this bet's own invite link.
+      invite_token: randomBytes(9).toString("base64").replace(/\+/g, "-").replace(/\//g, "_"),
     })
     .select("id")
     .single();
@@ -165,6 +169,18 @@ export async function createBet(groupId: string, formData: FormData) {
 
   revalidatePath(`/groups/${groupId}`);
   redirect(`/groups/${groupId}/bets/${bet.id}`);
+}
+
+// Accept a bet invite in one step: joins the group and the bet together,
+// landing the newcomer straight in the bet.
+export async function acceptBetInvite(token: string) {
+  const { supabase } = await getUser();
+  const { data, error } = await supabase.rpc("accept_bet_invite", { p_token: token });
+  if (error) throw new Error(error.message);
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row) throw new Error("Invalid invite link.");
+  revalidatePath(`/groups/${row.new_group_id}`);
+  redirect(`/groups/${row.new_group_id}/bets/${row.new_bet_id}`);
 }
 
 // Accept or decline a pending bet invite. Accepting when everyone is in

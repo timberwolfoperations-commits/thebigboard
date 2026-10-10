@@ -17,8 +17,9 @@ export default async function JoinPage({ params }: { params: Promise<{ token: st
   if (!group) {
     return (
       <Card className="text-center">
-        <p className="text-2xl">🤷</p>
-        <p className="mt-2 font-semibold">That invite link doesn&rsquo;t work.</p>
+        <p className="font-display text-xl font-bold uppercase tracking-wide">
+          That invite link doesn&rsquo;t work.
+        </p>
         <p className="mt-1 text-sm text-slate-600">Ask your friend to send a fresh one.</p>
       </Card>
     );
@@ -27,8 +28,9 @@ export default async function JoinPage({ params }: { params: Promise<{ token: st
   if (!user) {
     return (
       <Card className="text-center">
-        <p className="text-2xl">🎟️</p>
-        <p className="mt-2 text-lg font-bold">You&rsquo;re invited to {group.name}</p>
+        <p className="font-display text-2xl font-bold uppercase leading-tight tracking-wide">
+          You&rsquo;re invited to {group.name}
+        </p>
         <p className="mt-1 text-sm text-slate-600">
           {group.member_count} {group.member_count === 1 ? "person" : "people"} in the group. Sign in to
           claim your seat.
@@ -42,8 +44,7 @@ export default async function JoinPage({ params }: { params: Promise<{ token: st
 
   return (
     <Card className="text-center">
-      <p className="text-2xl">🎟️</p>
-      <p className="mt-2 text-lg font-bold">Join {group.name}?</p>
+      <p className="font-display text-2xl font-bold uppercase leading-tight tracking-wide">Join {group.name}?</p>
       <p className="mt-1 text-sm text-slate-600">
         {group.member_count} {group.member_count === 1 ? "person" : "people"} in the group.
       </p>

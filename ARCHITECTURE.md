@@ -45,6 +45,18 @@ pending → open → awaiting → settled
   an admin picks the winner.
 - **void** — admin cancelled it. Doesn't count.
 
+## Bet invite links (text someone a bet)
+
+Anyone in the group can copy a bet's invite link (on the bet page, while it's
+pending). The link goes to `/join/bet/<token>`, which leads with THE BET —
+title, terms, points, who's in — and one button: **Accept the bet**.
+Accepting joins them to the group *and* the bet in a single atomic step
+(`accept_bet_invite`). No account yet? They sign in with Google first, then
+land right back on the invite.
+
+The bet still only goes live once 2+ participants have all accepted, so a
+bet created by one person stays pending until someone joins via the link.
+
 Two timers run the social pressure, both checked lazily when anyone opens the
 group page (no cron job to babysit):
 
