@@ -5,6 +5,7 @@ import {
   proposeOutcome,
   approveSettlement,
   disputeBet,
+  respondToBet,
   adminForceSettle,
   adminVoidBet,
   adminResolveDispute,
@@ -29,7 +30,7 @@ export default async function BetPage({
   if (!bet) redirect(`/groups/${id}`);
   const { data: parts } = await supabase
     .from("bet_participants")
-    .select("user_id, approved, profiles(display_name)")
+    .select("user_id, approved, accepted, profiles(display_name)")
     .eq("bet_id", betId);
 
   const detail: BetDetail = {
@@ -37,6 +38,7 @@ export default async function BetPage({
     participants: ((parts ?? []) as any[]).map((p) => ({
       user_id: p.user_id,
       approved: p.approved,
+      accepted: p.accepted,
       display_name: p.profiles?.display_name ?? "Player",
     })),
   };
@@ -57,6 +59,8 @@ export default async function BetPage({
   const propose = proposeOutcome.bind(null, betId);
   const approve = approveSettlement.bind(null, betId);
   const dispute = disputeBet.bind(null, betId);
+  const accept = respondToBet.bind(null, betId, true);
+  const decline = respondToBet.bind(null, betId, false);
   const forceSettle = adminForceSettle.bind(null, betId);
   const voidBet = adminVoidBet.bind(null, betId);
   const resolveDispute = adminResolveDispute.bind(null, betId);
@@ -86,6 +90,11 @@ export default async function BetPage({
                   {p.display_name}
                   {p.user_id === user.id && <span className="text-xs text-slate-400"> (you)</span>}
                 </span>
+                {detail.status === "pending" && (
+                  <span className={p.accepted ? "text-green-700" : "text-slate-400"}>
+                    {p.accepted ? "✓ in" : "… hasn't accepted"}
+                  </span>
+                )}
                 {detail.status === "awaiting" && (
                   <span className={p.approved ? "text-green-700" : "text-slate-400"}>
                     {p.approved ? "✓ approved" : "… waiting"}
@@ -99,6 +108,29 @@ export default async function BetPage({
           </div>
         </div>
       </Card>
+
+      {/* ---- pending: waiting for everyone to accept ----------------------- */}
+      {detail.status === "pending" && me && !me.accepted && (
+        <Card className="border-amber-200 bg-amber-50">
+          <SectionTitle>You&rsquo;re invited</SectionTitle>
+          <p className="text-sm text-slate-600">
+            {detail.participants.find((p) => p.user_id === detail.created_by)?.display_name ?? "Someone"}{" "}
+            wants you in this bet. Accept and it&rsquo;s on — the bet goes live once everyone&rsquo;s in.
+          </p>
+          <div className="mt-3 flex gap-2">
+            <form action={accept}>
+              <button className="rounded-full bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white hover:bg-slate-700">
+                Accept the bet
+              </button>
+            </form>
+            <form action={decline}>
+              <button className="rounded-full border border-slate-300 bg-white px-5 py-2.5 text-sm font-semibold text-slate-600 hover:border-slate-400">
+                Decline
+              </button>
+            </form>
+          </div>
+        </Card>
+      )}
 
       {/* ---- settlement: participants ------------------------------------ */}
       {isParticipant && (detail.status === "open" || detail.status === "awaiting") && (

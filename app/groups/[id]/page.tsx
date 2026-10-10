@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { headers } from "next/headers";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { settleOverdueBets } from "@/lib/actions";
+import { settleOverdueBets, respondToBet } from "@/lib/actions";
 import { GRACE_DAYS } from "@/lib/config";
 import { Card, SectionTitle, StatusBadge } from "@/components/ui";
 import CopyButton from "@/components/copy-button";
@@ -59,7 +59,7 @@ export default async function GroupPage({ params }: { params: Promise<{ id: stri
 
   const { data: parts } = await supabase
     .from("bet_participants")
-    .select("bet_id, user_id, approved")
+    .select("bet_id, user_id, approved, accepted")
     .in("bet_id", (bets ?? []).map((b: any) => b.id));
 
   const partsByBet = new Map<string, { user_id: string; approved: boolean }[]>();
@@ -110,6 +110,7 @@ export default async function GroupPage({ params }: { params: Promise<{ id: stri
     .sort((a, b) => b.points - a.points);
 
   const open = betList.filter((b) => b.status === "open");
+  const pending = betList.filter((b) => b.status === "pending");
   const awaiting = betList.filter((b) => b.status === "awaiting");
   const disputed = betList.filter((b) => b.status === "disputed");
   const recentSettled = betList.filter((b) => b.status === "settled").slice(0, 8);
@@ -138,6 +139,17 @@ export default async function GroupPage({ params }: { params: Promise<{ id: stri
           </p>
         </div>
       </div>
+
+      {pending.length > 0 && (
+        <div>
+          <SectionTitle>Pending invites</SectionTitle>
+          <div className="space-y-2">
+            {pending.map((b) => (
+              <PendingBetRow key={b.id} groupId={id} bet={b} nameOf={nameOf} userId={user.id} />
+            ))}
+          </div>
+        </div>
+      )}
 
       {deadbeats.length > 0 && (
         <div>
@@ -228,6 +240,51 @@ export default async function GroupPage({ params }: { params: Promise<{ id: stri
         </div>
       )}
     </div>
+  );
+}
+
+function PendingBetRow({
+  groupId,
+  bet,
+  nameOf,
+  userId,
+}: {
+  groupId: string;
+  bet: any;
+  nameOf: (uid: string) => string;
+  userId: string;
+}) {
+  const accept = respondToBet.bind(null, bet.id, true);
+  const decline = respondToBet.bind(null, bet.id, false);
+  const waitingOn = bet.participants.filter((p: any) => !p.accepted);
+  const imWaiting = waitingOn.some((p: any) => p.user_id === userId);
+
+  return (
+    <Card className="border-amber-200 bg-amber-50">
+      <Link
+        href={`/groups/${groupId}/bets/${bet.id}`}
+        className="font-display text-lg font-semibold uppercase tracking-wide hover:underline"
+      >
+        {bet.title}
+      </Link>
+      <p className="mt-1 text-sm text-slate-600">
+        {bet.points} pts · waiting on {waitingOn.map((p: any) => nameOf(p.user_id)).join(", ")}
+      </p>
+      {imWaiting && (
+        <div className="mt-3 flex gap-2">
+          <form action={accept}>
+            <button className="rounded-full bg-slate-900 px-5 py-2 text-sm font-semibold text-white hover:bg-slate-700">
+              Accept
+            </button>
+          </form>
+          <form action={decline}>
+            <button className="rounded-full border border-slate-300 bg-white px-5 py-2 text-sm font-semibold text-slate-600 hover:border-slate-400">
+              Decline
+            </button>
+          </form>
+        </div>
+      )}
+    </Card>
   );
 }
 

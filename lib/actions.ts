@@ -34,6 +34,7 @@ async function memberRole(
 export interface BetParticipant {
   user_id: string;
   approved: boolean;
+  accepted: boolean;
   display_name: string | null;
 }
 
@@ -44,7 +45,7 @@ export interface BetDetail {
   description: string | null;
   points: number;
   created_by: string;
-  status: "open" | "awaiting" | "settled" | "disputed" | "void";
+  status: "pending" | "open" | "awaiting" | "settled" | "disputed" | "void";
   settle_date: string;
   proposed_winner_id: string | null;
   proposed_by: string | null;
@@ -63,7 +64,7 @@ async function loadBet(betId: string): Promise<BetDetail> {
 
   const { data: parts } = await supabase
     .from("bet_participants")
-    .select("user_id, approved, profiles(display_name)")
+    .select("user_id, approved, accepted, profiles(display_name)")
     .eq("bet_id", betId);
 
   return {
@@ -71,6 +72,7 @@ async function loadBet(betId: string): Promise<BetDetail> {
     participants: ((parts ?? []) as any[]).map((p) => ({
       user_id: p.user_id,
       approved: p.approved,
+      accepted: p.accepted,
       display_name: p.profiles?.display_name ?? "Player",
     })),
   };
@@ -148,19 +150,41 @@ export async function createBet(groupId: string, formData: FormData) {
       points,
       created_by: user.id,
       settle_date: settleDate,
-      status: "open",
+      status: "pending",
     })
     .select("id")
     .single();
   if (error) throw new Error(error.message);
 
+  // The creator proposed it, so they're in. Everyone else gets an invite
+  // to accept — nobody is conscripted into a bet.
   const { error: pErr } = await supabase
     .from("bet_participants")
-    .insert(unique.map((uid) => ({ bet_id: bet.id, user_id: uid })));
+    .insert(unique.map((uid) => ({ bet_id: bet.id, user_id: uid, accepted: uid === user.id })));
   if (pErr) throw new Error(pErr.message);
 
   revalidatePath(`/groups/${groupId}`);
   redirect(`/groups/${groupId}/bets/${bet.id}`);
+}
+
+// Accept or decline a pending bet invite. Accepting when everyone is in
+// flips the bet live; declining removes you (voids the bet if <2 remain).
+export async function respondToBet(betId: string, accept: boolean) {
+  const { supabase } = await getUser();
+  const { data: bet } = await supabase
+    .from("bets")
+    .select("group_id")
+    .eq("id", betId)
+    .single();
+  const { error } = await supabase.rpc("respond_to_bet", {
+    p_bet_id: betId,
+    p_accept: accept,
+  });
+  if (error) throw new Error(error.message);
+  if (bet) {
+    revalidatePath(`/groups/${bet.group_id}`);
+    revalidatePath(`/groups/${bet.group_id}/bets/${betId}`);
+  }
 }
 
 // --------------------------------------------------------------- settlement
@@ -268,6 +292,9 @@ export async function adminForceSettle(betId: string, formData: FormData) {
   const bet = await loadBet(betId);
   const { supabase, user } = await requireAdmin(bet.group_id);
 
+  if (bet.status !== "open" && bet.status !== "awaiting" && bet.status !== "disputed") {
+    throw new Error("Only live bets can be force-settled.");
+  }
   const winnerId = String(formData.get("winner_id") ?? "");
   if (!bet.participants.some((p) => p.user_id === winnerId)) {
     throw new Error("The winner has to be someone in the bet.");

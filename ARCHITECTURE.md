@@ -27,11 +27,14 @@ wallet, no transfers, nothing to cash out — by design.
 ## The bet lifecycle (statuses)
 
 ```
-open → awaiting → settled
-  ↓        ↓
- void    disputed → settled (admin resolves)
+pending → open → awaiting → settled
+  ↓         ↓        ↓
+ void     void    disputed → settled (admin resolves)
 ```
 
+- **pending** — the bet was just created. Nobody is conscripted: each
+  participant accepts (or declines) the invite. Goes live ("open") once
+  everyone's in. Declining removes you; fewer than 2 left voids the bet.
 - **open** — the bet is live. Created with a title, points, settle date, and
   2+ participants.
 - **awaiting** — someone proposed a winner; collecting approvals. The

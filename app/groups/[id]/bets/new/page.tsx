@@ -59,7 +59,7 @@ export default async function NewBetPage({ params }: { params: Promise<{ id: str
 
           <div>
             <span className="mb-1 block text-sm font-medium text-slate-700">
-              Who&rsquo;s in? <span className="font-normal text-slate-500">(the whole group will see it)</span>
+              Who&rsquo;s in? <span className="font-normal text-slate-500">(they&rsquo;ll each get an invite to accept)</span>
             </span>
             <div className="space-y-1 rounded-xl border border-slate-200 p-3">
               {memberList.map((m) => (

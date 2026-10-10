@@ -64,6 +64,7 @@ export function DangerButton({ children }: { children: ReactNode }) {
 }
 
 const statusStyles: Record<string, string> = {
+  pending: "bg-amber-100 text-amber-800",
   open: "bg-blue-100 text-blue-800",
   awaiting: "bg-amber-100 text-amber-800",
   settled: "bg-green-100 text-green-800",
