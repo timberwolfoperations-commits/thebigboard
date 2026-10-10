@@ -128,16 +128,15 @@ export default async function GroupPage({ params }: { params: Promise<{ id: stri
             {myRole === "admin" ? " · you're an admin" : ""}
           </p>
         </div>
-        <Link
-          href={`/groups/${id}/bets/new`}
-          className="shrink-0 rounded-full bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white hover:bg-slate-700"
-        >
-          + New bet
-        </Link>
-      </div>
-
-      <div className="mb-8">
-        <CopyButton text={inviteUrl} label="Copy invite link" />
+        <div className="flex shrink-0 gap-2">
+          <CopyButton text={inviteUrl} label="Copy invite link" />
+          <Link
+            href={`/groups/${id}/bets/new`}
+            className="shrink-0 rounded-full bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white hover:bg-slate-700"
+          >
+            + New bet
+          </Link>
+        </div>
       </div>
 
       {deadbeats.length > 0 && (
