@@ -7,6 +7,10 @@
 --   bet Danny and Adam without the whole group competing.
 --   Points are a lifetime tally per group, never a currency: winners earn
 --   them, nothing moves between people, nothing can be cashed out.
+--
+-- Safe to re-run: every statement is IF NOT EXISTS / CREATE OR REPLACE.
+
+create extension if not exists pgcrypto;
 
 -- ---------------------------------------------------------------- profiles
 create table if not exists profiles (
@@ -106,6 +110,10 @@ begin
   if auth.uid() is null then raise exception 'Not authenticated'; end if;
   if p_name is null or length(trim(p_name)) = 0 then raise exception 'Group name required'; end if;
 
+  -- Make sure the caller has a profile row (covers accounts created before
+  -- the auto-profile trigger existed).
+  insert into profiles (id) values (auth.uid()) on conflict (id) do nothing;
+
   -- 12 URL-safe characters, e.g. "aB3_dEf9Gh1j"
   v_token := translate(encode(gen_random_bytes(9), 'base64'), '+/', '-_');
 
@@ -192,6 +200,12 @@ drop trigger if exists on_auth_user_created on auth.users;
 create trigger on_auth_user_created
   after insert on auth.users
   for each row execute function handle_new_user();
+
+-- Backfill: anyone who signed up before the trigger above existed gets a
+-- profile row now (prevents foreign-key failures on group/bet creation).
+insert into public.profiles (id)
+select id from auth.users
+on conflict (id) do nothing;
 
 -- --------------------------------------------------------------------- RLS
 alter table profiles enable row level security;
