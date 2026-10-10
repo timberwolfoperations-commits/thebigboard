@@ -14,6 +14,18 @@ const barlow = Barlow_Condensed({
 export const metadata: Metadata = {
   title: "The Big Board",
   description: "Friendly bets, settled properly. The unbreakable contract for friend groups.",
+  openGraph: {
+    title: "The Big Board",
+    description:
+      "Bet your friends on anything. Written down, both sides sign off, points live forever.",
+    type: "website",
+  },
+  twitter: {
+    card: "summary",
+    title: "The Big Board",
+    description:
+      "Bet your friends on anything. Written down, both sides sign off, points live forever.",
+  },
 };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
