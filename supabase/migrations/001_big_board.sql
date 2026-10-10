@@ -105,7 +105,8 @@ $$;
 drop function if exists create_group(text);
 create or replace function create_group(p_name text)
 returns table (new_group_id uuid, new_invite_token text)
-language plpgsql security definer set search_path = public as $$
+-- extensions schema added so gen_random_bytes() resolves wherever pgcrypto lives
+language plpgsql security definer set search_path = public, extensions as $$
 declare
   v_id uuid;
   v_token text;
