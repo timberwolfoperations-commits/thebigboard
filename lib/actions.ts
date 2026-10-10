@@ -92,7 +92,7 @@ export async function createGroup(formData: FormData) {
   const { data, error } = await supabase.rpc("create_group", { p_name: name });
   if (error) throw new Error(error.message);
   const row = Array.isArray(data) ? data[0] : data;
-  redirect(`/groups/${row.id}`);
+  redirect(`/groups/${row.new_group_id}`);
 }
 
 export async function joinGroup(formData: FormData) {

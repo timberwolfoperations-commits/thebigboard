@@ -101,7 +101,7 @@ $$;
 -- Creating and joining groups are the two moments a user is NOT yet a member,
 -- so plain RLS can't authorize them. These functions do it safely instead.
 create or replace function create_group(p_name text)
-returns table (id uuid, invite_token text)
+returns table (new_group_id uuid, new_invite_token text)
 language plpgsql security definer set search_path = public as $$
 declare
   v_id uuid;
