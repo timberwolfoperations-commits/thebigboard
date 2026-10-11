@@ -115,6 +115,21 @@ export default async function GroupPage({ params }: { params: Promise<{ id: stri
   const disputed = betList.filter((b) => b.status === "disputed");
   const recentSettled = betList.filter((b) => b.status === "settled").slice(0, 8);
 
+  // ---- roster pools -------------------------------------------------------
+  const { data: pools } = await supabase
+    .from("pools")
+    .select("id, name, budget, roster_size, lock_at")
+    .eq("group_id", id)
+    .order("created_at", { ascending: false });
+  const { data: poolEntries } = await supabase
+    .from("pool_entries")
+    .select("pool_id")
+    .in("pool_id", (pools ?? []).map((p: any) => p.id));
+  const entriesByPool = new Map<string, number>();
+  for (const e of (poolEntries ?? []) as any[]) {
+    entriesByPool.set(e.pool_id, (entriesByPool.get(e.pool_id) ?? 0) + 1);
+  }
+
   const host = (await headers()).get("host") ?? "";
   const proto = host.startsWith("localhost") ? "http" : "https";
   const inviteUrl = `${proto}://${host}/join/${group.invite_token}`;
@@ -129,6 +144,12 @@ export default async function GroupPage({ params }: { params: Promise<{ id: stri
             className="shrink-0 rounded-full bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white hover:bg-slate-700"
           >
             + New bet
+          </Link>
+          <Link
+            href={`/groups/${id}/pools/new`}
+            className="shrink-0 rounded-full border border-slate-900 px-5 py-2.5 text-sm font-semibold text-slate-900 hover:bg-slate-100"
+          >
+            + New pool
           </Link>
         </div>
         <div className="text-center">
@@ -193,6 +214,37 @@ export default async function GroupPage({ params }: { params: Promise<{ id: stri
           <div className="space-y-2">{open.map((b) => <BetRow key={b.id} groupId={id} bet={b} nameOf={nameOf} />)}</div>
         )}
       </div>
+
+      {((pools ?? []) as any[]).length > 0 && (
+        <div>
+          <SectionTitle>Pools</SectionTitle>
+          <div className="space-y-2">
+            {((pools ?? []) as any[]).map((p: any) => {
+              const locked = new Date(p.lock_at).getTime() <= Date.now();
+              const n = entriesByPool.get(p.id) ?? 0;
+              return (
+                <Link key={p.id} href={`/groups/${id}/pools/${p.id}`}>
+                  <Card className="transition hover:border-slate-400">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="font-display text-lg font-semibold uppercase tracking-wide">{p.name}</p>
+                      <span
+                        className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+                          locked ? "bg-slate-100 text-slate-500" : "bg-blue-100 text-blue-800"
+                        }`}
+                      >
+                        {locked ? "locked" : "open"}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-sm text-slate-600">
+                      ${p.budget} cap · {p.roster_size} players · {n} {n === 1 ? "entry" : "entries"}
+                    </p>
+                  </Card>
+                </Link>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {awaiting.length > 0 && (
         <div>

@@ -351,6 +351,166 @@ export async function adminResolveDispute(betId: string, formData: FormData) {
   await adminForceSettle(betId, formData);
 }
 
+// ------------------------------------------------------------- roster pools
+// One flexible pool type for salary-cap player games (MLB showdown, NFL
+// dollar-limit weeks, anything). The app is the ledger: the commish enters
+// per-game points later — no scoring engine, no per-sport logic.
+
+export interface PoolPlayer {
+  id: string;
+  name: string;
+  team: string;
+  salary: number;
+}
+
+// datetime-local has no timezone; the app is Eastern-first for v1.
+function parseEasternLock(raw: string): Date {
+  const d = new Date(`${raw}:00-04:00`); // EDT (Oct). Revisit in EST.
+  if (isNaN(d.getTime())) throw new Error("That lock time doesn't parse.");
+  return d;
+}
+
+async function loadPool(poolId: string) {
+  const { supabase } = await getUser();
+  const { data: pool, error } = await supabase
+    .from("pools")
+    .select("*")
+    .eq("id", poolId)
+    .single();
+  if (error || !pool) throw new Error("Pool not found.");
+  return { supabase, pool: pool as any };
+}
+
+export async function createPool(groupId: string, formData: FormData) {
+  const { supabase, user } = await getUser();
+  await memberRole(supabase, groupId, user.id);
+
+  const name = String(formData.get("name") ?? "").trim();
+  const budget = parseInt(String(formData.get("budget") ?? "30"), 10);
+  const rosterSize = parseInt(String(formData.get("roster_size") ?? "3"), 10);
+  const lockAt = parseEasternLock(String(formData.get("lock_at") ?? ""));
+
+  if (!name) throw new Error("Give your pool a name.");
+  if (!(budget > 0)) throw new Error("Budget has to be positive.");
+  if (!(rosterSize > 0)) throw new Error("Roster size has to be positive.");
+  if (lockAt.getTime() <= Date.now()) throw new Error("Lock time has to be in the future.");
+
+  const { data, error } = await supabase
+    .from("pools")
+    .insert({
+      group_id: groupId,
+      name,
+      budget,
+      roster_size: rosterSize,
+      lock_at: lockAt.toISOString(),
+      created_by: user.id,
+    })
+    .select("id")
+    .single();
+  if (error) throw new Error(error.message);
+
+  revalidatePath(`/groups/${groupId}`);
+  redirect(`/groups/${groupId}/pools/${data.id}`);
+}
+
+// Commish pastes the player list: one per line, "Name, TEAM, salary".
+export async function addPoolPlayers(poolId: string, formData: FormData) {
+  const { supabase, user } = await getUser();
+  const { pool } = await loadPool(poolId);
+  await memberRole(supabase, pool.group_id, user.id);
+  if (new Date(pool.lock_at).getTime() <= Date.now()) {
+    throw new Error("This pool is locked.");
+  }
+
+  const raw = String(formData.get("players") ?? "");
+  const rows = raw
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const parts = line.split(",").map((s) => s.trim());
+      if (parts.length < 3) throw new Error(`Can't parse: "${line}" — use Name, TEAM, salary.`);
+      const salary = parseInt(parts[2], 10);
+      if (!parts[0] || !(salary >= 0)) throw new Error(`Can't parse: "${line}".`);
+      return { pool_id: poolId, name: parts[0], team: parts[1], salary };
+    });
+  if (rows.length === 0) throw new Error("Paste at least one player.");
+
+  const { error } = await supabase.from("pool_players").insert(rows);
+  if (error) throw new Error(error.message);
+
+  revalidatePath(`/groups/${pool.group_id}/pools/${poolId}`);
+}
+
+// Pick your roster. Server validates everything — the picker UI is just UX.
+export async function submitEntry(poolId: string, formData: FormData) {
+  const { supabase, user } = await getUser();
+  const { pool } = await loadPool(poolId);
+  await memberRole(supabase, pool.group_id, user.id);
+  if (new Date(pool.lock_at).getTime() <= Date.now()) {
+    throw new Error("Picks are locked.");
+  }
+
+  const ids = [...new Set(formData.getAll("players").map(String))].filter(Boolean);
+  if (ids.length !== pool.roster_size) {
+    throw new Error(`Pick exactly ${pool.roster_size} players.`);
+  }
+
+  const { data: players } = await supabase
+    .from("pool_players")
+    .select("id, salary")
+    .eq("pool_id", poolId)
+    .in("id", ids);
+  if (!players || players.length !== ids.length) {
+    throw new Error("One of those players isn't in this pool.");
+  }
+  const spent = (players as any[]).reduce((s, p) => s + p.salary, 0);
+  if (spent > pool.budget) {
+    throw new Error(`That's $${spent} — over the $${pool.budget} cap.`);
+  }
+
+  const { data: existing } = await supabase
+    .from("pool_entries")
+    .select("id")
+    .eq("pool_id", poolId)
+    .eq("user_id", user.id)
+    .maybeSingle();
+  if (existing) throw new Error("You've already got an entry — delete it to change picks.");
+
+  const { data: entry, error: eErr } = await supabase
+    .from("pool_entries")
+    .insert({ pool_id: poolId, user_id: user.id })
+    .select("id")
+    .single();
+  if (eErr) throw new Error(eErr.message);
+
+  const { error: pErr } = await supabase
+    .from("pool_entry_picks")
+    .insert(ids.map((pid) => ({ entry_id: entry.id, player_id: pid })));
+  if (pErr) {
+    await supabase.from("pool_entries").delete().eq("id", entry.id);
+    throw new Error(pErr.message);
+  }
+
+  revalidatePath(`/groups/${pool.group_id}/pools/${poolId}`);
+}
+
+// Change picks before lock: delete your entry, then submit again.
+export async function deleteEntry(poolId: string) {
+  const { supabase, user } = await getUser();
+  const { pool } = await loadPool(poolId);
+  if (new Date(pool.lock_at).getTime() <= Date.now()) {
+    throw new Error("Picks are locked.");
+  }
+  const { error } = await supabase
+    .from("pool_entries")
+    .delete()
+    .eq("pool_id", poolId)
+    .eq("user_id", user.id);
+  if (error) throw new Error(error.message);
+  revalidatePath(`/groups/${pool.group_id}/pools/${poolId}`);
+}
+
 // ------------------------------------------- overdue sweep (lazy auto-settle)
 
 // Called when a group page loads. No cron needed: the first visitor after the
