@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { createPool } from "@/lib/actions";
+import { defaultPoolRules } from "@/lib/config";
 import { Card, SectionTitle, Field, inputClass, SubmitButton } from "@/components/ui";
 
 function todayAt8pmET(): string {
@@ -50,9 +51,9 @@ export default async function NewPoolPage({ params }: { params: Promise<{ id: st
           <Field label="Rules (shown to everyone)">
             <textarea
               name="description"
-              rows={4}
+              rows={7}
               maxLength={2000}
-              placeholder={"Pick 5 players under $40. Scoring — hitters: 1/2/3/4 per hit, +1 run, +1 RBI, +2 SB, +1 BB. Pitchers: 1 per K, 1 per IP, +5 win, +4 save. Most points wins."}
+              defaultValue={defaultPoolRules(3, 30)}
               className={inputClass}
             />
           </Field>

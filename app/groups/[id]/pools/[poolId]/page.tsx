@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { addPoolPlayers, deleteEntry, updatePool } from "@/lib/actions";
+import { defaultPoolRules } from "@/lib/config";
 import { Card, SectionTitle, Field, inputClass, SubmitButton, DangerButton } from "@/components/ui";
 import PoolEntryPicker from "@/components/pool-entry-picker";
 
@@ -109,10 +110,9 @@ export default async function PoolPage({
             <Field label="Rules (shown to everyone)">
               <textarea
                 name="description"
-                rows={6}
+                rows={7}
                 maxLength={2000}
-                defaultValue={pool.description ?? ""}
-                placeholder={"Pick 5 players under $40. Scoring: ..."}
+                defaultValue={pool.description ?? defaultPoolRules(pool.roster_size, pool.budget)}
                 className={inputClass}
               />
             </Field>
