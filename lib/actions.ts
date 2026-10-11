@@ -386,6 +386,7 @@ export async function createPool(groupId: string, formData: FormData) {
   await memberRole(supabase, groupId, user.id);
 
   const name = String(formData.get("name") ?? "").trim();
+  const description = String(formData.get("description") ?? "").trim() || null;
   const budget = parseInt(String(formData.get("budget") ?? "30"), 10);
   const rosterSize = parseInt(String(formData.get("roster_size") ?? "3"), 10);
   const lockAt = parseEasternLock(String(formData.get("lock_at") ?? ""));
@@ -400,6 +401,7 @@ export async function createPool(groupId: string, formData: FormData) {
     .insert({
       group_id: groupId,
       name,
+      description,
       budget,
       roster_size: rosterSize,
       lock_at: lockAt.toISOString(),
@@ -508,6 +510,48 @@ export async function deleteEntry(poolId: string) {
     .eq("pool_id", poolId)
     .eq("user_id", user.id);
   if (error) throw new Error(error.message);
+  revalidatePath(`/groups/${pool.group_id}/pools/${poolId}`);
+}
+
+// Change the setup before anyone's entered (and before lock). Once
+// entries exist the setup is frozen — otherwise you'd invalidate picks.
+export async function updatePool(poolId: string, formData: FormData) {
+  const { supabase, user } = await getUser();
+  const { pool } = await loadPool(poolId);
+  if (pool.created_by !== user.id) throw new Error("Only the commish can edit this.");
+  if (new Date(pool.lock_at).getTime() <= Date.now()) {
+    throw new Error("Picks are locked — no more changes.");
+  }
+
+  const { count } = await supabase
+    .from("pool_entries")
+    .select("id", { count: "exact", head: true })
+    .eq("pool_id", poolId);
+  if ((count ?? 0) > 0) throw new Error("Entries are in — the setup is frozen now.");
+
+  const name = String(formData.get("name") ?? "").trim();
+  const description = String(formData.get("description") ?? "").trim() || null;
+  const budget = parseInt(String(formData.get("budget") ?? "0"), 10);
+  const rosterSize = parseInt(String(formData.get("roster_size") ?? "0"), 10);
+  const lockAt = parseEasternLock(String(formData.get("lock_at") ?? ""));
+
+  if (!name) throw new Error("Give your pool a name.");
+  if (!(budget > 0)) throw new Error("Budget has to be positive.");
+  if (!(rosterSize > 0)) throw new Error("Roster size has to be positive.");
+  if (lockAt.getTime() <= Date.now()) throw new Error("Lock time has to be in the future.");
+
+  const { error } = await supabase
+    .from("pools")
+    .update({
+      name,
+      description,
+      budget,
+      roster_size: rosterSize,
+      lock_at: lockAt.toISOString(),
+    })
+    .eq("id", poolId);
+  if (error) throw new Error(error.message);
+
   revalidatePath(`/groups/${pool.group_id}/pools/${poolId}`);
 }
 

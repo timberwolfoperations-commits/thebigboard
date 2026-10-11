@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { addPoolPlayers, deleteEntry } from "@/lib/actions";
+import { addPoolPlayers, deleteEntry, updatePool } from "@/lib/actions";
 import { Card, SectionTitle, Field, inputClass, SubmitButton, DangerButton } from "@/components/ui";
 import PoolEntryPicker from "@/components/pool-entry-picker";
 
@@ -12,6 +12,13 @@ function fmtLock(iso: string): string {
     hour: "numeric",
     minute: "2-digit",
   });
+}
+
+// lock_at (UTC) -> datetime-local value in Eastern.
+function etInputValue(iso: string): string {
+  const d = new Date(new Date(iso).toLocaleString("en-US", { timeZone: "America/New_York" }));
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
 export default async function PoolPage({
@@ -58,9 +65,11 @@ export default async function PoolPage({
   const myEntry = entryList.find((e) => e.user_id === user.id);
   const myPicks = myEntry ? (picksByEntry.get(myEntry.id) ?? []) : [];
   const locked = new Date(pool.lock_at).getTime() <= Date.now();
+  const isCommish = pool.created_by === user.id;
 
   const addPlayers = addPoolPlayers.bind(null, poolId);
   const removeEntry = deleteEntry.bind(null, poolId);
+  const savePool = updatePool.bind(null, poolId);
 
   return (
     <div className="space-y-6">
@@ -82,6 +91,46 @@ export default async function PoolPage({
           )}
         </p>
       </div>
+
+      {pool.description && (
+        <Card>
+          <SectionTitle>How it works</SectionTitle>
+          <p className="whitespace-pre-wrap text-sm text-slate-700">{pool.description}</p>
+        </Card>
+      )}
+
+      {isCommish && !locked && entryList.length === 0 && (
+        <Card>
+          <SectionTitle>Edit pool</SectionTitle>
+          <form action={savePool} className="space-y-4">
+            <Field label="Name">
+              <input name="name" required maxLength={120} defaultValue={pool.name} className={inputClass} />
+            </Field>
+            <Field label="Rules (shown to everyone)">
+              <textarea
+                name="description"
+                rows={6}
+                maxLength={2000}
+                defaultValue={pool.description ?? ""}
+                placeholder={"Pick 5 players under $40. Scoring: ..."}
+                className={inputClass}
+              />
+            </Field>
+            <div className="grid grid-cols-2 gap-4">
+              <Field label="Salary cap ($)">
+                <input name="budget" type="number" min={1} max={10000} defaultValue={pool.budget} className={inputClass} />
+              </Field>
+              <Field label="Players per entry">
+                <input name="roster_size" type="number" min={1} max={20} defaultValue={pool.roster_size} className={inputClass} />
+              </Field>
+            </div>
+            <Field label="Picks lock (Eastern)">
+              <input name="lock_at" type="datetime-local" required defaultValue={etInputValue(pool.lock_at)} className={inputClass} />
+            </Field>
+            <SubmitButton>Save changes</SubmitButton>
+          </form>
+        </Card>
+      )}
 
       {playerList.length === 0 ? (
         <Card>

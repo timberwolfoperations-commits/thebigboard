@@ -47,6 +47,16 @@ export default async function NewPoolPage({ params }: { params: Promise<{ id: st
             />
           </Field>
 
+          <Field label="Rules (shown to everyone)">
+            <textarea
+              name="description"
+              rows={4}
+              maxLength={2000}
+              placeholder={"Pick 5 players under $40. Scoring — hitters: 1/2/3/4 per hit, +1 run, +1 RBI, +2 SB, +1 BB. Pitchers: 1 per K, 1 per IP, +5 win, +4 save. Most points wins."}
+              className={inputClass}
+            />
+          </Field>
+
           <div className="grid grid-cols-2 gap-4">
             <Field label="Salary cap ($)">
               <input name="budget" type="number" min={1} max={10000} defaultValue={30} className={inputClass} />
