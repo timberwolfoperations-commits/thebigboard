@@ -555,6 +555,41 @@ export async function updatePool(poolId: string, formData: FormData) {
   revalidatePath(`/groups/${pool.group_id}/pools/${poolId}`);
 }
 
+// Commish enters one number per player per game. Upsert, so re-saving a
+// game just overwrites it. Only after lock — no scores before first pitch.
+export async function enterScores(poolId: string, formData: FormData) {
+  const { supabase, user } = await getUser();
+  const { pool } = await loadPool(poolId);
+  if (pool.created_by !== user.id) throw new Error("Only the commish enters scores.");
+  if (new Date(pool.lock_at).getTime() > Date.now()) {
+    throw new Error("Picks aren't locked yet.");
+  }
+
+  const gameNumber = Math.max(1, parseInt(String(formData.get("game_number") ?? "1"), 10) || 1);
+
+  const { data: players } = await supabase
+    .from("pool_players")
+    .select("id")
+    .eq("pool_id", poolId);
+  const rows = ((players ?? []) as any[])
+    .map((p) => {
+      const raw = formData.get(`score_${p.id}`);
+      if (raw === null || String(raw).trim() === "") return null;
+      const points = parseInt(String(raw), 10);
+      if (!(points >= 0)) throw new Error("Points can't be negative.");
+      return { pool_id: poolId, player_id: p.id, game_number: gameNumber, points };
+    })
+    .filter((r): r is NonNullable<typeof r> => r !== null);
+  if (rows.length === 0) throw new Error("Enter at least one score.");
+
+  const { error } = await supabase
+    .from("pool_scores")
+    .upsert(rows, { onConflict: "pool_id,player_id,game_number" });
+  if (error) throw new Error(error.message);
+
+  revalidatePath(`/groups/${pool.group_id}/pools/${poolId}`);
+}
+
 // ------------------------------------------- overdue sweep (lazy auto-settle)
 
 // Called when a group page loads. No cron needed: the first visitor after the

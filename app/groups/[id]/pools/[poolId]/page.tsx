@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { addPoolPlayers, deleteEntry, updatePool } from "@/lib/actions";
+import { addPoolPlayers, deleteEntry, updatePool, enterScores } from "@/lib/actions";
 import { defaultPoolRules } from "@/lib/config";
 import { Card, SectionTitle, Field, inputClass, SubmitButton, DangerButton } from "@/components/ui";
 import PoolEntryPicker from "@/components/pool-entry-picker";
@@ -68,9 +68,36 @@ export default async function PoolPage({
   const locked = new Date(pool.lock_at).getTime() <= Date.now();
   const isCommish = pool.created_by === user.id;
 
+  const { data: scores } = await supabase
+    .from("pool_scores")
+    .select("player_id, game_number, points")
+    .eq("pool_id", poolId);
+  const scoreList = (scores ?? []) as any[];
+  const pointsByPlayer = new Map<string, number>();
+  const scoresByGame = new Map<number, Map<string, number>>();
+  for (const s of scoreList) {
+    pointsByPlayer.set(s.player_id, (pointsByPlayer.get(s.player_id) ?? 0) + s.points);
+    if (!scoresByGame.has(s.game_number)) scoresByGame.set(s.game_number, new Map());
+    scoresByGame.get(s.game_number)!.set(s.player_id, s.points);
+  }
+  const games = [...scoresByGame.keys()].sort((a, b) => a - b);
+  const nextGame = games.length > 0 ? games[games.length - 1] + 1 : 1;
+
+  const board = entryList
+    .map((e: any) => ({
+      ...e,
+      picks: picksByEntry.get(e.id) ?? [],
+      total: (picksByEntry.get(e.id) ?? []).reduce(
+        (sum: number, p: any) => sum + (pointsByPlayer.get(p.id) ?? 0),
+        0
+      ),
+    }))
+    .sort((a: any, b: any) => b.total - a.total);
+
   const addPlayers = addPoolPlayers.bind(null, poolId);
   const removeEntry = deleteEntry.bind(null, poolId);
   const savePool = updatePool.bind(null, poolId);
+  const saveScores = enterScores.bind(null, poolId);
 
   return (
     <div className="space-y-6">
@@ -178,22 +205,28 @@ export default async function PoolPage({
           )}
 
           <div>
-            <SectionTitle>Who&rsquo;s in</SectionTitle>
-            {entryList.length === 0 ? (
+            <SectionTitle>Leaderboard</SectionTitle>
+            {board.length === 0 ? (
               <Card>
                 <p className="text-sm text-slate-500">No entries yet. Be the first.</p>
               </Card>
             ) : (
               <div className="space-y-2">
-                {entryList.map((e: any) => (
-                  <Card key={e.id}>
-                    <p className="font-semibold">
-                      {e.profiles?.display_name ?? "Player"}
-                      {e.user_id === user.id && <span className="ml-1 text-xs text-slate-400">(you)</span>}
-                    </p>
+                {board.map((e: any, i: number) => (
+                  <Card key={e.id} className={e.user_id === user.id ? "border-slate-400" : ""}>
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="font-semibold">
+                        <span className="mr-2 font-display text-lg tabular-nums text-slate-400">{i + 1}</span>
+                        {e.profiles?.display_name ?? "Player"}
+                        {e.user_id === user.id && <span className="ml-1 text-xs text-slate-400">(you)</span>}
+                      </p>
+                      <p className="font-display text-3xl font-bold tabular-nums leading-none">
+                        {e.total}
+                      </p>
+                    </div>
                     <p className="mt-1 text-sm text-slate-600">
-                      {(picksByEntry.get(e.id) ?? [])
-                        .map((p: any) => `${p.name} ($${p.salary})`)
+                      {e.picks
+                        .map((p: any) => `${p.name} (${pointsByPlayer.get(p.id) ?? 0})`)
                         .join(" · ")}
                     </p>
                   </Card>
@@ -201,6 +234,41 @@ export default async function PoolPage({
               </div>
             )}
           </div>
+
+          {isCommish && locked && playerList.length > 0 && (
+            <div>
+              <SectionTitle>Enter scores</SectionTitle>
+              <div className="space-y-4">
+                {[...games, nextGame].map((g) => (
+                  <Card key={g}>
+                    <form action={saveScores} className="space-y-3">
+                      <input type="hidden" name="game_number" value={g} />
+                      <p className="font-semibold">
+                        Game {g}
+                        {games.includes(g) && <span className="ml-2 text-xs font-normal text-slate-400">(saved — re-save to correct)</span>}
+                      </p>
+                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                        {playerList.map((p: any) => (
+                          <label key={p.id} className="flex items-center gap-2 text-sm">
+                            <span className="flex-1 truncate">{p.name}</span>
+                            <input
+                              name={`score_${p.id}`}
+                              type="number"
+                              min={0}
+                              placeholder="0"
+                              defaultValue={scoresByGame.get(g)?.get(p.id) ?? ""}
+                              className={`${inputClass} w-20`}
+                            />
+                          </label>
+                        ))}
+                      </div>
+                      <SubmitButton>Save game {g} scores</SubmitButton>
+                    </form>
+                  </Card>
+                ))}
+              </div>
+            </div>
+          )}
         </>
       )}
     </div>
