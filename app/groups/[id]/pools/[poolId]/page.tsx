@@ -1,8 +1,8 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { addPoolPlayers, deleteEntry, updatePool, enterStatLines, calcPoints } from "@/lib/actions";
-import { defaultPoolRules, defaultScoringFormula } from "@/lib/config";
+import { addPoolPlayers, deleteEntry, updatePool, enterStatLines } from "@/lib/actions";
+import { defaultPoolRules, defaultScoringFormula, calcPoints } from "@/lib/config";
 import { Card, SectionTitle, Field, inputClass, SubmitButton, DangerButton } from "@/components/ui";
 import PoolEntryPicker from "@/components/pool-entry-picker";
 

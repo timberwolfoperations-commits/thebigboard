@@ -364,7 +364,7 @@ export interface PoolPlayer {
   salary: number;
 }
 
-export type ScoringFormula = Record<string, number>;
+import { parseScoringFormula, type ScoringFormula } from "./config";
 
 // Lines of "STAT, points per unit" — same paste pattern as the player list.
 export function parseScoringFormula(raw: string): ScoringFormula {
