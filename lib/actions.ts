@@ -366,32 +366,6 @@ export interface PoolPlayer {
 
 import { parseScoringFormula, type ScoringFormula } from "./config";
 
-// Lines of "STAT, points per unit" — same paste pattern as the player list.
-export function parseScoringFormula(raw: string): ScoringFormula {
-  const formula: ScoringFormula = {};
-  for (const line of raw.split("\n")) {
-    const t = line.trim();
-    if (!t) continue;
-    const parts = t.split(",").map((s) => s.trim());
-    if (parts.length < 2) throw new Error(`Can't parse formula line: "${line}" — use STAT, points.`);
-    const key = parts[0].toUpperCase();
-    const val = parseFloat(parts[1]);
-    if (!key || !(val >= 0)) throw new Error(`Can't parse formula line: "${line}".`);
-    if (formula[key] !== undefined) throw new Error(`Duplicate stat in formula: ${key}.`);
-    formula[key] = val;
-  }
-  if (Object.keys(formula).length === 0) throw new Error("The scoring formula needs at least one stat.");
-  return formula;
-}
-
-export function calcPoints(stats: Record<string, number>, formula: ScoringFormula): number {
-  let total = 0;
-  for (const [k, v] of Object.entries(stats)) {
-    total += (formula[k.toUpperCase()] ?? 0) * v;
-  }
-  return Math.round(total * 100) / 100;
-}
-
 // datetime-local has no timezone; the app is Eastern-first for v1.
 function parseEasternLock(raw: string): Date {
   const d = new Date(`${raw}:00-04:00`); // EDT (Oct). Revisit in EST.
