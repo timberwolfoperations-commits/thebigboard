@@ -353,14 +353,43 @@ export async function adminResolveDispute(betId: string, formData: FormData) {
 
 // ------------------------------------------------------------- roster pools
 // One flexible pool type for salary-cap player games (MLB showdown, NFL
-// dollar-limit weeks, anything). The app is the ledger: the commish enters
-// per-game points later — no scoring engine, no per-sport logic.
+// dollar-limit weeks, anything). Scoring is formula-as-data on the pool:
+// the commish enters raw stats, the app does the math. Same pool type,
+// any sport — only the formula changes.
 
 export interface PoolPlayer {
   id: string;
   name: string;
   team: string;
   salary: number;
+}
+
+export type ScoringFormula = Record<string, number>;
+
+// Lines of "STAT, points per unit" — same paste pattern as the player list.
+export function parseScoringFormula(raw: string): ScoringFormula {
+  const formula: ScoringFormula = {};
+  for (const line of raw.split("\n")) {
+    const t = line.trim();
+    if (!t) continue;
+    const parts = t.split(",").map((s) => s.trim());
+    if (parts.length < 2) throw new Error(`Can't parse formula line: "${line}" — use STAT, points.`);
+    const key = parts[0].toUpperCase();
+    const val = parseFloat(parts[1]);
+    if (!key || !(val >= 0)) throw new Error(`Can't parse formula line: "${line}".`);
+    if (formula[key] !== undefined) throw new Error(`Duplicate stat in formula: ${key}.`);
+    formula[key] = val;
+  }
+  if (Object.keys(formula).length === 0) throw new Error("The scoring formula needs at least one stat.");
+  return formula;
+}
+
+export function calcPoints(stats: Record<string, number>, formula: ScoringFormula): number {
+  let total = 0;
+  for (const [k, v] of Object.entries(stats)) {
+    total += (formula[k.toUpperCase()] ?? 0) * v;
+  }
+  return Math.round(total * 100) / 100;
 }
 
 // datetime-local has no timezone; the app is Eastern-first for v1.
@@ -390,6 +419,7 @@ export async function createPool(groupId: string, formData: FormData) {
   const budget = parseInt(String(formData.get("budget") ?? "30"), 10);
   const rosterSize = parseInt(String(formData.get("roster_size") ?? "3"), 10);
   const lockAt = parseEasternLock(String(formData.get("lock_at") ?? ""));
+  const scoringFormula = parseScoringFormula(String(formData.get("scoring_formula") ?? ""));
 
   if (!name) throw new Error("Give your pool a name.");
   if (!(budget > 0)) throw new Error("Budget has to be positive.");
@@ -405,6 +435,7 @@ export async function createPool(groupId: string, formData: FormData) {
       budget,
       roster_size: rosterSize,
       lock_at: lockAt.toISOString(),
+      scoring_formula: scoringFormula,
       created_by: user.id,
     })
     .select("id")
@@ -534,6 +565,7 @@ export async function updatePool(poolId: string, formData: FormData) {
   const budget = parseInt(String(formData.get("budget") ?? "0"), 10);
   const rosterSize = parseInt(String(formData.get("roster_size") ?? "0"), 10);
   const lockAt = parseEasternLock(String(formData.get("lock_at") ?? ""));
+  const scoringFormula = parseScoringFormula(String(formData.get("scoring_formula") ?? ""));
 
   if (!name) throw new Error("Give your pool a name.");
   if (!(budget > 0)) throw new Error("Budget has to be positive.");
@@ -548,6 +580,7 @@ export async function updatePool(poolId: string, formData: FormData) {
       budget,
       roster_size: rosterSize,
       lock_at: lockAt.toISOString(),
+      scoring_formula: scoringFormula,
     })
     .eq("id", poolId);
   if (error) throw new Error(error.message);
@@ -555,15 +588,19 @@ export async function updatePool(poolId: string, formData: FormData) {
   revalidatePath(`/groups/${pool.group_id}/pools/${poolId}`);
 }
 
-// Commish enters one number per player per game. Upsert, so re-saving a
-// game just overwrites it. Only after lock — no scores before first pitch.
-export async function enterScores(poolId: string, formData: FormData) {
+// Commish enters raw stats per player per game; the app applies the pool's
+// scoring formula. Upsert, so re-saving a game just overwrites it. Only
+// after lock — no stat lines before first pitch.
+export async function enterStatLines(poolId: string, formData: FormData) {
   const { supabase, user } = await getUser();
   const { pool } = await loadPool(poolId);
-  if (pool.created_by !== user.id) throw new Error("Only the commish enters scores.");
+  if (pool.created_by !== user.id) throw new Error("Only the commish enters stats.");
   if (new Date(pool.lock_at).getTime() > Date.now()) {
     throw new Error("Picks aren't locked yet.");
   }
+  const formula = (pool.scoring_formula ?? {}) as ScoringFormula;
+  const statKeys = Object.keys(formula);
+  if (statKeys.length === 0) throw new Error("This pool has no scoring formula.");
 
   const gameNumber = Math.max(1, parseInt(String(formData.get("game_number") ?? "1"), 10) || 1);
 
@@ -571,19 +608,25 @@ export async function enterScores(poolId: string, formData: FormData) {
     .from("pool_players")
     .select("id")
     .eq("pool_id", poolId);
+
   const rows = ((players ?? []) as any[])
     .map((p) => {
-      const raw = formData.get(`score_${p.id}`);
-      if (raw === null || String(raw).trim() === "") return null;
-      const points = parseInt(String(raw), 10);
-      if (!(points >= 0)) throw new Error("Points can't be negative.");
-      return { pool_id: poolId, player_id: p.id, game_number: gameNumber, points };
+      const stats: Record<string, number> = {};
+      for (const key of statKeys) {
+        const raw = formData.get(`stat_${p.id}_${key}`);
+        if (raw === null || String(raw).trim() === "") continue;
+        const v = parseFloat(String(raw));
+        if (!(v >= 0)) throw new Error("Stats can't be negative.");
+        if (v !== 0) stats[key] = v;
+      }
+      if (Object.keys(stats).length === 0) return null;
+      return { pool_id: poolId, player_id: p.id, game_number: gameNumber, stats };
     })
     .filter((r): r is NonNullable<typeof r> => r !== null);
-  if (rows.length === 0) throw new Error("Enter at least one score.");
+  if (rows.length === 0) throw new Error("Enter at least one stat.");
 
   const { error } = await supabase
-    .from("pool_scores")
+    .from("pool_stat_lines")
     .upsert(rows, { onConflict: "pool_id,player_id,game_number" });
   if (error) throw new Error(error.message);
 

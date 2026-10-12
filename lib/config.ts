@@ -11,3 +11,21 @@ Scoring — hitters: 1B=1, 2B=2, 3B=3, HR=4, +1 run, +1 RBI, +2 SB, +1 BB/HBP. P
 
 Most points wins. Tiebreak: combined total bases, then split.`;
 }
+
+// Standard scoring formula, pre-filled so the commish tweaks instead of
+// retyping. Lines of "STAT, points per unit". A PTS line (weight 1) is the
+// escape hatch for entering points directly.
+export function defaultScoringFormula(): string {
+  return `1B, 1
+2B, 2
+3B, 3
+HR, 4
+R, 1
+RBI, 1
+SB, 2
+BB, 1
+K, 1
+IP, 1
+W, 5
+SV, 4`;
+}

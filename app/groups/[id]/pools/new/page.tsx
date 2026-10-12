@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { createPool } from "@/lib/actions";
-import { defaultPoolRules } from "@/lib/config";
+import { defaultPoolRules, defaultScoringFormula } from "@/lib/config";
 import { Card, SectionTitle, Field, inputClass, SubmitButton } from "@/components/ui";
 
 function todayAt8pmET(): string {
@@ -69,6 +69,16 @@ export default async function NewPoolPage({ params }: { params: Promise<{ id: st
 
           <Field label="Picks lock (Eastern)">
             <input name="lock_at" type="datetime-local" required defaultValue={todayAt8pmET()} className={inputClass} />
+          </Field>
+
+          <Field label="Scoring formula (STAT, points per unit)">
+            <textarea
+              name="scoring_formula"
+              rows={7}
+              required
+              defaultValue={defaultScoringFormula()}
+              className={`${inputClass} font-mono`}
+            />
           </Field>
 
           <p className="text-sm text-slate-500">

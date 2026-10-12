@@ -1,8 +1,8 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { addPoolPlayers, deleteEntry, updatePool, enterScores } from "@/lib/actions";
-import { defaultPoolRules } from "@/lib/config";
+import { addPoolPlayers, deleteEntry, updatePool, enterStatLines, calcPoints } from "@/lib/actions";
+import { defaultPoolRules, defaultScoringFormula } from "@/lib/config";
 import { Card, SectionTitle, Field, inputClass, SubmitButton, DangerButton } from "@/components/ui";
 import PoolEntryPicker from "@/components/pool-entry-picker";
 
@@ -68,19 +68,23 @@ export default async function PoolPage({
   const locked = new Date(pool.lock_at).getTime() <= Date.now();
   const isCommish = pool.created_by === user.id;
 
-  const { data: scores } = await supabase
-    .from("pool_scores")
-    .select("player_id, game_number, points")
+  const { data: statLines } = await supabase
+    .from("pool_stat_lines")
+    .select("player_id, game_number, stats")
     .eq("pool_id", poolId);
-  const scoreList = (scores ?? []) as any[];
+  const lineList = (statLines ?? []) as any[];
+  const formula = (pool.scoring_formula ?? {}) as Record<string, number>;
+  const statKeys = Object.keys(formula);
+
   const pointsByPlayer = new Map<string, number>();
-  const scoresByGame = new Map<number, Map<string, number>>();
-  for (const s of scoreList) {
-    pointsByPlayer.set(s.player_id, (pointsByPlayer.get(s.player_id) ?? 0) + s.points);
-    if (!scoresByGame.has(s.game_number)) scoresByGame.set(s.game_number, new Map());
-    scoresByGame.get(s.game_number)!.set(s.player_id, s.points);
+  const linesByGame = new Map<number, Map<string, Record<string, number>>>();
+  for (const s of lineList) {
+    const pts = calcPoints((s.stats ?? {}) as Record<string, number>, formula);
+    pointsByPlayer.set(s.player_id, (pointsByPlayer.get(s.player_id) ?? 0) + pts);
+    if (!linesByGame.has(s.game_number)) linesByGame.set(s.game_number, new Map());
+    linesByGame.get(s.game_number)!.set(s.player_id, (s.stats ?? {}) as Record<string, number>);
   }
-  const games = [...scoresByGame.keys()].sort((a, b) => a - b);
+  const games = [...linesByGame.keys()].sort((a, b) => a - b);
   const nextGame = games.length > 0 ? games[games.length - 1] + 1 : 1;
 
   const board = entryList
@@ -97,7 +101,7 @@ export default async function PoolPage({
   const addPlayers = addPoolPlayers.bind(null, poolId);
   const removeEntry = deleteEntry.bind(null, poolId);
   const savePool = updatePool.bind(null, poolId);
-  const saveScores = enterScores.bind(null, poolId);
+  const saveStats = enterStatLines.bind(null, poolId);
 
   return (
     <div className="space-y-6">
@@ -151,6 +155,17 @@ export default async function PoolPage({
                 <input name="roster_size" type="number" min={1} max={20} defaultValue={pool.roster_size} className={inputClass} />
               </Field>
             </div>
+            <Field label="Scoring formula (STAT, points per unit)">
+              <textarea
+                name="scoring_formula"
+                rows={7}
+                required
+                defaultValue={Object.entries(formula as Record<string, number>)
+                  .map(([k, v]) => `${k}, ${v}`)
+                  .join("\n") || defaultScoringFormula()}
+                className={`${inputClass} font-mono`}
+              />
+            </Field>
             <Field label="Picks lock (Eastern)">
               <input name="lock_at" type="datetime-local" required defaultValue={etInputValue(pool.lock_at)} className={inputClass} />
             </Field>
@@ -235,38 +250,61 @@ export default async function PoolPage({
             )}
           </div>
 
-          {isCommish && locked && playerList.length > 0 && (
+          {isCommish && locked && playerList.length > 0 && statKeys.length > 0 && (
             <div>
-              <SectionTitle>Enter scores</SectionTitle>
+              <SectionTitle>Enter stats</SectionTitle>
               <div className="space-y-4">
                 {[...games, nextGame].map((g) => (
-                  <Card key={g}>
-                    <form action={saveScores} className="space-y-3">
+                  <Card key={g} className="p-0 overflow-hidden">
+                    <form action={saveStats}>
                       <input type="hidden" name="game_number" value={g} />
-                      <p className="font-semibold">
-                        Game {g}
-                        {games.includes(g) && <span className="ml-2 text-xs font-normal text-slate-400">(saved — re-save to correct)</span>}
-                      </p>
-                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                        {playerList.map((p: any) => (
-                          <label key={p.id} className="flex items-center gap-2 text-sm">
-                            <span className="flex-1 truncate">{p.name}</span>
-                            <input
-                              name={`score_${p.id}`}
-                              type="number"
-                              min={0}
-                              placeholder="0"
-                              defaultValue={scoresByGame.get(g)?.get(p.id) ?? ""}
-                              className={`${inputClass} w-20`}
-                            />
-                          </label>
-                        ))}
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="border-b border-slate-100 bg-slate-50 text-xs text-slate-500">
+                              <th className="sticky left-0 bg-slate-50 px-3 py-2 text-left font-medium">
+                                Game {g}
+                                {games.includes(g) && <span className="font-normal"> · saved</span>}
+                              </th>
+                              {statKeys.map((k) => (
+                                <th key={k} className="px-2 py-2 text-center font-medium">{k}</th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {playerList.map((p: any) => (
+                              <tr key={p.id} className="border-b border-slate-50 last:border-0">
+                                <td className="sticky left-0 max-w-32 truncate bg-white px-3 py-1.5 font-medium">
+                                  {p.name}
+                                </td>
+                                {statKeys.map((k) => (
+                                  <td key={k} className="px-1 py-1 text-center">
+                                    <input
+                                      name={`stat_${p.id}_${k}`}
+                                      type="number"
+                                      min={0}
+                                      step="any"
+                                      placeholder="–"
+                                      defaultValue={linesByGame.get(g)?.get(p.id)?.[k] ?? ""}
+                                      className="w-14 rounded-lg border border-slate-200 px-1 py-1 text-center text-sm outline-none focus:border-slate-400"
+                                    />
+                                  </td>
+                                ))}
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
                       </div>
-                      <SubmitButton>Save game {g} scores</SubmitButton>
+                      <div className="p-4">
+                        <SubmitButton>Save game {g} stats</SubmitButton>
+                      </div>
                     </form>
                   </Card>
                 ))}
               </div>
+              <p className="mt-2 text-xs text-slate-400">
+                Points = stats × the pool&rsquo;s scoring formula. Re-save to correct.
+              </p>
             </div>
           )}
         </>
