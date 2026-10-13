@@ -260,32 +260,6 @@ export default async function GroupPage({ params }: { params: Promise<{ id: stri
         </div>
       )}
 
-      {settledPools.length > 0 && (
-        <div>
-          <SectionTitle>Settled pools</SectionTitle>
-          <div className="space-y-2">
-            {settledPools.map((p: any) => {
-              const n = entriesByPool.get(p.id) ?? 0;
-              return (
-                <Link key={p.id} href={`/groups/${id}/pools/${p.id}`}>
-                  <Card className="transition hover:border-slate-400">
-                    <div className="flex items-center justify-between gap-2">
-                      <p className="font-display text-lg font-semibold uppercase tracking-wide">{p.name}</p>
-                      <span className="inline-block rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-semibold text-slate-500">
-                        settled
-                      </span>
-                    </div>
-                    <p className="mt-1 text-sm text-slate-600">
-                      {nameOf(p.winner_user_id)} won · +{p.winner_points} pts · {n} {n === 1 ? "entry" : "entries"}
-                    </p>
-                  </Card>
-                </Link>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
       {awaiting.length > 0 && (
         <div>
           <SectionTitle>Waiting on approvals</SectionTitle>
@@ -322,6 +296,32 @@ export default async function GroupPage({ params }: { params: Promise<{ id: stri
           ))}
         </Card>
       </div>
+
+      {settledPools.length > 0 && (
+        <div>
+          <SectionTitle>Settled pools</SectionTitle>
+          <div className="space-y-2">
+            {settledPools.map((p: any) => {
+              const n = entriesByPool.get(p.id) ?? 0;
+              return (
+                <Link key={p.id} href={`/groups/${id}/pools/${p.id}`}>
+                  <Card className="transition hover:border-slate-400">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="font-display text-lg font-semibold uppercase tracking-wide">{p.name}</p>
+                      <span className="inline-block rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-semibold text-slate-500">
+                        settled
+                      </span>
+                    </div>
+                    <p className="mt-1 text-sm text-slate-600">
+                      {nameOf(p.winner_user_id)} won · +{p.winner_points} pts · {n} {n === 1 ? "entry" : "entries"}
+                    </p>
+                  </Card>
+                </Link>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {recentSettled.length > 0 && (
         <div>
