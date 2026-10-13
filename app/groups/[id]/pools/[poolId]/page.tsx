@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { addPoolPlayers, deleteEntry, deletePool, updatePool, enterStatLines, awardPoolWinner } from "@/lib/actions";
+import { addPoolPlayers, deleteEntry, updatePool, enterStatLines, awardPoolWinner } from "@/lib/actions";
 import { defaultPoolRules, defaultScoringFormula, calcPoints } from "@/lib/config";
 import { Card, SectionTitle, Field, inputClass, SubmitButton, DangerButton } from "@/components/ui";
 import PoolEntryPicker from "@/components/pool-entry-picker";
@@ -103,7 +103,6 @@ export default async function PoolPage({
   const savePool = updatePool.bind(null, poolId);
   const saveStats = enterStatLines.bind(null, poolId);
   const awardWinner = awardPoolWinner.bind(null, poolId);
-  const removePool = deletePool.bind(null, poolId);
 
   return (
     <div className="space-y-6">
@@ -338,18 +337,6 @@ export default async function PoolPage({
             </div>
           )}
         </>
-      )}
-
-      {isCommish && (
-        <Card>
-          <SectionTitle>Danger zone</SectionTitle>
-          <form action={removePool}>
-            <DangerButton>Delete pool</DangerButton>
-          </form>
-          <p className="mt-2 text-xs text-slate-400">
-            Deletes the pool, its players, entries, and stats for everyone. Awarded points come off the board.
-          </p>
-        </Card>
       )}
     </div>
   );

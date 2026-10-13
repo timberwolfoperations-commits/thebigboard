@@ -8,7 +8,6 @@ import {
   disputeBet,
   respondToBet,
   postBetUpdate,
-  deleteBet,
   adminForceSettle,
   adminVoidBet,
   adminResolveDispute,
@@ -81,7 +80,6 @@ export default async function BetPage({
   const voidBet = adminVoidBet.bind(null, betId);
   const resolveDispute = adminResolveDispute.bind(null, betId);
   const postUpdate = postBetUpdate.bind(null, betId);
-  const removeBet = deleteBet.bind(null, betId);
 
   return (
     <div className="space-y-6">
@@ -298,18 +296,6 @@ export default async function BetPage({
               <DangerButton>Void bet</DangerButton>
             </form>
           </div>
-        </Card>
-      )}
-
-      {(detail.created_by === user.id || isAdmin) && (
-        <Card>
-          <SectionTitle>Danger zone</SectionTitle>
-          <form action={removeBet}>
-            <DangerButton>Delete bet</DangerButton>
-          </form>
-          <p className="mt-2 text-xs text-slate-400">
-            Deletes the bet, its updates, and its participants for everyone. Awarded points come off the board.
-          </p>
         </Card>
       )}
     </div>

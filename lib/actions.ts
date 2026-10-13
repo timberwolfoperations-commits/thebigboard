@@ -372,31 +372,6 @@ export async function adminResolveDispute(betId: string, formData: FormData) {
   await adminForceSettle(betId, formData);
 }
 
-// Hard-delete a bet (test bets, false starts). Creator or group admin.
-// Participants and updates cascade; settled points vanish with it since
-// the lifetime board is computed live. Void stays the designed cancel.
-export async function deleteBet(betId: string) {
-  const bet = await loadBet(betId);
-  const { supabase, user } = await getUser();
-  const role = await memberRole(supabase, bet.group_id, user.id);
-  if (bet.created_by !== user.id && role !== "admin") {
-    throw new Error("Only the creator or an admin can delete the bet.");
-  }
-  const groupId = bet.group_id;
-  const { error } = await supabase.from("bets").delete().eq("id", betId);
-  if (error) throw new Error(error.message);
-  redirect(`/groups/${groupId}`);
-}
-
-// A group admin deletes the whole group. Bets, pools, and memberships
-// cascade — everything goes with it.
-export async function deleteGroup(groupId: string) {
-  const { supabase } = await requireAdmin(groupId);
-  const { error } = await supabase.from("groups").delete().eq("id", groupId);
-  if (error) throw new Error(error.message);
-  redirect("/dashboard");
-}
-
 // ------------------------------------------------------------- roster pools
 // One flexible pool type for salary-cap player games (MLB showdown, NFL
 // dollar-limit weeks, anything). Scoring is formula-as-data on the pool:
@@ -624,19 +599,6 @@ export async function deleteEntry(poolId: string) {
     .eq("user_id", user.id);
   if (error) throw new Error(error.message);
   revalidatePath(`/groups/${pool.group_id}/pools/${poolId}`);
-}
-
-// The commish deletes the whole pool — test pools, false starts. Players,
-// entries, picks, and stat lines cascade; any awarded points vanish with
-// it since the lifetime board is computed live.
-export async function deletePool(poolId: string) {
-  const { supabase, user } = await getUser();
-  const { pool } = await loadPool(poolId);
-  if (pool.created_by !== user.id) throw new Error("Only the commish can delete the pool.");
-  const groupId = pool.group_id;
-  const { error } = await supabase.from("pools").delete().eq("id", poolId);
-  if (error) throw new Error(error.message);
-  redirect(`/groups/${groupId}`);
 }
 
 // Change the setup before anyone's entered (and before lock). Once
