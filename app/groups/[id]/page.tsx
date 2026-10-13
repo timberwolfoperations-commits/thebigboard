@@ -2,9 +2,9 @@ import { redirect } from "next/navigation";
 import { headers } from "next/headers";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { settleOverdueBets, respondToBet } from "@/lib/actions";
+import { settleOverdueBets, respondToBet, deleteGroup } from "@/lib/actions";
 import { GRACE_DAYS } from "@/lib/config";
-import { Card, SectionTitle, StatusBadge } from "@/components/ui";
+import { Card, SectionTitle, StatusBadge, DangerButton } from "@/components/ui";
 import CopyButton from "@/components/copy-button";
 
 function daysOverdue(settleDate: string) {
@@ -147,6 +147,7 @@ export default async function GroupPage({ params }: { params: Promise<{ id: stri
   const host = (await headers()).get("host") ?? "";
   const proto = host.startsWith("localhost") ? "http" : "https";
   const inviteUrl = `${proto}://${host}/join/${group.invite_token}`;
+  const removeGroup = deleteGroup.bind(null, id);
 
   return (
     <div className="space-y-8">
@@ -329,6 +330,20 @@ export default async function GroupPage({ params }: { params: Promise<{ id: stri
           <div className="space-y-2">
             {recentSettled.map((b) => <BetRow key={b.id} groupId={id} bet={b} nameOf={nameOf} />)}
           </div>
+        </div>
+      )}
+
+      {myRole === "admin" && (
+        <div>
+          <SectionTitle>Danger zone</SectionTitle>
+          <Card>
+            <form action={removeGroup}>
+              <DangerButton>Delete group</DangerButton>
+            </form>
+            <p className="mt-2 text-xs text-slate-400">
+              Deletes the group, its bets, pools, and members for everyone. This can&rsquo;t be undone.
+            </p>
+          </Card>
         </div>
       )}
     </div>
