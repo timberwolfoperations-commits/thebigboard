@@ -72,14 +72,20 @@ export default function PoolEntryPicker({
             );
           })}
         </div>
-        {!countOk && (
-          <p className="text-sm text-slate-500">
-            {selected.length < rosterSize
-              ? `Pick ${rosterSize - selected.length} more.`
-              : `Too many — drop ${selected.length - rosterSize}.`}
+        {over ? (
+          <p className="text-sm font-medium text-red-600">
+            ${spent - budget} over the cap — swap out a player.
           </p>
+        ) : (
+          !countOk && (
+            <p className="text-sm text-slate-500">
+              {selected.length < rosterSize
+                ? `Pick ${rosterSize - selected.length} more.`
+                : `Too many — drop ${selected.length - rosterSize}.`}
+            </p>
+          )
         )}
-        <SubmitButton>
+        <SubmitButton disabled={!canSubmit}>
           {canSubmit ? `Lock in my ${rosterSize}` : "Pick your players"}
         </SubmitButton>
       </form>
