@@ -470,6 +470,61 @@ export async function addPoolPlayers(poolId: string, formData: FormData) {
   revalidatePath(`/groups/${pool.group_id}/pools/${poolId}`);
 }
 
+// The commish adds one player mid-setup without re-pasting the whole list.
+export async function addOnePoolPlayer(poolId: string, formData: FormData) {
+  const { supabase, user } = await getUser();
+  const { pool } = await loadPool(poolId);
+  await memberRole(supabase, pool.group_id, user.id);
+  if (pool.created_by !== user.id) throw new Error("Only the commish manages players.");
+  if (new Date(pool.lock_at).getTime() <= Date.now()) {
+    throw new Error("This pool is locked.");
+  }
+
+  const name = String(formData.get("name") ?? "").trim();
+  const team = String(formData.get("team") ?? "").trim();
+  const salary = parseInt(String(formData.get("salary") ?? ""), 10);
+  if (!name || !team || !(salary >= 0)) throw new Error("Need a name, team, and salary.");
+
+  const { error } = await supabase
+    .from("pool_players")
+    .insert({ pool_id: poolId, name, team, salary });
+  if (error) throw new Error(error.message);
+
+  revalidatePath(`/groups/${pool.group_id}/pools/${poolId}`);
+}
+
+// The commish pulls a player pre-lock. Refuses when anyone has already
+// picked the player — picks cascade on delete, and silently shrinking a
+// friend's entry is worse than refusing. Post-lock stat lines cascade
+// too, but pre-lock is the only time this is allowed.
+export async function removePoolPlayer(poolId: string, formData: FormData) {
+  const { supabase, user } = await getUser();
+  const { pool } = await loadPool(poolId);
+  await memberRole(supabase, pool.group_id, user.id);
+  if (pool.created_by !== user.id) throw new Error("Only the commish manages players.");
+  if (new Date(pool.lock_at).getTime() <= Date.now()) {
+    throw new Error("This pool is locked.");
+  }
+
+  const playerId = String(formData.get("player_id") ?? "");
+  if (!playerId) throw new Error("No player selected.");
+
+  const { count } = await supabase
+    .from("pool_entry_picks")
+    .select("player_id", { count: "exact", head: true })
+    .eq("player_id", playerId);
+  if ((count ?? 0) > 0) throw new Error("Someone already picked this player — can't remove them.");
+
+  const { error } = await supabase
+    .from("pool_players")
+    .delete()
+    .eq("id", playerId)
+    .eq("pool_id", poolId);
+  if (error) throw new Error(error.message);
+
+  revalidatePath(`/groups/${pool.group_id}/pools/${poolId}`);
+}
+
 // The commish taps once on a locked pool: the leaderboard topper gets
 // 10 pts + 1 win on the group's lifetime board, same as a bet win.
 // One-shot — winner_user_id set means it's done. Ties break to the

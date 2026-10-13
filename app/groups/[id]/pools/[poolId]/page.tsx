@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { addPoolPlayers, deleteEntry, updatePool, enterStatLines, awardPoolWinner } from "@/lib/actions";
+import { addPoolPlayers, addOnePoolPlayer, removePoolPlayer, deleteEntry, updatePool, enterStatLines, awardPoolWinner } from "@/lib/actions";
 import { defaultPoolRules, defaultScoringFormula, calcPoints } from "@/lib/config";
 import { Card, SectionTitle, Field, inputClass, SubmitButton, DangerButton } from "@/components/ui";
 import PoolEntryPicker from "@/components/pool-entry-picker";
@@ -99,6 +99,8 @@ export default async function PoolPage({
     .sort((a: any, b: any) => b.total - a.total);
 
   const addPlayers = addPoolPlayers.bind(null, poolId);
+  const addPlayer = addOnePoolPlayer.bind(null, poolId);
+  const removePlayer = removePoolPlayer.bind(null, poolId);
   const removeEntry = deleteEntry.bind(null, poolId);
   const savePool = updatePool.bind(null, poolId);
   const saveStats = enterStatLines.bind(null, poolId);
@@ -337,6 +339,50 @@ export default async function PoolPage({
             </div>
           )}
         </>
+      )}
+
+      {isCommish && !locked && playerList.length > 0 && (
+        <Card>
+          <SectionTitle>Manage players</SectionTitle>
+          <form action={addPlayer} className="flex flex-col gap-2 sm:flex-row">
+            <input name="name" placeholder="Name" required maxLength={80} className={inputClass} />
+            <input
+              name="team"
+              placeholder="TEAM"
+              required
+              maxLength={10}
+              className={`${inputClass} sm:w-24`}
+            />
+            <input
+              name="salary"
+              placeholder="$"
+              type="number"
+              min={0}
+              required
+              className={`${inputClass} sm:w-24`}
+            />
+            <SubmitButton>Add player</SubmitButton>
+          </form>
+          <ul className="mt-3 divide-y divide-slate-100">
+            {playerList.map((p: any) => (
+              <li key={p.id} className="flex items-center justify-between gap-2 py-1.5 text-sm">
+                <span>
+                  <span className="font-medium">{p.name}</span>{" "}
+                  <span className="text-slate-400">
+                    {p.team} · ${p.salary}
+                  </span>
+                </span>
+                <form action={removePlayer}>
+                  <input type="hidden" name="player_id" value={p.id} />
+                  <DangerButton>Remove</DangerButton>
+                </form>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-2 text-xs text-slate-400">
+            A player someone already picked can&rsquo;t be removed.
+          </p>
+        </Card>
       )}
     </div>
   );
