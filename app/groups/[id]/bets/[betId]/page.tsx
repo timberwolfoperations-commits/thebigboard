@@ -7,6 +7,7 @@ import {
   approveSettlement,
   disputeBet,
   respondToBet,
+  postBetUpdate,
   adminForceSettle,
   adminVoidBet,
   adminResolveDispute,
@@ -58,6 +59,14 @@ export default async function BetPage({
   const isParticipant = !!me;
   const winnerName = detail.participants.find((p) => p.user_id === detail.proposed_winner_id)?.display_name;
 
+  const { data: updateRows } = await supabase
+    .from("bet_updates")
+    .select("id, body, created_at, profiles(display_name)")
+    .eq("bet_id", betId)
+    .order("created_at", { ascending: false })
+    .limit(50);
+  const updates = (updateRows ?? []) as any[];
+
   const propose = proposeOutcome.bind(null, betId);
   const approve = approveSettlement.bind(null, betId);
   const dispute = disputeBet.bind(null, betId);
@@ -70,6 +79,7 @@ export default async function BetPage({
   const forceSettle = adminForceSettle.bind(null, betId);
   const voidBet = adminVoidBet.bind(null, betId);
   const resolveDispute = adminResolveDispute.bind(null, betId);
+  const postUpdate = postBetUpdate.bind(null, betId);
 
   return (
     <div className="space-y-6">
@@ -122,6 +132,49 @@ export default async function BetPage({
           </div>
         </div>
       </Card>
+
+      {/* ---- updates: shared log ------------------------------------------ */}
+      <div>
+        <SectionTitle>Updates</SectionTitle>
+        <div className="space-y-2">
+          {isParticipant && (
+            <Card>
+              <form action={postUpdate} className="flex gap-2">
+                <input
+                  name="body"
+                  maxLength={500}
+                  required
+                  placeholder="Log today's steps, talk your trash…"
+                  className={`${inputClass} flex-1`}
+                />
+                <SubmitButton>Post</SubmitButton>
+              </form>
+            </Card>
+          )}
+          {updates.length === 0 ? (
+            <Card>
+              <p className="text-sm text-slate-500">No updates yet. First one sets the tone.</p>
+            </Card>
+          ) : (
+            updates.map((u: any) => (
+              <Card key={u.id}>
+                <p className="text-sm">
+                  <span className="font-semibold">{u.profiles?.display_name ?? "Player"}</span>{" "}
+                  <span className="text-xs text-slate-400">
+                    {new Date(u.created_at).toLocaleString("en-US", {
+                      month: "short",
+                      day: "numeric",
+                      hour: "numeric",
+                      minute: "2-digit",
+                    })}
+                  </span>
+                </p>
+                <p className="mt-1 text-sm text-slate-700">{u.body}</p>
+              </Card>
+            ))
+          )}
+        </div>
+      </div>
 
       {/* ---- pending: waiting for everyone to accept ----------------------- */}
       {detail.status === "pending" && me && !me.accepted && (

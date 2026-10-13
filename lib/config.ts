@@ -33,6 +33,7 @@ SV, 4`;
 export type ScoringFormula = Record<string, number>;
 
 // Lines of "STAT, points per unit" — same paste pattern as the player list.
+// Weights can be negative (INTs, fumbles lost).
 export function parseScoringFormula(raw: string): ScoringFormula {
   const formula: ScoringFormula = {};
   for (const line of raw.split("\n")) {
@@ -42,7 +43,7 @@ export function parseScoringFormula(raw: string): ScoringFormula {
     if (parts.length < 2) throw new Error(`Can't parse formula line: "${line}" — use STAT, points.`);
     const key = parts[0].toUpperCase();
     const val = parseFloat(parts[1]);
-    if (!key || !(val >= 0)) throw new Error(`Can't parse formula line: "${line}".`);
+    if (!key || !Number.isFinite(val)) throw new Error(`Can't parse formula line: "${line}".`);
     if (formula[key] !== undefined) throw new Error(`Duplicate stat in formula: ${key}.`);
     formula[key] = val;
   }

@@ -295,6 +295,27 @@ export async function disputeBet(betId: string) {
   revalidatePath(`/groups/${bet.group_id}/bets/${betId}`);
 }
 
+// A participant posts a text update on the bet — daily steps, a check-in,
+// trash talk. Not automated tracking; just a shared log the group can see.
+export async function postBetUpdate(betId: string, formData: FormData) {
+  const { supabase, user } = await getUser();
+  const bet = await loadBet(betId);
+  assertParticipant(bet, user.id);
+
+  const body = String(formData.get("body") ?? "").trim();
+  if (!body) throw new Error("Write something first.");
+  if (body.length > 500) throw new Error("Keep it under 500 characters.");
+
+  const { error } = await supabase.from("bet_updates").insert({
+    bet_id: betId,
+    user_id: user.id,
+    body,
+  });
+  if (error) throw new Error(error.message);
+
+  revalidatePath(`/groups/${bet.group_id}/bets/${betId}`);
+}
+
 // ------------------------------------------------------------------- admin
 
 async function requireAdmin(groupId: string) {
