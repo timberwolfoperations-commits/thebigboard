@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { addPoolPlayers, deleteEntry, updatePool, enterStatLines } from "@/lib/actions";
+import { addPoolPlayers, deleteEntry, updatePool, enterStatLines, awardPoolWinner } from "@/lib/actions";
 import { defaultPoolRules, defaultScoringFormula, calcPoints } from "@/lib/config";
 import { Card, SectionTitle, Field, inputClass, SubmitButton, DangerButton } from "@/components/ui";
 import PoolEntryPicker from "@/components/pool-entry-picker";
@@ -102,6 +102,7 @@ export default async function PoolPage({
   const removeEntry = deleteEntry.bind(null, poolId);
   const savePool = updatePool.bind(null, poolId);
   const saveStats = enterStatLines.bind(null, poolId);
+  const awardWinner = awardPoolWinner.bind(null, poolId);
 
   return (
     <div className="space-y-6">
@@ -249,6 +250,34 @@ export default async function PoolPage({
               </div>
             )}
           </div>
+
+          {isCommish && locked && board.length > 0 && (
+            <div>
+              {pool.winner_user_id ? (
+                <Card>
+                  <p className="text-sm">
+                    <span className="font-semibold">
+                      Winner: {board.find((e: any) => e.user_id === pool.winner_user_id)?.profiles?.display_name ?? "Player"}
+                    </span>
+                    <span className="text-slate-500"> · +{pool.winner_points} pts on the lifetime board</span>
+                  </p>
+                </Card>
+              ) : (
+                <Card>
+                  <form action={awardWinner} className="flex items-center justify-between gap-3">
+                    <p className="text-sm text-slate-600">
+                      Board&rsquo;s final. Award{" "}
+                      <span className="font-semibold text-slate-900">
+                        {board[0].profiles?.display_name ?? "Player"}
+                      </span>{" "}
+                      +10 pts?
+                    </p>
+                    <SubmitButton>Award winner</SubmitButton>
+                  </form>
+                </Card>
+              )}
+            </div>
+          )}
 
           {isCommish && locked && playerList.length > 0 && statKeys.length > 0 && (
             <div>

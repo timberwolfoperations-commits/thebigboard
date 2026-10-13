@@ -4,7 +4,7 @@ import { randomBytes } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { GRACE_DAYS, AUTO_SETTLE_DAYS } from "@/lib/config";
+import { GRACE_DAYS, AUTO_SETTLE_DAYS, calcPoints } from "@/lib/config";
 
 // ------------------------------------------------------------------ helpers
 
@@ -447,6 +447,68 @@ export async function addPoolPlayers(poolId: string, formData: FormData) {
   if (error) throw new Error(error.message);
 
   revalidatePath(`/groups/${pool.group_id}/pools/${poolId}`);
+}
+
+// The commish taps once on a locked pool: the leaderboard topper gets
+// 10 pts + 1 win on the group's lifetime board, same as a bet win.
+// One-shot — winner_user_id set means it's done. Ties break to the
+// earliest entry; the button names who it'll award before you tap.
+export async function awardPoolWinner(poolId: string) {
+  const { supabase, user } = await getUser();
+  const { pool } = await loadPool(poolId);
+  if (pool.created_by !== user.id) throw new Error("Only the commish awards the winner.");
+  if (new Date(pool.lock_at).getTime() > Date.now()) throw new Error("The pool isn't locked yet.");
+  if (pool.winner_user_id) throw new Error("This pool already has a winner.");
+
+  const formula = (pool.scoring_formula ?? {}) as ScoringFormula;
+
+  const [{ data: entries }, { data: picks }, { data: lines }] = await Promise.all([
+    supabase.from("pool_entries").select("id, user_id, created_at").eq("pool_id", poolId),
+    supabase
+      .from("pool_entry_picks")
+      .select("entry_id, pool_players!inner(id, pool_id)")
+      .eq("pool_players.pool_id", poolId),
+    supabase.from("pool_stat_lines").select("player_id, stats").eq("pool_id", poolId),
+  ]);
+
+  const pointsByPlayer = new Map<string, number>();
+  for (const s of (lines ?? []) as any[]) {
+    const pts = calcPoints((s.stats ?? {}) as Record<string, number>, formula);
+    pointsByPlayer.set(s.player_id, (pointsByPlayer.get(s.player_id) ?? 0) + pts);
+  }
+  const playerIdsByEntry = new Map<string, string[]>();
+  for (const pk of (picks ?? []) as any[]) {
+    const arr = playerIdsByEntry.get(pk.entry_id) ?? [];
+    arr.push(pk.pool_players.id);
+    playerIdsByEntry.set(pk.entry_id, arr);
+  }
+
+  const board = ((entries ?? []) as any[])
+    .map((e: any) => ({
+      user_id: e.user_id,
+      created_at: e.created_at,
+      total: (playerIdsByEntry.get(e.id) ?? []).reduce(
+        (sum: number, pid: string) => sum + (pointsByPlayer.get(pid) ?? 0),
+        0
+      ),
+    }))
+    .sort(
+      (a: any, b: any) =>
+        b.total - a.total ||
+        new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+    );
+
+  const winner = board[0];
+  if (!winner) throw new Error("No entries to award.");
+
+  const { error } = await supabase
+    .from("pools")
+    .update({ winner_user_id: winner.user_id, winner_points: 10 })
+    .eq("id", poolId);
+  if (error) throw new Error(error.message);
+
+  revalidatePath(`/groups/${pool.group_id}/pools/${poolId}`);
+  revalidatePath(`/groups/${pool.group_id}`);
 }
 
 // Pick your roster. Server validates everything — the picker UI is just UX.
