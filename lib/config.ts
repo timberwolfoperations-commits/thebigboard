@@ -32,6 +32,47 @@ SV, 4`;
 
 export type ScoringFormula = Record<string, number>;
 
+// Pool-type presets for the new-pool form: picking one pre-fills the rules,
+// scoring formula, cap, and roster size. Everything stays editable after.
+// No sport identifier is stored on the pool — the formula is the source of
+// truth, per the two-pool-type architecture (roster pools stay generic).
+export interface PoolPreset {
+  label: string;
+  rosterSize: number;
+  budget: number;
+  rules: string;
+  formula: string;
+}
+
+export const POOL_PRESETS: Record<string, PoolPreset> = {
+  mlb: {
+    label: "MLB Showdown",
+    rosterSize: 3,
+    budget: 30,
+    rules: defaultPoolRules(3, 30),
+    formula: defaultScoringFormula(),
+  },
+  nfl: {
+    label: "NFL Sunday",
+    rosterSize: 5,
+    budget: 40,
+    rules: `Pick 5 players under the $40 cap. One Sunday slate only.
+
+Scoring: 0.04 per pass yard, 4 per pass TD, -2 per INT, 0.1 per rush yard, 6 per rush TD, 0.5 per reception, 0.1 per receiving yard, 6 per receiving TD, -2 per fumble lost.
+
+Most points wins. Tiebreak: most total TDs, then split.`,
+    formula: `pass_yd, 0.04
+pass_td, 4
+int, -2
+rush_yd, 0.1
+rush_td, 6
+rec, 0.5
+rec_yd, 0.1
+rec_td, 6
+fum_lost, -2`,
+  },
+};
+
 // Lines of "STAT, points per unit" — same paste pattern as the player list.
 // Weights can be negative (INTs, fumbles lost).
 export function parseScoringFormula(raw: string): ScoringFormula {
