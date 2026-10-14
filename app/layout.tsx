@@ -50,7 +50,14 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                 The Big Board
               </span>
             </Link>
-            {user && <SignOutButton />}
+            {user && (
+              <div className="flex items-center gap-4">
+                <Link href="/scoring" className="text-sm text-slate-500 underline-offset-4 hover:underline">
+                  Scoring
+                </Link>
+                <SignOutButton />
+              </div>
+            )}
           </div>
         </header>
         <main className="mx-auto max-w-3xl px-4 py-6">{children}</main>

@@ -1,9 +1,10 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { addPoolPlayers, addOnePoolPlayer, removePoolPlayer, deleteEntry, updatePool, enterStatLines, awardPoolWinner } from "@/lib/actions";
+import { addPoolPlayers, addOnePoolPlayer, removePoolPlayer, deleteEntry, updatePool, awardPoolWinner } from "@/lib/actions";
 import { defaultPoolRules, defaultScoringFormula, calcPoints } from "@/lib/config";
 import { Card, SectionTitle, Field, inputClass, SubmitButton, DangerButton } from "@/components/ui";
+import PoolStatGrid from "@/components/pool-stat-grid";
 import PoolEntryPicker from "@/components/pool-entry-picker";
 
 function fmtLock(iso: string): string {
@@ -103,7 +104,6 @@ export default async function PoolPage({
   const removePlayer = removePoolPlayer.bind(null, poolId);
   const removeEntry = deleteEntry.bind(null, poolId);
   const savePool = updatePool.bind(null, poolId);
-  const saveStats = enterStatLines.bind(null, poolId);
   const awardWinner = awardPoolWinner.bind(null, poolId);
 
   return (
@@ -286,51 +286,15 @@ export default async function PoolPage({
               <SectionTitle>Enter stats</SectionTitle>
               <div className="space-y-4">
                 {[...games, nextGame].map((g) => (
-                  <Card key={g} className="p-0 overflow-hidden">
-                    <form action={saveStats}>
-                      <input type="hidden" name="game_number" value={g} />
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-sm">
-                          <thead>
-                            <tr className="border-b border-slate-100 bg-slate-50 text-xs text-slate-500">
-                              <th className="sticky left-0 bg-slate-50 px-3 py-2 text-left font-medium">
-                                Game {g}
-                                {games.includes(g) && <span className="font-normal"> · saved</span>}
-                              </th>
-                              {statKeys.map((k) => (
-                                <th key={k} className="px-2 py-2 text-center font-medium">{k}</th>
-                              ))}
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {playerList.map((p: any) => (
-                              <tr key={p.id} className="border-b border-slate-50 last:border-0">
-                                <td className="sticky left-0 max-w-32 truncate bg-white px-3 py-1.5 font-medium">
-                                  {p.name}
-                                </td>
-                                {statKeys.map((k) => (
-                                  <td key={k} className="px-1 py-1 text-center">
-                                    <input
-                                      name={`stat_${p.id}_${k}`}
-                                      type="number"
-                                      min={0}
-                                      step="any"
-                                      placeholder="–"
-                                      defaultValue={linesByGame.get(g)?.get(p.id)?.[k] ?? ""}
-                                      className="w-14 rounded-lg border border-slate-200 px-1 py-1 text-center text-sm outline-none focus:border-slate-400"
-                                    />
-                                  </td>
-                                ))}
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                      <div className="p-4">
-                        <SubmitButton>Save game {g} stats</SubmitButton>
-                      </div>
-                    </form>
-                  </Card>
+                  <PoolStatGrid
+                    key={g}
+                    poolId={poolId}
+                    game={g}
+                    saved={games.includes(g)}
+                    players={playerList}
+                    statKeys={statKeys}
+                    lines={Object.fromEntries(linesByGame.get(g) ?? [])}
+                  />
                 ))}
               </div>
               <p className="mt-2 text-xs text-slate-400">
