@@ -89,9 +89,10 @@ export function parseMlbBoxscore(summary: any): {
           const hits = val("hits");
           const hr = val("homeRuns");
           take(name, team, {
-            // No doubles/triples in the structured feed: they count as
-            // singles here. 2B/3B/SB stay 0 unless the commish overrides.
-            "1B": hits - hr,
+            // H is total hits (doubles/triples included — the feed can't
+            // split them, so every hit scores the same). SB stays 0 unless
+            // the commish overrides via the manual grid.
+            H: hits,
             HR: hr,
             R: val("runs"),
             RBI: val("RBIs"),

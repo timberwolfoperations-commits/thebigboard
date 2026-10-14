@@ -7,7 +7,7 @@ export const AUTO_SETTLE_DAYS = 7; // days past settle date before an undisputed
 export function defaultPoolRules(rosterSize: number, budget: number): string {
   return `Pick ${rosterSize} player${rosterSize === 1 ? "" : "s"} under the $${budget} cap.
 
-Scoring — hitters: 1B=1, 2B=2, 3B=3, HR=4, +1 run, +1 RBI, +2 SB, +1 BB/HBP. Pitchers: 1 per K, 1 per IP, +5 win, +4 save.
+Scoring — hitters: H=1, HR=4, +1 run, +1 RBI, +2 SB, +1 BB. Pitchers: 1 per K, +5 win, +4 save.
 
 Most points wins. Tiebreak: combined total bases, then split.`;
 }
@@ -16,18 +16,15 @@ Most points wins. Tiebreak: combined total bases, then split.`;
 // retyping. Lines of "STAT, points per unit". A PTS line (weight 1) is the
 // escape hatch for entering points directly.
 export function defaultScoringFormula(): string {
-  return `1B, 1
-2B, 2
-3B, 3
-HR, 4
+  return `K, 1
 R, 1
-RBI, 1
-SB, 2
-BB, 1
-K, 1
-IP, 1
 W, 5
-SV, 4`;
+H, 1
+BB, 1
+HR, 4
+SB, 2
+SV, 4
+RBI, 1`;
 }
 
 export type ScoringFormula = Record<string, number>;

@@ -19,7 +19,7 @@ export const PROP_STATS: PropStat[] = [
   { key: "rec_yd", label: "Receiving yards", sport: "NFL" },
   { key: "rec_td", label: "Receiving TDs", sport: "NFL" },
   // -- MLB (lib/mlb-sync.ts)
-  { key: "1B", label: "Singles", sport: "MLB" },
+  { key: "H", label: "Hits", sport: "MLB" },
   { key: "HR", label: "Home runs", sport: "MLB" },
   { key: "R", label: "Runs", sport: "MLB" },
   { key: "RBI", label: "RBIs", sport: "MLB" },
