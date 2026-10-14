@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { POOL_PRESETS } from "@/lib/config";
 import { Card, SectionTitle, Field, inputClass, SubmitButton } from "@/components/ui";
-import type { SlateGame } from "./page";
+import type { SlateGame } from "@/lib/slate";
 
 function fmtKickoff(iso: string): string {
   return new Date(iso).toLocaleString("en-US", {

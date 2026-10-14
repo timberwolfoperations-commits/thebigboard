@@ -117,6 +117,18 @@ export default async function GroupPage({ params }: { params: Promise<{ id: stri
     cur.wins += 1;
     pointsByUser.set(w.winner_user_id, cur);
   }
+  // Pick'em champs too.
+  const { data: pickemWinners } = await supabase
+    .from("pickem_pools")
+    .select("winner_user_id, winner_points")
+    .eq("group_id", id)
+    .not("winner_user_id", "is", null);
+  for (const w of (pickemWinners ?? []) as any[]) {
+    const cur = pointsByUser.get(w.winner_user_id) ?? { points: 0, wins: 0 };
+    cur.points += w.winner_points;
+    cur.wins += 1;
+    pointsByUser.set(w.winner_user_id, cur);
+  }
   const leaderboard = memberList
     .map((m) => ({ ...m, ...(pointsByUser.get(m.user_id) ?? { points: 0, wins: 0 }) }))
     .sort((a, b) => b.points - a.points);
@@ -144,6 +156,24 @@ export default async function GroupPage({ params }: { params: Promise<{ id: stri
     entriesByPool.set(e.pool_id, (entriesByPool.get(e.pool_id) ?? 0) + 1);
   }
 
+  // ---- pick'em pools ------------------------------------------------------
+  const { data: pickemPools } = await supabase
+    .from("pickem_pools")
+    .select("id, name, week, season, lock_at, winner_user_id, winner_points")
+    .eq("group_id", id)
+    .order("created_at", { ascending: false });
+  const openPickem = ((pickemPools ?? []) as any[]).filter((p) => !p.winner_user_id);
+  const settledPickem = ((pickemPools ?? []) as any[]).filter((p) => p.winner_user_id);
+  const { data: pickemPicks } = await supabase
+    .from("pickem_picks")
+    .select("pool_id, user_id")
+    .in("pool_id", (pickemPools ?? []).map((p: any) => p.id));
+  const pickersByPool = new Map<string, Set<string>>();
+  for (const pk of (pickemPicks ?? []) as any[]) {
+    if (!pickersByPool.has(pk.pool_id)) pickersByPool.set(pk.pool_id, new Set());
+    pickersByPool.get(pk.pool_id)!.add(pk.user_id);
+  }
+
   const host = (await headers()).get("host") ?? "";
   const proto = host.startsWith("localhost") ? "http" : "https";
   const inviteUrl = `${proto}://${host}/join/${group.invite_token}`;
@@ -164,6 +194,12 @@ export default async function GroupPage({ params }: { params: Promise<{ id: stri
             className="shrink-0 rounded-full border border-slate-900 px-5 py-2.5 text-sm font-semibold text-slate-900 hover:bg-slate-100"
           >
             + New pool
+          </Link>
+          <Link
+            href={`/groups/${id}/pickem/new`}
+            className="shrink-0 rounded-full border border-slate-900 px-5 py-2.5 text-sm font-semibold text-slate-900 hover:bg-slate-100"
+          >
+            + Pick&rsquo;em
           </Link>
         </div>
         <div className="text-center">
@@ -229,7 +265,7 @@ export default async function GroupPage({ params }: { params: Promise<{ id: stri
         )}
       </div>
 
-      {openPools.length > 0 && (
+      {(openPools.length > 0 || openPickem.length > 0) && (
         <div>
           <SectionTitle>Pools</SectionTitle>
           <div className="space-y-2">
@@ -251,6 +287,35 @@ export default async function GroupPage({ params }: { params: Promise<{ id: stri
                     </div>
                     <p className="mt-1 text-sm text-slate-600">
                       ${p.budget} cap · {p.roster_size} players · {n} {n === 1 ? "entry" : "entries"}
+                    </p>
+                  </Card>
+                </Link>
+              );
+            })}
+            {openPickem.map((p: any) => {
+              const locked = new Date(p.lock_at).getTime() <= Date.now();
+              const n = pickersByPool.get(p.id)?.size ?? 0;
+              return (
+                <Link key={p.id} href={`/groups/${id}/pickem/${p.id}`}>
+                  <Card className="transition hover:border-slate-400">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="font-display text-lg font-semibold uppercase tracking-wide">{p.name}</p>
+                      <span className="flex shrink-0 gap-1">
+                        <span className="inline-block rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-semibold text-emerald-800">
+                          pick&rsquo;em
+                        </span>
+                        <span
+                          className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+                            locked ? "bg-slate-100 text-slate-500" : "bg-blue-100 text-blue-800"
+                          }`}
+                        >
+                          {locked ? "locked" : "open"}
+                        </span>
+                      </span>
+                    </div>
+                    <p className="mt-1 text-sm text-slate-600">
+                      {p.week ? `Week ${p.week} · ` : ""}
+                      {n} {n === 1 ? "picker" : "pickers"}
                     </p>
                   </Card>
                 </Link>
@@ -297,7 +362,7 @@ export default async function GroupPage({ params }: { params: Promise<{ id: stri
         </Card>
       </div>
 
-      {settledPools.length > 0 && (
+      {(settledPools.length > 0 || settledPickem.length > 0) && (
         <div>
           <SectionTitle>Settled pools</SectionTitle>
           <div className="space-y-2">
@@ -314,6 +379,29 @@ export default async function GroupPage({ params }: { params: Promise<{ id: stri
                     </div>
                     <p className="mt-1 text-sm text-slate-600">
                       {nameOf(p.winner_user_id)} won · +{p.winner_points} pts · {n} {n === 1 ? "entry" : "entries"}
+                    </p>
+                  </Card>
+                </Link>
+              );
+            })}
+            {settledPickem.map((p: any) => {
+              const n = pickersByPool.get(p.id)?.size ?? 0;
+              return (
+                <Link key={p.id} href={`/groups/${id}/pickem/${p.id}`}>
+                  <Card className="transition hover:border-slate-400">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="font-display text-lg font-semibold uppercase tracking-wide">{p.name}</p>
+                      <span className="flex shrink-0 gap-1">
+                        <span className="inline-block rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-semibold text-emerald-800">
+                          pick&rsquo;em
+                        </span>
+                        <span className="inline-block rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-semibold text-slate-500">
+                          settled
+                        </span>
+                      </span>
+                    </div>
+                    <p className="mt-1 text-sm text-slate-600">
+                      {nameOf(p.winner_user_id)} won · +{p.winner_points} pts · {n} {n === 1 ? "picker" : "pickers"}
                     </p>
                   </Card>
                 </Link>
