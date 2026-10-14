@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { createPool } from "@/lib/actions";
-import { loadSlateGames } from "@/lib/slate";
+import { loadSlateGames, loadMlbSlateGames } from "@/lib/slate";
 import PoolForm from "./pool-form";
 
 export default async function NewPoolPage({ params }: { params: Promise<{ id: string }> }) {
@@ -23,6 +23,7 @@ export default async function NewPoolPage({ params }: { params: Promise<{ id: st
 
   const create = createPool.bind(null, id);
   const slateGames = await loadSlateGames(supabase);
+  const mlbGames = await loadMlbSlateGames(supabase);
 
   return (
     <div className="space-y-6">
@@ -30,7 +31,7 @@ export default async function NewPoolPage({ params }: { params: Promise<{ id: st
         ← Back to group
       </Link>
 
-      <PoolForm action={create} games={slateGames} />
+      <PoolForm action={create} games={slateGames} mlbGames={mlbGames} />
     </div>
   );
 }

@@ -60,3 +60,52 @@ export async function loadSlateGames(
       }) === "Sun",
   }));
 }
+
+// MLB slate for Showdown pool creation: games from the last 2 days through
+// the next 3 (postseason-friendly window). The next upcoming game comes
+// checked by default — the commish checks any other games the pool covers.
+// Same empty-table fallback as the NFL loader: sync once from ESPN.
+export async function loadMlbSlateGames(
+  supabase: Awaited<ReturnType<typeof createClient>>
+): Promise<SlateGame[]> {
+  const now = new Date();
+  const from = new Date(now.getTime() - 2 * 24 * 3600 * 1000);
+  const to = new Date(now.getTime() + 3 * 24 * 3600 * 1000);
+
+  async function read() {
+    const { data } = await supabase
+      .from("games")
+      .select("id, label, starts_at, season")
+      .eq("sport", "MLB")
+      .gte("starts_at", from.toISOString())
+      .lt("starts_at", to.toISOString())
+      .order("starts_at", { ascending: true });
+    return (data ?? []) as {
+      id: string;
+      label: string;
+      starts_at: string;
+      season: number | null;
+    }[];
+  }
+
+  let games = await read();
+  if (games.length === 0) {
+    try {
+      const { syncMlb } = await import("@/lib/mlb-sync");
+      await syncMlb();
+      games = await read();
+    } catch {
+      // ESPN hiccup — the form still works, just without the checklist.
+    }
+  }
+
+  const nextUp = games.find((g) => new Date(g.starts_at).getTime() >= now.getTime());
+  return games.map((g) => ({
+    id: g.id,
+    label: g.label,
+    starts_at: g.starts_at,
+    week: null,
+    season: g.season,
+    defaultChecked: nextUp != null && g.id === nextUp.id,
+  }));
+}

@@ -1,10 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { refreshNflScores } from "@/lib/actions";
+import { refreshScores } from "@/lib/actions";
 
-// Commish pulls fresh NFL scores mid-game. The sync runs server-side with
-// the service key — the CRON_SECRET never touches the client.
+// Commish pulls fresh scores mid-game, both sports. The sync runs
+// server-side with the service key — the CRON_SECRET never touches
+// the client.
 export default function RefreshScoresButton() {
   const [busy, setBusy] = useState(false);
   const [detail, setDetail] = useState("");
@@ -13,7 +14,7 @@ export default function RefreshScoresButton() {
     setBusy(true);
     setDetail("");
     try {
-      const r = await refreshNflScores();
+      const r = await refreshScores();
       setDetail(`Synced ${r.games_upserted} games, ${r.stat_lines_upserted} stat lines.`);
     } catch (e: any) {
       setDetail(e?.message ?? "Sync failed.");
