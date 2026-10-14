@@ -58,7 +58,9 @@ export default function PropLinesEditor({
           </datalist>
         )}
         {rows.map((r, i) => (
-          <div key={i} className="flex items-center gap-2">
+          // Player name gets its own full-width line — on a phone the old
+          // five-across row squeezed it to nothing.
+          <div key={i} className="space-y-2 rounded-xl border border-slate-200 p-2">
             <input
               value={r.player_name}
               onChange={(e) => {
@@ -76,50 +78,52 @@ export default function PropLinesEditor({
               maxLength={60}
               autoComplete="off"
               list={recentPlayers.length > 0 ? "prop-player-options" : undefined}
-              className={`${inputClass} min-w-0 flex-1`}
+              className={`${inputClass} w-full`}
             />
-            <input
-              value={r.team}
-              onChange={(e) => set(i, { team: e.target.value })}
-              placeholder="MIL"
-              maxLength={3}
-              className={`${inputClass} w-16 shrink-0 uppercase`}
-            />
-            <select
-              value={r.stat_key}
-              onChange={(e) => set(i, { stat_key: e.target.value })}
-              className={`${inputClass} w-32 shrink-0`}
-            >
-              <optgroup label="MLB">
-                {mlb.map((s) => (
-                  <option key={s.key} value={s.key}>
-                    {s.label}
-                  </option>
-                ))}
-              </optgroup>
-              <optgroup label="NFL">
-                {nfl.map((s) => (
-                  <option key={s.key} value={s.key}>
-                    {s.label}
-                  </option>
-                ))}
-              </optgroup>
-            </select>
-            <input
-              value={r.line}
-              onChange={(e) => set(i, { line: e.target.value })}
-              placeholder="1.5"
-              inputMode="decimal"
-              className={`${inputClass} w-20 shrink-0`}
-            />
-            <button
-              type="button"
-              onClick={() => remove(i)}
-              aria-label="Remove line"
-              className="shrink-0 rounded-lg px-2 py-2 text-lg leading-none text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-            >
-              ×
-            </button>
+            <div className="flex items-center gap-2">
+              <input
+                value={r.team}
+                onChange={(e) => set(i, { team: e.target.value })}
+                placeholder="MIL"
+                maxLength={3}
+                className={`${inputClass} w-16 shrink-0 uppercase`}
+              />
+              <select
+                value={r.stat_key}
+                onChange={(e) => set(i, { stat_key: e.target.value })}
+                className={`${inputClass} min-w-0 flex-1`}
+              >
+                <optgroup label="MLB">
+                  {mlb.map((s) => (
+                    <option key={s.key} value={s.key}>
+                      {s.label}
+                    </option>
+                  ))}
+                </optgroup>
+                <optgroup label="NFL">
+                  {nfl.map((s) => (
+                    <option key={s.key} value={s.key}>
+                      {s.label}
+                    </option>
+                  ))}
+                </optgroup>
+              </select>
+              <input
+                value={r.line}
+                onChange={(e) => set(i, { line: e.target.value })}
+                placeholder="1.5"
+                inputMode="decimal"
+                className={`${inputClass} w-20 shrink-0`}
+              />
+              <button
+                type="button"
+                onClick={() => remove(i)}
+                aria-label="Remove line"
+                className="shrink-0 rounded-lg px-2 py-2 text-lg leading-none text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+              >
+                ×
+              </button>
+            </div>
           </div>
         ))}
         <div className="flex items-center gap-3 pt-1">
