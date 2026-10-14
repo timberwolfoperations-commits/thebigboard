@@ -1,10 +1,13 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { savePickemPick, awardPickemWinner } from "@/lib/pickem-actions";
+import { savePickemPick, savePropPick, setPickemLines, awardPickemWinner } from "@/lib/pickem-actions";
 import { computePickemLeaderboard } from "@/lib/pickem-scoring";
+import { PROP_STAT_LABELS } from "@/lib/prop-stats";
 import { Card, SectionTitle, SubmitButton } from "@/components/ui";
 import PickemGameCard from "@/components/pickem-game-card";
+import PropCard from "@/components/prop-card";
+import PropLinesEditor, { type PropLineDraft } from "@/components/prop-lines-editor";
 
 function fmtLock(iso: string): string {
   return new Date(iso).toLocaleString("en-US", {
@@ -54,12 +57,42 @@ export default async function PickemPoolPage({
 
   const locked = new Date(pool.lock_at).getTime() <= Date.now();
   const isCommish = pool.created_by === user.id;
+  const isOverUnder = pool.variant === "over_under";
   const allFinal = gameList.length > 0 && gameList.every((g: any) => g.status === "final");
+
+  const { data: propLines } = isOverUnder
+    ? await supabase
+        .from("pickem_lines")
+        .select("id, player_name, team, stat_key, line")
+        .eq("pool_id", poolId)
+        .order("created_at", { ascending: true })
+    : { data: [] as any[] };
+  const propLineList = (propLines ?? []) as any[];
+
+  const { data: myPropPicks } = isOverUnder
+    ? await supabase
+        .from("pickem_prop_picks")
+        .select("line_id, side")
+        .eq("pool_id", poolId)
+        .eq("user_id", user.id)
+    : { data: [] as any[] };
+  const mySideByLine = new Map(
+    ((myPropPicks ?? []) as any[]).map((p) => [p.line_id, p.side])
+  );
 
   const board = await computePickemLeaderboard(supabase, poolId);
 
   const savePick = savePickemPick.bind(null, poolId);
+  const saveProp = savePropPick.bind(null, poolId);
+  const setLines = setPickemLines.bind(null, poolId);
   const awardWinner = awardPickemWinner.bind(null, poolId);
+
+  const existingDrafts: PropLineDraft[] = propLineList.map((l) => ({
+    player_name: l.player_name,
+    team: l.team ?? "",
+    stat_key: l.stat_key,
+    line: String(l.line),
+  }));
 
   return (
     <div className="space-y-6">
@@ -70,7 +103,7 @@ export default async function PickemPoolPage({
       <div className="text-center">
         <h1 className="font-display text-4xl font-bold uppercase leading-none tracking-wide">{pool.name}</h1>
         <p className="mt-1 text-sm text-slate-500">
-          {pool.week ? `Week ${pool.week} · ` : ""}pick&rsquo;em ·{" "}
+          {pool.week ? `Week ${pool.week} · ` : ""}{isOverUnder ? "over/under" : "pick'em"} ·{" "}
           {locked ? (
             <span className="font-semibold text-red-600">locked</span>
           ) : (
@@ -88,25 +121,69 @@ export default async function PickemPoolPage({
         </Card>
       )}
 
-      <div>
-        <SectionTitle>Make your picks</SectionTitle>
-        <div className="space-y-3">
-          {gameList.map((g: any) => (
-            <PickemGameCard
-              key={g.id}
-              game={g}
-              myPick={myPickByGame.get(g.id) ?? null}
-              canPick={!locked && new Date(g.starts_at).getTime() > Date.now()}
-              action={savePick}
-            />
-          ))}
+      {isOverUnder ? (
+        <div>
+          <SectionTitle>Make your picks</SectionTitle>
+          {isCommish && !locked && (
+            <div className="mb-4">
+              <PropLinesEditor action={setLines} existing={existingDrafts} />
+            </div>
+          )}
+          {propLineList.length > 0 ? (
+            <div className="space-y-3">
+              {propLineList.map((l: any) => (
+                <PropCard
+                  key={l.id}
+                  line={{
+                    id: l.id,
+                    player_name: l.player_name,
+                    team: l.team,
+                    stat_label: PROP_STAT_LABELS[l.stat_key] ?? l.stat_key,
+                    line: l.line,
+                  }}
+                  mySide={mySideByLine.get(l.id) ?? null}
+                  canPick={!locked}
+                  action={saveProp}
+                />
+              ))}
+            </div>
+          ) : (
+            <Card>
+              <p className="text-sm text-slate-500">
+                {isCommish
+                  ? "Set the lines above to open the board."
+                  : "The commish hasn't set the lines yet — check back soon."}
+              </p>
+            </Card>
+          )}
+          {!locked && propLineList.length > 0 && (
+            <p className="mt-2 text-xs text-slate-400">
+              Tap over or under on each prop — tap the other side to change your
+              mind. Everything locks at {fmtLock(pool.lock_at)} ET.
+            </p>
+          )}
         </div>
-        {!locked && (
-          <p className="mt-2 text-xs text-slate-400">
-            Tap a team to pick — tap the other to change your mind. Each game locks at its own kickoff.
-          </p>
-        )}
-      </div>
+      ) : (
+        <div>
+          <SectionTitle>Make your picks</SectionTitle>
+          <div className="space-y-3">
+            {gameList.map((g: any) => (
+              <PickemGameCard
+                key={g.id}
+                game={g}
+                myPick={myPickByGame.get(g.id) ?? null}
+                canPick={!locked && new Date(g.starts_at).getTime() > Date.now()}
+                action={savePick}
+              />
+            ))}
+          </div>
+          {!locked && (
+            <p className="mt-2 text-xs text-slate-400">
+              Tap a team to pick — tap the other to change your mind. Each game locks at its own kickoff.
+            </p>
+          )}
+        </div>
+      )}
 
       <div>
         <SectionTitle>Leaderboard</SectionTitle>

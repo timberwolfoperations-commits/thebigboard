@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { Card, SectionTitle, Field, inputClass, SubmitButton } from "@/components/ui";
 import type { SlateGame } from "@/lib/slate";
 
@@ -58,6 +59,9 @@ export default function PickemForm({
   action: (formData: FormData) => Promise<void>;
   games: SlateGame[];
 }) {
+  const [variant, setVariant] = useState("standard");
+  const isOverUnder = variant === "over_under";
+
   return (
     <Card>
       <SectionTitle>New pick&rsquo;em pool</SectionTitle>
@@ -72,12 +76,28 @@ export default function PickemForm({
           />
         </Field>
 
+        <Field label="Game type">
+          <select
+            name="variant"
+            value={variant}
+            onChange={(e) => setVariant(e.target.value)}
+            className={inputClass}
+          >
+            <option value="standard">Standard — pick every game&rsquo;s winner</option>
+            <option value="over_under">Over/Under — pick sides on player props</option>
+          </select>
+        </Field>
+
         <Field label="Rules (shown to everyone)">
           <textarea
             name="description"
             rows={4}
             maxLength={2000}
-            defaultValue="Pick the winner of every game. 1 point per correct pick — most points wins. Ties score for nobody."
+            defaultValue={
+              isOverUnder
+                ? "The commish sets over/under lines on player stats. Pick a side on each prop — 1 point per correct side, most points wins."
+                : "Pick the winner of every game. 1 point per correct pick — most points wins. Ties score for nobody."
+            }
             className={inputClass}
           />
         </Field>
@@ -101,7 +121,9 @@ export default function PickemForm({
           />
         </Field>
         <p className="-mt-2 text-xs text-slate-500">
-          Defaults to the first kickoff. Each game also locks individually at its own kickoff.
+          {isOverUnder
+            ? "Defaults to the first kickoff — every prop locks then."
+            : "Defaults to the first kickoff. Each game also locks individually at its own kickoff."}
         </p>
 
         {games.length > 0 ? (
@@ -123,8 +145,9 @@ export default function PickemForm({
               ))}
             </div>
             <p className="mt-1 text-xs text-slate-500">
-              Sunday games are checked by default — uncheck any, or add Thursday/Monday
-              games. Winners fill in automatically from the scores feed.
+              {isOverUnder
+                ? "Props grade against these games' player stats from the scores feed."
+                : "Sunday games are checked by default — uncheck any, or add Thursday/Monday games. Winners fill in automatically from the scores feed."}
             </p>
           </div>
         ) : (

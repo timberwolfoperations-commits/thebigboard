@@ -61,8 +61,12 @@ export async function createPickemPool(groupId: string, formData: FormData) {
   const week = parseInt(String(formData.get("week") ?? ""), 10);
   const season = parseInt(String(formData.get("season") ?? ""), 10);
   const lockAt = parseEasternLock(String(formData.get("lock_at") ?? ""));
+  const variant = String(formData.get("variant") ?? "standard");
 
   if (!name) throw new Error("Give your pool a name.");
+  if (!["standard", "over_under"].includes(variant)) {
+    throw new Error("That variant isn't playable yet.");
+  }
   if (lockAt.getTime() <= Date.now()) throw new Error("Lock time has to be in the future.");
 
   const gameIds = [...new Set(formData.getAll("game_ids").map(String))].filter(Boolean);
@@ -83,7 +87,7 @@ export async function createPickemPool(groupId: string, formData: FormData) {
       group_id: groupId,
       name,
       description,
-      variant: "standard",
+      variant,
       season: Number.isFinite(season) ? season : null,
       week: Number.isFinite(week) ? week : null,
       lock_at: lockAt.toISOString(),
@@ -186,4 +190,82 @@ export async function awardPickemWinner(poolId: string) {
 
   revalidatePath(`/groups/${pool.group_id}/pickem/${poolId}`);
   revalidatePath(`/groups/${pool.group_id}`);
+}
+
+// ------------------------------------------------- over/under props
+// The commish sets the prop lines any time before lock. Replace-on-save —
+// simplest semantics, so set them before anyone picks (saving wipes the
+// old lines, and their picks go with them via cascade).
+export async function setPickemLines(poolId: string, formData: FormData) {
+  const { supabase, user } = await getUser();
+  const { pool } = await loadPickemPool(poolId);
+  if (pool.created_by !== user.id) throw new Error("Only the commish sets the lines.");
+  if (pool.variant !== "over_under") throw new Error("This pool isn't over/under.");
+  if (new Date(pool.lock_at).getTime() <= Date.now()) throw new Error("Picks are locked.");
+
+  let parsed: any[];
+  try {
+    parsed = JSON.parse(String(formData.get("lines") ?? "[]"));
+    if (!Array.isArray(parsed)) throw new Error("bad shape");
+  } catch {
+    throw new Error("Those lines didn't parse.");
+  }
+
+  const { VALID_PROP_KEYS } = await import("./prop-stats");
+  const clean: any[] = [];
+  for (const l of parsed) {
+    const player_name = String(l?.player_name ?? "").trim();
+    const team = String(l?.team ?? "").trim().toUpperCase();
+    const stat_key = String(l?.stat_key ?? "").trim();
+    const line = Number(l?.line);
+    if (!player_name || !stat_key || !Number.isFinite(line)) continue; // skip blank rows
+    if (!VALID_PROP_KEYS.has(stat_key)) throw new Error(`"${stat_key}" isn't a settable stat.`);
+    clean.push({ pool_id: poolId, player_name, team, stat_key, line });
+  }
+  if (clean.length === 0) throw new Error("Add at least one line.");
+
+  const { error: dErr } = await supabase.from("pickem_lines").delete().eq("pool_id", poolId);
+  if (dErr) throw new Error(dErr.message);
+  const { error: iErr } = await supabase.from("pickem_lines").insert(clean);
+  if (iErr) throw new Error(iErr.message);
+
+  revalidatePath(`/groups/${pool.group_id}/pickem/${poolId}`);
+}
+
+// Pick over or under on one prop. Upsert — re-tapping flips your side.
+// Rejected after the pool locks.
+export async function savePropPick(poolId: string, formData: FormData) {
+  const { supabase, user } = await getUser();
+  const { pool } = await loadPickemPool(poolId);
+  await memberRole(supabase, pool.group_id, user.id);
+  if (pool.variant !== "over_under") throw new Error("This pool isn't over/under.");
+  if (new Date(pool.lock_at).getTime() <= Date.now()) {
+    throw new Error("Picks are locked.");
+  }
+
+  const lineId = String(formData.get("line_id") ?? "");
+  const side = String(formData.get("side") ?? "");
+  if (!lineId || (side !== "over" && side !== "under")) throw new Error("Pick over or under.");
+
+  const { data: line } = await supabase
+    .from("pickem_lines")
+    .select("id")
+    .eq("pool_id", poolId)
+    .eq("id", lineId)
+    .maybeSingle();
+  if (!line) throw new Error("That prop isn't in this pool.");
+
+  const { error } = await supabase.from("pickem_prop_picks").upsert(
+    {
+      pool_id: poolId,
+      line_id: lineId,
+      user_id: user.id,
+      side,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: "pool_id,user_id,line_id" }
+  );
+  if (error) throw new Error(error.message);
+
+  revalidatePath(`/groups/${pool.group_id}/pickem/${poolId}`);
 }
