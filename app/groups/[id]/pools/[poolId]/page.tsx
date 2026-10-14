@@ -2,12 +2,23 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { addPoolPlayers, addOnePoolPlayer, removePoolPlayer, deleteEntry, updatePool, awardPoolWinner } from "@/lib/actions";
-import { defaultPoolRules, defaultScoringFormula, calcPoints } from "@/lib/config";
+import { defaultPoolRules, defaultScoringFormula } from "@/lib/config";
+import { computePoolPoints } from "@/lib/pool-scoring";
 import { Card, SectionTitle, Field, inputClass, SubmitButton, DangerButton } from "@/components/ui";
 import PoolStatGrid from "@/components/pool-stat-grid";
 import PoolEntryPicker from "@/components/pool-entry-picker";
 
 function fmtLock(iso: string): string {
+  return new Date(iso).toLocaleString("en-US", {
+    timeZone: "America/New_York",
+    weekday: "short",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+function fmtGame(iso: string | null): string {
+  if (!iso) return "";
   return new Date(iso).toLocaleString("en-US", {
     timeZone: "America/New_York",
     weekday: "short",
@@ -69,6 +80,10 @@ export default async function PoolPage({
   const locked = new Date(pool.lock_at).getTime() <= Date.now();
   const isCommish = pool.created_by === user.id;
 
+  // Points come from the API stat lines on the pool's linked games when it
+  // has any; otherwise from manual stat lines, exactly as before.
+  const { points: pointsByPlayer, unmatched, linkedGames } = await computePoolPoints(supabase, poolId);
+
   const { data: statLines } = await supabase
     .from("pool_stat_lines")
     .select("player_id, game_number, stats")
@@ -77,16 +92,18 @@ export default async function PoolPage({
   const formula = (pool.scoring_formula ?? {}) as Record<string, number>;
   const statKeys = Object.keys(formula);
 
-  const pointsByPlayer = new Map<string, number>();
   const linesByGame = new Map<number, Map<string, Record<string, number>>>();
   for (const s of lineList) {
-    const pts = calcPoints((s.stats ?? {}) as Record<string, number>, formula);
-    pointsByPlayer.set(s.player_id, (pointsByPlayer.get(s.player_id) ?? 0) + pts);
     if (!linesByGame.has(s.game_number)) linesByGame.set(s.game_number, new Map());
     linesByGame.get(s.game_number)!.set(s.player_id, (s.stats ?? {}) as Record<string, number>);
   }
-  const games = [...linesByGame.keys()].sort((a, b) => a - b);
-  const nextGame = games.length > 0 ? games[games.length - 1] + 1 : 1;
+  const manualGames = [...linesByGame.keys()].sort((a, b) => a - b);
+  // For linked pools the manual grids map 1:1 onto linked games by kickoff
+  // order, so a hand-entered row overrides that game's API line.
+  const gridGames =
+    linkedGames.length > 0
+      ? linkedGames.map((_, i) => i + 1)
+      : [...manualGames, (manualGames.length > 0 ? manualGames[manualGames.length - 1] + 1 : 1)];
 
   const board = entryList
     .map((e: any) => ({
@@ -131,6 +148,31 @@ export default async function PoolPage({
         <Card>
           <SectionTitle>How it works</SectionTitle>
           <p className="whitespace-pre-wrap text-sm text-slate-700">{pool.description}</p>
+        </Card>
+      )}
+
+      {linkedGames.length > 0 && (
+        <Card>
+          <SectionTitle>Games in this pool</SectionTitle>
+          <ul className="space-y-1 text-sm">
+            {linkedGames.map((g) => (
+              <li key={g.id} className="flex items-baseline justify-between gap-2">
+                <span className="font-medium text-slate-700">{g.label}</span>
+                <span className="shrink-0 text-xs text-slate-400">
+                  {g.status === "final"
+                    ? `${g.away_score ?? 0}–${g.home_score ?? 0} · final`
+                    : g.status === "in_progress"
+                      ? `${g.away_score ?? 0}–${g.home_score ?? 0} · live`
+                      : `${fmtGame(g.starts_at)} ET`}
+                </span>
+              </li>
+            ))}
+          </ul>
+          {unmatched.length > 0 && (
+            <p className="mt-2 text-xs text-amber-600">
+              No stats found yet for: {unmatched.join(", ")}
+            </p>
+          )}
         </Card>
       )}
 
@@ -284,13 +326,19 @@ export default async function PoolPage({
           {isCommish && locked && playerList.length > 0 && statKeys.length > 0 && (
             <div>
               <SectionTitle>Enter stats</SectionTitle>
+              {linkedGames.length > 0 && (
+                <p className="mb-3 text-xs text-slate-500">
+                  Stats auto-fill from the linked games below. Hand-enter a row to
+                  override a player for that game (Game N = the Nth game listed).
+                </p>
+              )}
               <div className="space-y-4">
-                {[...games, nextGame].map((g) => (
+                {gridGames.map((g) => (
                   <PoolStatGrid
                     key={g}
                     poolId={poolId}
                     game={g}
-                    saved={games.includes(g)}
+                    saved={manualGames.includes(g)}
                     players={playerList}
                     statKeys={statKeys}
                     lines={Object.fromEntries(linesByGame.get(g) ?? [])}

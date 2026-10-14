@@ -1,11 +1,15 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import { computePoolPoints } from "@/lib/pool-scoring";
 import PoolStatGrid from "@/components/pool-stat-grid";
+import RefreshScoresButton from "@/components/refresh-scores-button";
 import { Card, SectionTitle } from "@/components/ui";
 
 // Commish scoring: every pool you created that has locked but has no winner
 // yet, with its stat grids inline. One stop instead of opening each pool.
+// Pools with linked NFL games auto-score from the API — the grids below stay
+// as the manual override path, and Refresh pulls fresh scores on demand.
 export default async function ScoringPage() {
   const supabase = await createClient();
   const {
@@ -48,9 +52,17 @@ export default async function ScoringPage() {
     byGame.get(s.game_number)!.set(s.player_id, (s.stats ?? {}) as Record<string, number>);
   }
 
+  // Linked-game status per pool (auto-scoring + unmatched players).
+  const scored = new Map<string, { linkedCount: number; unmatched: string[] }>();
+  for (const p of needScores) {
+    const r = await computePoolPoints(supabase, p.id);
+    scored.set(p.id, { linkedCount: r.linkedGames.length, unmatched: r.unmatched });
+  }
+
   return (
     <div className="space-y-6">
       <SectionTitle>Scoring</SectionTitle>
+      <RefreshScoresButton />
 
       {needScores.length === 0 && (
         <Card>
@@ -65,6 +77,14 @@ export default async function ScoringPage() {
         const byGame = linesByPool.get(pool.id) ?? new Map();
         const games = [...byGame.keys()].sort((a, b) => a - b);
         const nextGame = games.length > 0 ? games[games.length - 1] + 1 : 1;
+        const s = scored.get(pool.id);
+        const linkedCount = s?.linkedCount ?? 0;
+        // Linked pools: one grid per linked game by kickoff order, so a
+        // hand-entered row overrides that game's API line.
+        const gridGames =
+          linkedCount > 0
+            ? Array.from({ length: linkedCount }, (_, i) => i + 1)
+            : [...games, nextGame];
         const groupName = Array.isArray(pool.groups) ? pool.groups[0]?.name : pool.groups?.name;
 
         return (
@@ -75,6 +95,16 @@ export default async function ScoringPage() {
                   {pool.name}
                 </h3>
                 {groupName && <p className="text-xs text-slate-500">{groupName}</p>}
+                {linkedCount > 0 && (
+                  <p className="text-xs text-slate-500">
+                    Auto-scoring from {linkedCount} linked game{linkedCount === 1 ? "" : "s"}
+                    {(s?.unmatched?.length ?? 0) > 0 && (
+                      <span className="text-amber-600">
+                        {" "}· no stats yet for {s!.unmatched.join(", ")}
+                      </span>
+                    )}
+                  </p>
+                )}
               </div>
               <Link
                 href={`/groups/${pool.group_id}/pools/${pool.id}`}
@@ -89,7 +119,7 @@ export default async function ScoringPage() {
               </Card>
             ) : (
               <div className="space-y-4">
-                {[...games, nextGame].map((g) => (
+                {gridGames.map((g) => (
                   <PoolStatGrid
                     key={g}
                     poolId={pool.id}

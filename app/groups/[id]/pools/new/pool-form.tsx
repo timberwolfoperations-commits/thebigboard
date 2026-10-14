@@ -3,6 +3,16 @@
 import { useState } from "react";
 import { POOL_PRESETS } from "@/lib/config";
 import { Card, SectionTitle, Field, inputClass, SubmitButton } from "@/components/ui";
+import type { SlateGame } from "./page";
+
+function fmtKickoff(iso: string): string {
+  return new Date(iso).toLocaleString("en-US", {
+    timeZone: "America/New_York",
+    weekday: "short",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
 
 function todayAt8pmET(): string {
   const et = new Date(new Date().toLocaleString("en-US", { timeZone: "America/New_York" }));
@@ -23,7 +33,13 @@ const PRESET_LOCKS: Record<string, () => string> = {
   nfl: nextSundayAt1pmET,
 };
 
-export default function PoolForm({ action }: { action: (formData: FormData) => Promise<void> }) {
+export default function PoolForm({
+  action,
+  games,
+}: {
+  action: (formData: FormData) => Promise<void>;
+  games: SlateGame[];
+}) {
   const [preset, setPreset] = useState("mlb");
   const [description, setDescription] = useState(POOL_PRESETS.mlb.rules);
   const [budget, setBudget] = useState(String(POOL_PRESETS.mlb.budget));
@@ -136,9 +152,42 @@ export default function PoolForm({ action }: { action: (formData: FormData) => P
           />
         </Field>
 
+        {preset === "nfl" && games.length > 0 && (
+          <div>
+            <span className="mb-1 block text-sm font-medium text-slate-700">Games in this slate</span>
+            <div className="max-h-56 space-y-1 overflow-y-auto rounded-xl border border-slate-200 p-3">
+              {games.map((g) => (
+                <label key={g.id} className="flex items-center gap-2 text-sm text-slate-700">
+                  <input
+                    type="checkbox"
+                    name="game_ids"
+                    value={g.id}
+                    defaultChecked={g.defaultChecked}
+                    className="h-4 w-4 accent-[#c2410c]"
+                  />
+                  <span className="font-medium">{g.label}</span>
+                  <span className="text-xs text-slate-400">{fmtKickoff(g.starts_at)} ET</span>
+                </label>
+              ))}
+            </div>
+            <p className="mt-1 text-xs text-slate-500">
+              Sunday games are checked by default — uncheck any, or add Thursday/Monday
+              games. Stats auto-fill from these games; no manual entry needed.
+            </p>
+          </div>
+        )}
+        {preset === "nfl" && games.length === 0 && (
+          <p className="text-xs text-slate-500">
+            No upcoming NFL games found yet — the slate appears once ESPN posts it.
+            The pool will score manually until then.
+          </p>
+        )}
+
         <p className="text-sm text-slate-500">
           After creating it, paste the player list as lines of <span className="font-mono">Name, TEAM, salary</span>.
-          You&rsquo;ll enter per-game points after each game — the app is the ledger, not the referee.
+          {preset === "nfl" && games.length > 0
+            ? " Player stats fill in automatically from the linked games."
+            : " You\u2019ll enter per-game points after each game \u2014 the app is the ledger, not the referee."}
         </p>
 
         <SubmitButton>Create pool</SubmitButton>

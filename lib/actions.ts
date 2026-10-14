@@ -4,7 +4,7 @@ import { randomBytes } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { GRACE_DAYS, AUTO_SETTLE_DAYS, calcPoints } from "@/lib/config";
+import { GRACE_DAYS, AUTO_SETTLE_DAYS } from "@/lib/config";
 
 // ------------------------------------------------------------------ helpers
 
@@ -437,8 +437,27 @@ export async function createPool(groupId: string, formData: FormData) {
     .single();
   if (error) throw new Error(error.message);
 
+  // NFL Sunday slate: link the checked games so the pool auto-scores.
+  const gameIds = [...new Set(formData.getAll("game_ids").map(String))].filter(Boolean);
+  if (gameIds.length > 0) {
+    const { error: gErr } = await supabase
+      .from("pool_games")
+      .insert(gameIds.map((game_id) => ({ pool_id: data.id, game_id })));
+    if (gErr) throw new Error(gErr.message);
+  }
+
   revalidatePath(`/groups/${groupId}`);
   redirect(`/groups/${groupId}/pools/${data.id}`);
+}
+
+// Commish pulls fresh NFL scores on demand (mid-game). Runs the ESPN sync
+// server-side with the service key — the CRON_SECRET never leaves the server.
+export async function refreshNflScores() {
+  await getUser();
+  const { syncNfl } = await import("./nfl-sync");
+  const result = await syncNfl();
+  revalidatePath("/scoring");
+  return result;
 }
 
 // Commish pastes the player list: one per line, "Name, TEAM, salary".
@@ -536,22 +555,17 @@ export async function awardPoolWinner(poolId: string) {
   if (new Date(pool.lock_at).getTime() > Date.now()) throw new Error("The pool isn't locked yet.");
   if (pool.winner_user_id) throw new Error("This pool already has a winner.");
 
-  const formula = (pool.scoring_formula ?? {}) as ScoringFormula;
+  const { computePoolPoints } = await import("./pool-scoring");
+  const { points: pointsByPlayer } = await computePoolPoints(supabase, poolId);
 
-  const [{ data: entries }, { data: picks }, { data: lines }] = await Promise.all([
+  const [{ data: entries }, { data: picks }] = await Promise.all([
     supabase.from("pool_entries").select("id, user_id, created_at").eq("pool_id", poolId),
     supabase
       .from("pool_entry_picks")
       .select("entry_id, pool_players!inner(id, pool_id)")
       .eq("pool_players.pool_id", poolId),
-    supabase.from("pool_stat_lines").select("player_id, stats").eq("pool_id", poolId),
   ]);
 
-  const pointsByPlayer = new Map<string, number>();
-  for (const s of (lines ?? []) as any[]) {
-    const pts = calcPoints((s.stats ?? {}) as Record<string, number>, formula);
-    pointsByPlayer.set(s.player_id, (pointsByPlayer.get(s.player_id) ?? 0) + pts);
-  }
   const playerIdsByEntry = new Map<string, string[]>();
   for (const pk of (picks ?? []) as any[]) {
     const arr = playerIdsByEntry.get(pk.entry_id) ?? [];
