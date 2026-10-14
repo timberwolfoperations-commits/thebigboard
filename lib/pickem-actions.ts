@@ -232,6 +232,66 @@ export async function setPickemLines(poolId: string, formData: FormData) {
   revalidatePath(`/groups/${pool.group_id}/pickem/${poolId}`);
 }
 
+// ------------------------------------------------- recent prop players
+// Distinct players with stat lines in the pool's teams' recent finals —
+// real participants, not the 40-man roster. Feeds the lines editor's
+// player picker. Empty array when there are no recent finals (the editor
+// then behaves as a plain text field). Read-only.
+export async function getRecentPropPlayers(
+  poolId: string
+): Promise<{ player_name: string; team: string }[]> {
+  const { supabase } = await getUser();
+  const { pool } = await loadPickemPool(poolId);
+
+  const { data: links } = await supabase
+    .from("pickem_pool_games")
+    .select("game_id")
+    .eq("pool_id", poolId);
+  const gameIds = ((links ?? []) as any[]).map((l) => l.game_id);
+  if (gameIds.length === 0) return [];
+
+  const { data: slateGames } = await supabase
+    .from("games")
+    .select("home_team, away_team")
+    .in("id", gameIds);
+  const teams = [
+    ...new Set(
+      ((slateGames ?? []) as any[])
+        .flatMap((g) => [g.home_team, g.away_team])
+        .map((t) => String(t ?? "").toUpperCase())
+        .filter((t) => /^[A-Z0-9]{2,4}$/.test(t))
+    ),
+  ];
+  if (teams.length === 0) return [];
+
+  const cutoff = new Date(Date.now() - 14 * 24 * 3600 * 1000).toISOString();
+  const teamFilter = teams
+    .map((t) => `home_team.eq.${t},away_team.eq.${t}`)
+    .join(",");
+  const { data: recentGames } = await supabase
+    .from("games")
+    .select("id")
+    .eq("status", "final")
+    .gte("starts_at", cutoff)
+    .or(teamFilter);
+  const recentIds = ((recentGames ?? []) as any[]).map((g) => g.id);
+  if (recentIds.length === 0) return [];
+
+  const { data: lines } = await supabase
+    .from("game_stat_lines")
+    .select("player_name, team")
+    .in("game_id", recentIds);
+  const seen = new Map<string, { player_name: string; team: string }>();
+  for (const l of (lines ?? []) as any[]) {
+    const key = `${l.player_name}||${l.team}`;
+    if (!seen.has(key))
+      seen.set(key, { player_name: l.player_name, team: l.team ?? "" });
+  }
+  return [...seen.values()].sort((a, b) =>
+    a.player_name.localeCompare(b.player_name)
+  );
+}
+
 // Pick over or under on one prop. Upsert — re-tapping flips your side.
 // Rejected after the pool locks.
 export async function savePropPick(poolId: string, formData: FormData) {

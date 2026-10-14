@@ -23,8 +23,10 @@ export const PROP_STATS: PropStat[] = [
   { key: "HR", label: "Home runs", sport: "MLB" },
   { key: "R", label: "Runs", sport: "MLB" },
   { key: "RBI", label: "RBIs", sport: "MLB" },
-  { key: "SB", label: "Stolen bases", sport: "MLB" },
   { key: "BB", label: "Walks", sport: "MLB" },
+  // NOTE: no SB row — ESPN's structured MLB feed never carries stolen bases,
+  // so an SB prop would always grade as 0 (free win for "under"). Re-add when
+  // the feed carries it.
   { key: "K", label: "Strikeouts", sport: "MLB" },
   { key: "IP", label: "Innings pitched", sport: "MLB" },
 ];

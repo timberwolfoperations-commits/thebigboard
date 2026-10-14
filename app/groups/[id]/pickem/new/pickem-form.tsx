@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Card, SectionTitle, Field, inputClass, SubmitButton } from "@/components/ui";
 import type { SlateGame } from "@/lib/slate";
+import { STANDARD_HOW_IT_WORKS, OVER_UNDER_HOW_IT_WORKS } from "@/lib/pickem-copy";
 
 function fmtKickoff(iso: string): string {
   return new Date(iso).toLocaleString("en-US", {
@@ -61,6 +62,9 @@ export default function PickemForm({
 }) {
   const [variant, setVariant] = useState("standard");
   const isOverUnder = variant === "over_under";
+  // null = untouched, so the text follows the variant; typing once makes it
+  // the commish's own words and variant switches stop touching it.
+  const [rules, setRules] = useState<string | null>(null);
 
   return (
     <Card>
@@ -93,11 +97,8 @@ export default function PickemForm({
             name="description"
             rows={4}
             maxLength={2000}
-            defaultValue={
-              isOverUnder
-                ? "The commish sets over/under lines on player stats. Pick a side on each prop — 1 point per correct side, most points wins."
-                : "Pick the winner of every game. 1 point per correct pick — most points wins. Ties score for nobody."
-            }
+            value={rules ?? (isOverUnder ? OVER_UNDER_HOW_IT_WORKS : STANDARD_HOW_IT_WORKS)}
+            onChange={(e) => setRules(e.target.value)}
             className={inputClass}
           />
         </Field>

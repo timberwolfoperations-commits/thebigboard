@@ -21,9 +21,14 @@ const blankRow = (): PropLineDraft => ({ player_name: "", team: "", stat_key: "H
 export default function PropLinesEditor({
   action,
   existing,
+  recentPlayers = [],
 }: {
   action: (formData: FormData) => Promise<void>;
   existing: PropLineDraft[];
+  // Distinct players from the pool's teams' recent finals (name + team).
+  // Empty when there are no recent finals — the name field then behaves
+  // as a plain text input.
+  recentPlayers?: { player_name: string; team: string }[];
 }) {
   const [rows, setRows] = useState<PropLineDraft[]>(existing.length > 0 ? existing : [blankRow()]);
 
@@ -40,13 +45,37 @@ export default function PropLinesEditor({
       <SectionTitle>Set the lines</SectionTitle>
       <form action={action} className="space-y-2">
         <input type="hidden" name="lines" value={JSON.stringify(rows)} />
+        {recentPlayers.length > 0 && (
+          <datalist id="prop-player-options">
+            {recentPlayers.map((p) => (
+              <option
+                key={`${p.player_name}|${p.team}`}
+                value={p.player_name}
+              >
+                {p.team}
+              </option>
+            ))}
+          </datalist>
+        )}
         {rows.map((r, i) => (
           <div key={i} className="flex items-center gap-2">
             <input
               value={r.player_name}
-              onChange={(e) => set(i, { player_name: e.target.value })}
+              onChange={(e) => {
+                const v = e.target.value;
+                const patch: Partial<PropLineDraft> = { player_name: v };
+                // Picking a suggested player fills the team too; typing a
+                // custom name (call-up) leaves the team field alone.
+                const match = recentPlayers.find(
+                  (p) => p.player_name.toLowerCase() === v.trim().toLowerCase()
+                );
+                if (match) patch.team = match.team;
+                set(i, patch);
+              }}
               placeholder="Player"
               maxLength={60}
+              autoComplete="off"
+              list={recentPlayers.length > 0 ? "prop-player-options" : undefined}
               className={`${inputClass} min-w-0 flex-1`}
             />
             <input

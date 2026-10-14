@@ -1,9 +1,10 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { savePickemPick, savePropPick, setPickemLines, awardPickemWinner } from "@/lib/pickem-actions";
+import { savePickemPick, savePropPick, setPickemLines, awardPickemWinner, getRecentPropPlayers } from "@/lib/pickem-actions";
 import { computePickemLeaderboard } from "@/lib/pickem-scoring";
 import { PROP_STAT_LABELS } from "@/lib/prop-stats";
+import { STANDARD_HOW_IT_WORKS, OVER_UNDER_HOW_IT_WORKS } from "@/lib/pickem-copy";
 import { Card, SectionTitle, SubmitButton } from "@/components/ui";
 import PickemGameCard from "@/components/pickem-game-card";
 import PropCard from "@/components/prop-card";
@@ -94,6 +95,22 @@ export default async function PickemPoolPage({
     line: String(l.line),
   }));
 
+  // Recent participants for the lines editor's player picker — only fetched
+  // when the editor actually renders (commish, pre-lock).
+  const recentPlayers =
+    isOverUnder && isCommish && !locked ? await getRecentPropPlayers(poolId) : [];
+
+  const howItWorks = (() => {
+    const saved = (pool.description ?? "").trim();
+    // Blank → variant default. Also repairs pools saved with the standard
+    // default while on over/under (the old form's defaultValue bug) — a
+    // commish who deliberately typed that text into an over/under pool is
+    // not a case worth preserving the wrong copy for.
+    if (!saved) return isOverUnder ? OVER_UNDER_HOW_IT_WORKS : STANDARD_HOW_IT_WORKS;
+    if (isOverUnder && saved === STANDARD_HOW_IT_WORKS) return OVER_UNDER_HOW_IT_WORKS;
+    return pool.description;
+  })();
+
   return (
     <div className="space-y-6">
       <Link href={`/groups/${id}`} className="text-sm text-slate-500 underline-offset-4 hover:underline">
@@ -114,19 +131,17 @@ export default async function PickemPoolPage({
         </p>
       </div>
 
-      {pool.description && (
-        <Card>
-          <SectionTitle>How it works</SectionTitle>
-          <p className="whitespace-pre-wrap text-sm text-slate-700">{pool.description}</p>
-        </Card>
-      )}
+      <Card>
+        <SectionTitle>How it works</SectionTitle>
+        <p className="whitespace-pre-wrap text-sm text-slate-700">{howItWorks}</p>
+      </Card>
 
       {isOverUnder ? (
         <div>
           <SectionTitle>Make your picks</SectionTitle>
           {isCommish && !locked && (
             <div className="mb-4">
-              <PropLinesEditor action={setLines} existing={existingDrafts} />
+              <PropLinesEditor action={setLines} existing={existingDrafts} recentPlayers={recentPlayers} />
             </div>
           )}
           {propLineList.length > 0 ? (
