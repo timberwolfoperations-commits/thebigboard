@@ -55,12 +55,16 @@ function defaultSeason(games: SlateGame[]): string {
 
 export default function PickemForm({
   action,
-  games,
+  nflGames,
+  mlbGames,
 }: {
   action: (formData: FormData) => Promise<void>;
-  games: SlateGame[];
+  nflGames: SlateGame[];
+  mlbGames: SlateGame[];
 }) {
   const [variant, setVariant] = useState("standard");
+  const [sport, setSport] = useState<"NFL" | "MLB">("NFL");
+  const games = sport === "MLB" ? mlbGames : nflGames;
   const isOverUnder = variant === "over_under";
   // null = untouched, so the text follows the variant; typing once makes it
   // the commish's own words and variant switches stop touching it.
@@ -103,6 +107,20 @@ export default function PickemForm({
           />
         </Field>
 
+        <Field label="Sport">
+          <select
+            value={sport}
+            onChange={(e) => setSport(e.target.value as "NFL" | "MLB")}
+            className={inputClass}
+          >
+            <option value="NFL">NFL</option>
+            <option value="MLB">MLB</option>
+          </select>
+        </Field>
+
+        {/* key remounts the slate-dependent fields when the sport switches,
+            so week/season/lock/games all reset to the new slate's defaults. */}
+        <div key={sport} className="space-y-4">
         <div className="grid grid-cols-2 gap-4">
           <Field label="Week">
             <input name="week" type="number" min={1} max={25} defaultValue={defaultWeek(games)} className={inputClass} />
@@ -148,14 +166,17 @@ export default function PickemForm({
             <p className="mt-1 text-xs text-slate-500">
               {isOverUnder
                 ? "Props grade against these games' player stats from the scores feed."
-                : "Sunday games are checked by default — uncheck any, or add Thursday/Monday games. Winners fill in automatically from the scores feed."}
+                : sport === "MLB"
+                  ? "The next game is checked by default — check any other games the pool covers. Winners fill in automatically from the scores feed."
+                  : "Sunday games are checked by default — uncheck any, or add Thursday/Monday games. Winners fill in automatically from the scores feed."}
             </p>
           </div>
         ) : (
           <p className="text-xs text-slate-500">
-            No upcoming NFL games found yet — the slate appears once ESPN posts it.
+            No upcoming {sport} games found yet — the slate appears once ESPN posts it.
           </p>
         )}
+        </div>
 
         <SubmitButton>Create pool</SubmitButton>
       </form>

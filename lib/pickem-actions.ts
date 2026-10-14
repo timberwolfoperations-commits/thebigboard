@@ -252,7 +252,7 @@ export async function getRecentPropPlayers(
 
   const { data: slateGames } = await supabase
     .from("games")
-    .select("home_team, away_team")
+    .select("home_team, away_team, sport")
     .in("id", gameIds);
   const teams = [
     ...new Set(
@@ -263,17 +263,29 @@ export async function getRecentPropPlayers(
     ),
   ];
   if (teams.length === 0) return [];
+  // Team abbreviations collide across sports (TB, CLE, KC...) — scope the
+  // recent-finals lookup to the pool's own sport(s) or NFL players show up
+  // in an MLB pool and vice versa.
+  const sports = [
+    ...new Set(
+      ((slateGames ?? []) as any[])
+        .map((g) => String(g.sport ?? "").toUpperCase())
+        .filter(Boolean)
+    ),
+  ];
 
   const cutoff = new Date(Date.now() - 14 * 24 * 3600 * 1000).toISOString();
   const teamFilter = teams
     .map((t) => `home_team.eq.${t},away_team.eq.${t}`)
     .join(",");
-  const { data: recentGames } = await supabase
+  let recentQuery = supabase
     .from("games")
     .select("id")
     .eq("status", "final")
     .gte("starts_at", cutoff)
     .or(teamFilter);
+  if (sports.length > 0) recentQuery = recentQuery.in("sport", sports);
+  const { data: recentGames } = await recentQuery;
   const recentIds = ((recentGames ?? []) as any[]).map((g) => g.id);
   if (recentIds.length === 0) return [];
 
