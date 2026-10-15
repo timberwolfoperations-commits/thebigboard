@@ -13,8 +13,17 @@ export interface PropCardLine {
   player_name: string;
   team: string | null;
   stat_label: string;
+  stat_key?: string;
   line: number | string;
 }
+
+// Short units for the live tracker — counts (TDs, receptions, hits) need
+// none, yardage gets one.
+const STAT_UNITS: Record<string, string> = {
+  pass_yd: " yds",
+  rush_yd: " yds",
+  rec_yd: " yds",
+};
 
 function SideButton({
   lineId,
@@ -54,11 +63,17 @@ export default function PropCard({
   line,
   mySide,
   canPick,
+  current = null,
+  live = false,
   action,
 }: {
   line: PropCardLine;
   mySide: string | null;
   canPick: boolean;
+  // Live actual from the latest sync (null before any stats exist).
+  current?: number | null;
+  // True while any of the pool's games is in progress.
+  live?: boolean;
   action: (formData: FormData) => Promise<void>;
 }) {
   const [optimisticSide, setOptimisticSide] = useOptimistic<string | null, string>(
@@ -101,6 +116,17 @@ export default function PropCard({
           action={pick}
         />
       </div>
+      {current != null && (
+        <p className="mt-2 text-center text-xs font-semibold text-slate-600">
+          <span
+            className={`mr-1.5 inline-block h-1.5 w-1.5 rounded-full ${
+              live ? "animate-pulse bg-red-500" : "bg-slate-400"
+            }`}
+          />
+          {live ? "Live" : "Final"}: {current}
+          {STAT_UNITS[line.stat_key ?? ""] ?? ""}
+        </p>
+      )}
       {mySide && (
         <p className="mt-2 text-center text-xs text-slate-500">
           You took {sel}

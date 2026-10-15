@@ -70,6 +70,32 @@ export default async function PickemPoolPage({
     : { data: [] as any[] };
   const propLineList = (propLines ?? []) as any[];
 
+  // Live actuals for the over/under tracker: sum each line's stat across the
+  // pool's linked games from the latest synced data. Includes in-progress
+  // games, so the number moves as the commish taps Refresh scores — grading
+  // itself still waits for every game to be final.
+  const normName = (s: unknown) => String(s ?? "").trim().toUpperCase();
+  const liveActualByLine = new Map<string, number>();
+  if (isOverUnder && gameIds.length > 0 && propLineList.length > 0) {
+    const { data: statLines } = await supabase
+      .from("game_stat_lines")
+      .select("player_name, team, stats")
+      .in("game_id", gameIds);
+    const totals = new Map<string, number>();
+    for (const sl of (statLines ?? []) as any[]) {
+      const stats = (sl.stats ?? {}) as Record<string, number>;
+      for (const [k, v] of Object.entries(stats)) {
+        const key = `${normName(sl.player_name)}|${normName(sl.team)}|${k}`;
+        totals.set(key, (totals.get(key) ?? 0) + Number(v || 0));
+      }
+    }
+    for (const l of propLineList) {
+      const key = `${normName(l.player_name)}|${normName(l.team)}|${l.stat_key}`;
+      if (totals.has(key)) liveActualByLine.set(l.id, totals.get(key)!);
+    }
+  }
+  const anyLive = gameList.some((g: any) => g.status === "in_progress");
+
   const { data: myPropPicks } = isOverUnder
     ? await supabase
         .from("pickem_prop_picks")
@@ -159,10 +185,13 @@ export default async function PickemPoolPage({
                     player_name: l.player_name,
                     team: l.team,
                     stat_label: PROP_STAT_LABELS[l.stat_key] ?? l.stat_key,
+                    stat_key: l.stat_key,
                     line: l.line,
                   }}
                   mySide={mySideByLine.get(l.id) ?? null}
                   canPick={!locked}
+                  current={liveActualByLine.get(l.id) ?? null}
+                  live={anyLive}
                   action={saveProp}
                 />
               ))}
