@@ -1,9 +1,13 @@
+"use client";
+
+import { useOptimistic } from "react";
 import { Card } from "@/components/ui";
 
 // One game row with two team buttons — the shared pick UI every pick'em
-// variant reuses. Server-rendered: each button is a tiny form, so tapping
-// just posts game_id + picked_team. The selected team highlights; after
-// kickoff or lock the buttons go dead and the score shows instead.
+// variant reuses. The tapped team highlights instantly (useOptimistic) while
+// the server write happens in the background, so there's no waiting on the
+// round-trip to see your pick. After kickoff or lock the buttons go dead
+// and the score shows instead.
 
 export interface PickemCardGame {
   id: string;
@@ -69,9 +73,20 @@ export default function PickemGameCard({
   canPick: boolean;
   action: (formData: FormData) => Promise<void>;
 }) {
+  const [optimisticPick, setOptimisticPick] = useOptimistic<string | null, string>(
+    myPick,
+    (_current, next) => next
+  );
+
+  // Highlight the tapped team immediately; the server write runs behind it.
+  async function pick(formData: FormData) {
+    setOptimisticPick(String(formData.get("picked_team") ?? ""));
+    await action(formData);
+  }
+
   const away = String(game.away_team ?? "").toUpperCase();
   const home = String(game.home_team ?? "").toUpperCase();
-  const sel = (myPick ?? "").toUpperCase();
+  const sel = (optimisticPick ?? "").toUpperCase();
 
   return (
     <Card>
@@ -84,7 +99,7 @@ export default function PickemGameCard({
           team={away}
           selected={sel === away && away !== ""}
           disabled={!canPick}
-          action={action}
+          action={pick}
         />
         <span className="shrink-0 text-xs font-semibold text-slate-400">@</span>
         <TeamButton
@@ -92,7 +107,7 @@ export default function PickemGameCard({
           team={home}
           selected={sel === home && home !== ""}
           disabled={!canPick}
-          action={action}
+          action={pick}
         />
       </div>
       <p className="mt-2 text-center text-xs text-slate-500">
@@ -107,8 +122,8 @@ export default function PickemGameCard({
         ) : (
           <span>
             {fmtKickoff(game.starts_at)} ET
-            {myPick && canPick && <span className="text-slate-400"> · tap to change</span>}
-            {myPick && !canPick && <span className="text-slate-400"> · locked</span>}
+            {optimisticPick && canPick && <span className="text-slate-400"> · tap to change</span>}
+            {optimisticPick && !canPick && <span className="text-slate-400"> · locked</span>}
           </span>
         )}
       </p>

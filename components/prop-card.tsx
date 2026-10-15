@@ -1,9 +1,12 @@
+"use client";
+
+import { useOptimistic } from "react";
 import { Card } from "@/components/ui";
 
 // One prop row with Over/Under buttons — the over/under answer to
-// PickemGameCard. Server-rendered: each button is a tiny form, so tapping
-// just posts line_id + side. The picked side highlights; after lock the
-// buttons go dead.
+// PickemGameCard. The tapped side highlights instantly (useOptimistic) while
+// the server write happens in the background, so there's no waiting on the
+// round-trip to see your pick. After lock the buttons go dead.
 
 export interface PropCardLine {
   id: string;
@@ -58,7 +61,18 @@ export default function PropCard({
   canPick: boolean;
   action: (formData: FormData) => Promise<void>;
 }) {
-  const sel = (mySide ?? "").toLowerCase();
+  const [optimisticSide, setOptimisticSide] = useOptimistic<string | null, string>(
+    mySide,
+    (_current, next) => next
+  );
+
+  // Highlight the tapped side immediately; the server write runs behind it.
+  async function pick(formData: FormData) {
+    setOptimisticSide(String(formData.get("side") ?? ""));
+    await action(formData);
+  }
+
+  const sel = (optimisticSide ?? "").toLowerCase();
 
   return (
     <Card>
@@ -76,7 +90,7 @@ export default function PropCard({
           line={line.line}
           selected={sel === "over"}
           disabled={!canPick}
-          action={action}
+          action={pick}
         />
         <SideButton
           lineId={line.id}
@@ -84,7 +98,7 @@ export default function PropCard({
           line={line.line}
           selected={sel === "under"}
           disabled={!canPick}
-          action={action}
+          action={pick}
         />
       </div>
       {mySide && (
