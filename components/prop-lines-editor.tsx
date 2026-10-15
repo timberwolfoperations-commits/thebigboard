@@ -16,12 +16,19 @@ export interface PropLineDraft {
   line: string;
 }
 
+export interface PropLineCopySource {
+  pool_id: string;
+  pool_name: string;
+  lines: PropLineDraft[];
+}
+
 const blankRow = (): PropLineDraft => ({ player_name: "", team: "", stat_key: "HR", line: "" });
 
 export default function PropLinesEditor({
   action,
   existing,
   recentPlayers = [],
+  copySources = [],
 }: {
   action: (formData: FormData) => Promise<void>;
   existing: PropLineDraft[];
@@ -29,8 +36,20 @@ export default function PropLinesEditor({
   // Empty when there are no recent finals — the name field then behaves
   // as a plain text input.
   recentPlayers?: { player_name: string; team: string }[];
+  // Other over/under pools this commish created, offered as copy sources.
+  copySources?: PropLineCopySource[];
 }) {
   const [rows, setRows] = useState<PropLineDraft[]>(existing.length > 0 ? existing : [blankRow()]);
+  const [copyFrom, setCopyFrom] = useState("");
+
+  // Copying only prefills the editor — the commish still reviews, edits,
+  // and hits Save lines (which replaces all lines, as before).
+  function copyLines(poolId: string) {
+    setCopyFrom(poolId);
+    if (!poolId) return;
+    const src = copySources.find((s) => s.pool_id === poolId);
+    if (src && src.lines.length > 0) setRows(src.lines.map((l) => ({ ...l })));
+  }
 
   const set = (i: number, patch: Partial<PropLineDraft>) =>
     setRows((rs) => rs.map((r, j) => (j === i ? { ...r, ...patch } : r)));
@@ -43,6 +62,26 @@ export default function PropLinesEditor({
   return (
     <Card>
       <SectionTitle>Set the lines</SectionTitle>
+      {copySources.length > 0 && (
+        <div className="mb-2 flex items-center gap-2">
+          <label htmlFor="copy-lines-from" className="shrink-0 text-sm font-medium text-slate-600">
+            Copy from
+          </label>
+          <select
+            id="copy-lines-from"
+            value={copyFrom}
+            onChange={(e) => copyLines(e.target.value)}
+            className={`${fieldClass} min-w-0 flex-1`}
+          >
+            <option value="">Start blank…</option>
+            {copySources.map((s) => (
+              <option key={s.pool_id} value={s.pool_id}>
+                {s.pool_name} ({s.lines.length} lines)
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
       <form action={action} className="space-y-2">
         <input type="hidden" name="lines" value={JSON.stringify(rows)} />
         {recentPlayers.length > 0 && (

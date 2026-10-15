@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { savePickemPick, savePropPick, setPickemLines, awardPickemWinner, getRecentPropPlayers } from "@/lib/pickem-actions";
+import { savePickemPick, savePropPick, setPickemLines, awardPickemWinner, getRecentPropPlayers, getCopyableLinePools } from "@/lib/pickem-actions";
 import { computePickemLeaderboard } from "@/lib/pickem-scoring";
 import { PROP_STAT_LABELS } from "@/lib/prop-stats";
 import { STANDARD_HOW_IT_WORKS, OVER_UNDER_HOW_IT_WORKS } from "@/lib/pickem-copy";
@@ -100,6 +100,11 @@ export default async function PickemPoolPage({
   const recentPlayers =
     isOverUnder && isCommish && !locked ? await getRecentPropPlayers(poolId) : [];
 
+  // Other over/under pools this commish created, as copy sources for the
+  // lines editor — same render condition.
+  const copySources =
+    isOverUnder && isCommish && !locked ? await getCopyableLinePools(poolId) : [];
+
   const howItWorks = (() => {
     const saved = (pool.description ?? "").trim();
     // Blank → variant default. Also repairs pools saved with the standard
@@ -141,7 +146,7 @@ export default async function PickemPoolPage({
           <SectionTitle>Make your picks</SectionTitle>
           {isCommish && !locked && (
             <div className="mb-4">
-              <PropLinesEditor action={setLines} existing={existingDrafts} recentPlayers={recentPlayers} />
+              <PropLinesEditor action={setLines} existing={existingDrafts} recentPlayers={recentPlayers} copySources={copySources} />
             </div>
           )}
           {propLineList.length > 0 ? (

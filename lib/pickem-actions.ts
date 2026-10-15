@@ -304,6 +304,59 @@ export async function getRecentPropPlayers(
   );
 }
 
+export interface CopyableLinePool {
+  pool_id: string;
+  pool_name: string;
+  lines: { player_name: string; team: string; stat_key: string; line: string }[];
+}
+
+// Other over/under pools this commish created that already have lines,
+// newest first — offered as copy sources so a new pool's line editor
+// doesn't start blank. Copying only prefills the editor; the commish still
+// reviews and hits Save lines (which replaces all lines, as before).
+export async function getCopyableLinePools(
+  currentPoolId: string
+): Promise<CopyableLinePool[]> {
+  const { supabase, user } = await getUser();
+  const { data: pools } = await supabase
+    .from("pickem_pools")
+    .select("id, name")
+    .eq("created_by", user.id)
+    .eq("variant", "over_under")
+    .neq("id", currentPoolId)
+    .order("created_at", { ascending: false })
+    .limit(10);
+  const list = (pools ?? []) as any[];
+  if (list.length === 0) return [];
+
+  const { data: lines } = await supabase
+    .from("pickem_lines")
+    .select("pool_id, player_name, team, stat_key, line")
+    .in(
+      "pool_id",
+      list.map((p) => p.id)
+    )
+    .order("created_at", { ascending: true });
+
+  const byPool = new Map<string, CopyableLinePool["lines"]>();
+  for (const l of (lines ?? []) as any[]) {
+    if (!byPool.has(l.pool_id)) byPool.set(l.pool_id, []);
+    byPool.get(l.pool_id)!.push({
+      player_name: l.player_name,
+      team: l.team ?? "",
+      stat_key: l.stat_key,
+      line: String(l.line),
+    });
+  }
+  return list
+    .filter((p) => (byPool.get(p.id) ?? []).length > 0)
+    .map((p) => ({
+      pool_id: p.id,
+      pool_name: p.name,
+      lines: byPool.get(p.id)!,
+    }));
+}
+
 // Pick over or under on one prop. Upsert — re-tapping flips your side.
 // Rejected after the pool locks.
 export async function savePropPick(poolId: string, formData: FormData) {
