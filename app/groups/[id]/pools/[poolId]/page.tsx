@@ -4,7 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { addPoolPlayers, addOnePoolPlayer, removePoolPlayer, deleteEntry, updatePool, awardPoolWinner } from "@/lib/actions";
 import { defaultPoolRules, defaultScoringFormula } from "@/lib/config";
 import { computePoolPoints } from "@/lib/pool-scoring";
-import { Card, SectionTitle, Field, inputClass, SubmitButton, DangerButton } from "@/components/ui";
+import { Card, SectionTitle, Field, inputClass, fieldClass, SubmitButton, DangerButton } from "@/components/ui";
 import PoolStatGrid from "@/components/pool-stat-grid";
 import PoolEntryPicker from "@/components/pool-entry-picker";
 
@@ -363,7 +363,7 @@ export default async function PoolPage({
               placeholder="TEAM"
               required
               maxLength={10}
-              className={`${inputClass} sm:w-24`}
+              className={`${fieldClass} w-full sm:w-24`}
             />
             <input
               name="salary"
@@ -371,7 +371,7 @@ export default async function PoolPage({
               type="number"
               min={0}
               required
-              className={`${inputClass} sm:w-24`}
+              className={`${fieldClass} w-full sm:w-24`}
             />
             <SubmitButton>Add player</SubmitButton>
           </form>

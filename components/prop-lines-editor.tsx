@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Card, SectionTitle, inputClass, SubmitButton } from "@/components/ui";
+import { Card, SectionTitle, fieldClass, SubmitButton } from "@/components/ui";
 import { PROP_STATS } from "@/lib/prop-stats";
 
 // Commish-only line editor: rows of player + team + stat + number, add and
@@ -80,21 +80,21 @@ export default function PropLinesEditor({
                 maxLength={60}
                 autoComplete="off"
                 list={recentPlayers.length > 0 ? "prop-player-options" : undefined}
-                className={`${inputClass} min-w-0 flex-1`}
+                className={`${fieldClass} min-w-0 flex-1`}
               />
               <input
                 value={r.team}
                 onChange={(e) => set(i, { team: e.target.value })}
                 placeholder="MIL"
                 maxLength={3}
-                className={`${inputClass} w-16 shrink-0 uppercase`}
+                className={`${fieldClass} w-16 shrink-0 uppercase`}
               />
             </div>
             <div className="flex items-center gap-2">
               <select
                 value={r.stat_key}
                 onChange={(e) => set(i, { stat_key: e.target.value })}
-                className={`${inputClass} min-w-0 flex-1`}
+                className={`${fieldClass} min-w-0 flex-1`}
               >
                 <optgroup label="MLB">
                   {mlb.map((s) => (
@@ -116,7 +116,7 @@ export default function PropLinesEditor({
                 onChange={(e) => set(i, { line: e.target.value })}
                 placeholder="1.5"
                 inputMode="decimal"
-                className={`${inputClass} w-24 shrink-0`}
+                className={`${fieldClass} w-24 shrink-0`}
               />
               <button
                 type="button"

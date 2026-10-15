@@ -37,6 +37,12 @@ export function Field({
 export const inputClass =
   "w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-500 focus:ring-2 focus:ring-slate-200";
 
+// Same as inputClass but without the baked-in w-full. Use this when a
+// field needs an explicit width (w-16, sm:w-24, flex-1...) — stacking
+// another width on top of inputClass's w-full loses the cascade fight
+// unpredictably and blows the field out to full width.
+export const fieldClass = inputClass.replace("w-full", "").trim();
+
 export function SubmitButton({ children, disabled = false }: { children: ReactNode; disabled?: boolean }) {
   const { pending } = useFormStatus();
   const off = pending || disabled;
