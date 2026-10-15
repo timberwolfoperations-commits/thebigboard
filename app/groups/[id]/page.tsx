@@ -6,6 +6,7 @@ import { settleOverdueBets, respondToBet } from "@/lib/actions";
 import { GRACE_DAYS } from "@/lib/config";
 import { Card, SectionTitle, StatusBadge } from "@/components/ui";
 import CopyButton from "@/components/copy-button";
+import NewMenu from "@/components/new-menu";
 
 function daysOverdue(settleDate: string) {
   const ms = Date.now() - new Date(settleDate + "T23:59:59").getTime();
@@ -183,24 +184,7 @@ export default async function GroupPage({ params }: { params: Promise<{ id: stri
       <div className="space-y-4">
         <div className="flex justify-center gap-2">
           <CopyButton text={inviteUrl} label="Copy invite link" />
-          <Link
-            href={`/groups/${id}/bets/new`}
-            className="shrink-0 rounded-full bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white hover:bg-slate-700"
-          >
-            + New bet
-          </Link>
-          <Link
-            href={`/groups/${id}/pools/new`}
-            className="shrink-0 rounded-full border border-slate-900 px-5 py-2.5 text-sm font-semibold text-slate-900 hover:bg-slate-100"
-          >
-            + New pool
-          </Link>
-          <Link
-            href={`/groups/${id}/pickem/new`}
-            className="shrink-0 rounded-full border border-slate-900 px-5 py-2.5 text-sm font-semibold text-slate-900 hover:bg-slate-100"
-          >
-            + Pick&rsquo;em
-          </Link>
+          <NewMenu groupId={id} />
         </div>
         <div className="text-center">
           <h1 className="font-display text-4xl font-bold uppercase leading-none tracking-wide">{group.name}</h1>
