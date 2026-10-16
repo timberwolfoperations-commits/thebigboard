@@ -46,7 +46,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
               >
                 B
               </span>
-              <span className="font-display text-2xl font-bold uppercase leading-none tracking-wide">
+              <span className="flex h-7 items-center font-display text-2xl font-bold uppercase leading-none tracking-wide">
                 The Big Board
               </span>
             </Link>
