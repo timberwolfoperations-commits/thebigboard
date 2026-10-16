@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { savePickemPick, savePropPick, setPickemLines, awardPickemWinner, getRecentPropPlayers, getCopyableLinePools } from "@/lib/pickem-actions";
+import { savePickemPick, savePropPick, setPickemLines, awardPickemWinner, scratchPickemPool, getRecentPropPlayers, getCopyableLinePools } from "@/lib/pickem-actions";
 import { computePickemLeaderboard } from "@/lib/pickem-scoring";
 import { PROP_STAT_LABELS } from "@/lib/prop-stats";
 import { STANDARD_HOW_IT_WORKS, OVER_UNDER_HOW_IT_WORKS } from "@/lib/pickem-copy";
@@ -113,6 +113,7 @@ export default async function PickemPoolPage({
   const saveProp = savePropPick.bind(null, poolId);
   const setLines = setPickemLines.bind(null, poolId);
   const awardWinner = awardPickemWinner.bind(null, poolId);
+  const scratchPool = scratchPickemPool.bind(null, poolId);
 
   const existingDrafts: PropLineDraft[] = propLineList.map((l) => ({
     player_name: l.player_name,
@@ -274,6 +275,12 @@ export default async function PickemPoolPage({
                 <span className="text-slate-500"> · +{pool.winner_points} pts on the lifetime board</span>
               </p>
             </Card>
+          ) : pool.scratched ? (
+            <Card>
+              <p className="text-sm text-slate-600">
+                <span className="font-semibold text-slate-900">Scratched</span> — nobody wins, no points.
+              </p>
+            </Card>
           ) : (
             allFinal &&
             board.length > 0 && (
@@ -285,6 +292,15 @@ export default async function PickemPoolPage({
                     +10 pts?
                   </p>
                   <SubmitButton>Award winner</SubmitButton>
+                </form>
+                <form action={scratchPool} className="mt-2 flex items-center justify-between gap-3">
+                  <p className="text-sm text-slate-500">Or scratch it — tie, nobody wins, no points.</p>
+                  <button
+                    type="submit"
+                    className="shrink-0 rounded-full border border-slate-300 px-5 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-100"
+                  >
+                    Scratch pool
+                  </button>
                 </form>
               </Card>
             )

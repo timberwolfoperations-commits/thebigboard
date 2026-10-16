@@ -192,6 +192,40 @@ export async function awardPickemWinner(poolId: string) {
   revalidatePath(`/groups/${pool.group_id}`);
 }
 
+// The commish can scratch a pool instead of crowning a winner — for ties
+// nobody wants to win on a technicality, botched lines, etc. Settles the
+// pool with no winner, no points, and no lifetime-board win. One-shot,
+// same as awarding.
+export async function scratchPickemPool(poolId: string) {
+  const { supabase, user } = await getUser();
+  const { pool } = await loadPickemPool(poolId);
+  if (pool.created_by !== user.id) throw new Error("Only the commish scratches the pool.");
+  if (new Date(pool.lock_at).getTime() > Date.now()) throw new Error("The pool isn't locked yet.");
+  if (pool.winner_user_id) throw new Error("This pool already has a winner.");
+  if (pool.scratched) throw new Error("This pool is already scratched.");
+
+  const { data: links } = await supabase
+    .from("pickem_pool_games")
+    .select("game_id")
+    .eq("pool_id", poolId);
+  const gameIds = ((links ?? []) as any[]).map((l) => l.game_id);
+  const { data: games } = gameIds.length
+    ? await supabase.from("games").select("status").in("id", gameIds)
+    : { data: [] };
+  if (!games || (games as any[]).length === 0 || (games as any[]).some((g: any) => g.status !== "final")) {
+    throw new Error("Wait until every game is final.");
+  }
+
+  const { error } = await supabase
+    .from("pickem_pools")
+    .update({ scratched: true })
+    .eq("id", poolId);
+  if (error) throw new Error(error.message);
+
+  revalidatePath(`/groups/${pool.group_id}/pickem/${poolId}`);
+  revalidatePath(`/groups/${pool.group_id}`);
+}
+
 // ------------------------------------------------- over/under props
 // The commish sets the prop lines any time before lock. Replace-on-save —
 // simplest semantics, so set them before anyone picks (saving wipes the

@@ -160,11 +160,11 @@ export default async function GroupPage({ params }: { params: Promise<{ id: stri
   // ---- pick'em pools ------------------------------------------------------
   const { data: pickemPools } = await supabase
     .from("pickem_pools")
-    .select("id, name, week, season, lock_at, winner_user_id, winner_points")
+    .select("id, name, week, season, lock_at, winner_user_id, winner_points, scratched")
     .eq("group_id", id)
     .order("created_at", { ascending: false });
-  const openPickem = ((pickemPools ?? []) as any[]).filter((p) => !p.winner_user_id);
-  const settledPickem = ((pickemPools ?? []) as any[]).filter((p) => p.winner_user_id);
+  const openPickem = ((pickemPools ?? []) as any[]).filter((p) => !p.winner_user_id && !p.scratched);
+  const settledPickem = ((pickemPools ?? []) as any[]).filter((p) => p.winner_user_id || p.scratched);
   const { data: pickemPicks } = await supabase
     .from("pickem_picks")
     .select("pool_id, user_id")
@@ -385,7 +385,11 @@ export default async function GroupPage({ params }: { params: Promise<{ id: stri
                       </span>
                     </div>
                     <p className="mt-1 text-sm text-slate-600">
-                      {nameOf(p.winner_user_id)} won · +{p.winner_points} pts · {n} {n === 1 ? "picker" : "pickers"}
+                      {p.scratched ? (
+                        <>Scratched — no winner · {n} {n === 1 ? "picker" : "pickers"}</>
+                      ) : (
+                        <>{nameOf(p.winner_user_id)} won · +{p.winner_points} pts · {n} {n === 1 ? "picker" : "pickers"}</>
+                      )}
                     </p>
                   </Card>
                 </Link>
