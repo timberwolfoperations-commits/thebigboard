@@ -12,19 +12,23 @@ function ordinal(n: number) {
   return n + (s[(v - 20) % 10] || s[v] || s[0]);
 }
 
-// Compact lock label: "Locks 1:00 PM" today, "Locks Sun 1:00 PM" this week,
-// "Locks Oct 24" beyond that.
+const ET = "America/New_York";
+
+// Compact lock label, always in ET to match the pool page's convention:
+// "Locks 8:00 PM ET" today, "Locks Sat 8:00 PM ET" this week,
+// "Locks Oct 24 ET" beyond that. (Server renders in UTC — never format
+// a time without timeZone: ET.)
 function lockLabel(iso: string) {
   const d = new Date(iso);
-  const now = new Date();
-  const time = d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
-  const sameDay = d.toDateString() === now.toDateString();
-  if (sameDay) return `Locks ${time}`;
-  const diffDays = Math.round((d.getTime() - now.getTime()) / 86400000);
+  const time = d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone: ET });
+  const dayKey = (x: Date) =>
+    x.toLocaleDateString("en-US", { timeZone: ET, year: "numeric", month: "numeric", day: "numeric" });
+  if (dayKey(d) === dayKey(new Date())) return `Locks ${time} ET`;
+  const diffDays = Math.round((d.getTime() - Date.now()) / 86400000);
   if (diffDays >= 0 && diffDays < 7) {
-    return `Locks ${d.toLocaleDateString("en-US", { weekday: "short" })} ${time}`;
+    return `Locks ${d.toLocaleDateString("en-US", { weekday: "short", timeZone: ET })} ${time} ET`;
   }
-  return `Locks ${d.toLocaleDateString("en-US", { month: "short", day: "numeric" })}`;
+  return `Locks ${d.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: ET })} ET`;
 }
 
 function variantPill(variant: string) {
