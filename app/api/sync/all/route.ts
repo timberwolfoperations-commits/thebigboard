@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { syncNfl } from "@/lib/nfl-sync";
 import { syncMlb } from "@/lib/mlb-sync";
+import { syncCfb } from "@/lib/cfb-sync";
 
 // One cron job for every sport. Vercel Hobby allows a single daily cron,
 // so this runs NFL then MLB in one pass. Same CRON_SECRET auth as the
@@ -22,7 +23,8 @@ export async function GET(req: Request) {
   try {
     const nfl = await syncNfl();
     const mlb = await syncMlb();
-    return NextResponse.json({ ok: true, nfl, mlb });
+    const cfb = await syncCfb();
+    return NextResponse.json({ ok: true, nfl, mlb, cfb });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e?.message ?? "sync failed" }, { status: 500 });
   }

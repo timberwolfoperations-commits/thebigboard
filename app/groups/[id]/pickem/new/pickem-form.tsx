@@ -57,14 +57,16 @@ export default function PickemForm({
   action,
   nflGames,
   mlbGames,
+  cfbGames,
 }: {
   action: (formData: FormData) => Promise<void>;
   nflGames: SlateGame[];
   mlbGames: SlateGame[];
+  cfbGames: SlateGame[];
 }) {
   const [variant, setVariant] = useState("standard");
-  const [sport, setSport] = useState<"NFL" | "MLB">("NFL");
-  const games = sport === "MLB" ? mlbGames : nflGames;
+  const [sport, setSport] = useState<"NFL" | "MLB" | "CFB">("NFL");
+  const games = sport === "MLB" ? mlbGames : sport === "CFB" ? cfbGames : nflGames;
   const isOverUnder = variant === "over_under";
   // null = untouched, so the text follows the variant; typing once makes it
   // the commish's own words and variant switches stop touching it.
@@ -92,7 +94,9 @@ export default function PickemForm({
             className={inputClass}
           >
             <option value="standard">Standard — pick every game&rsquo;s winner</option>
-            <option value="over_under">Over/Under — pick sides on player props</option>
+            <option value="over_under" disabled={sport === "CFB"}>
+              Over/Under — pick sides on player props
+            </option>
           </select>
         </Field>
 
@@ -110,11 +114,16 @@ export default function PickemForm({
         <Field label="Sport">
           <select
             value={sport}
-            onChange={(e) => setSport(e.target.value as "NFL" | "MLB")}
+            onChange={(e) => {
+              const s = e.target.value as "NFL" | "MLB" | "CFB";
+              setSport(s);
+              if (s === "CFB") setVariant("standard"); // no CFB boxscores yet, so no props
+            }}
             className={inputClass}
           >
             <option value="NFL">NFL</option>
             <option value="MLB">MLB</option>
+            <option value="CFB">College football</option>
           </select>
         </Field>
 
@@ -168,7 +177,9 @@ export default function PickemForm({
                 ? "Props grade against these games' player stats from the scores feed."
                 : sport === "MLB"
                   ? "The next game is checked by default — check any other games the pool covers. Winners fill in automatically from the scores feed."
-                  : "Sunday games are checked by default — uncheck any, or add Thursday/Monday games. Winners fill in automatically from the scores feed."}
+                  : sport === "CFB"
+                    ? "Top-25 games only, all checked by default — uncheck any you don't want. Winners fill in automatically from the scores feed."
+                    : "Sunday games are checked by default — uncheck any, or add Thursday/Monday games. Winners fill in automatically from the scores feed."}
             </p>
           </div>
         ) : (

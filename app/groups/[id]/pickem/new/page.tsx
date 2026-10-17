@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { createPickemPool } from "@/lib/pickem-actions";
-import { loadSlateGames, loadMlbSlateGames } from "@/lib/slate";
+import { loadSlateGames, loadMlbSlateGames, loadCfbSlateGames } from "@/lib/slate";
 import PickemForm from "./pickem-form";
 
 export default async function NewPickemPage({ params }: { params: Promise<{ id: string }> }) {
@@ -22,9 +22,10 @@ export default async function NewPickemPage({ params }: { params: Promise<{ id: 
   if (!member) redirect("/dashboard");
 
   const create = createPickemPool.bind(null, id);
-  const [nflGames, mlbGames] = await Promise.all([
+  const [nflGames, mlbGames, cfbGames] = await Promise.all([
     loadSlateGames(supabase),
     loadMlbSlateGames(supabase),
+    loadCfbSlateGames(supabase),
   ]);
 
   return (
@@ -33,7 +34,7 @@ export default async function NewPickemPage({ params }: { params: Promise<{ id: 
         ← Back to group
       </Link>
 
-      <PickemForm action={create} nflGames={nflGames} mlbGames={mlbGames} />
+      <PickemForm action={create} nflGames={nflGames} mlbGames={mlbGames} cfbGames={cfbGames} />
     </div>
   );
 }

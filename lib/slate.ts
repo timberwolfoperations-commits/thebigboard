@@ -109,3 +109,52 @@ export async function loadMlbSlateGames(
     defaultChecked: nextUp != null && g.id === nextUp.id,
   }));
 }
+
+// CFB slate for pick'em pool creation: top-25 games (at least one ranked
+// team) kicking off in the next 4 days — covers Saturday plus any weekday
+// ranked matchups. All come checked by default: the slate IS the top 25.
+// Same empty-table fallback as the other loaders: sync once from ESPN.
+export async function loadCfbSlateGames(
+  supabase: Awaited<ReturnType<typeof createClient>>
+): Promise<SlateGame[]> {
+  const now = new Date();
+  const horizon = new Date(now.getTime() + 4 * 24 * 3600 * 1000);
+
+  async function read() {
+    const { data } = await supabase
+      .from("games")
+      .select("id, label, starts_at, week, season")
+      .eq("sport", "CFB")
+      .eq("is_top25", true)
+      .gte("starts_at", now.toISOString())
+      .lt("starts_at", horizon.toISOString())
+      .order("starts_at", { ascending: true });
+    return (data ?? []) as {
+      id: string;
+      label: string;
+      starts_at: string;
+      week: number | null;
+      season: number | null;
+    }[];
+  }
+
+  let games = await read();
+  if (games.length === 0) {
+    try {
+      const { syncCfb } = await import("@/lib/cfb-sync");
+      await syncCfb();
+      games = await read();
+    } catch {
+      // ESPN hiccup — the form still works, just without the checklist.
+    }
+  }
+
+  return games.map((g) => ({
+    id: g.id,
+    label: g.label,
+    starts_at: g.starts_at,
+    week: g.week,
+    season: g.season,
+    defaultChecked: true,
+  }));
+}
