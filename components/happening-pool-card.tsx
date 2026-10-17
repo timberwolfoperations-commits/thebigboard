@@ -48,8 +48,10 @@ export default function HappeningPoolCard({
   sub: ReactNode;
   live: LiveCardData | null;
 }) {
-  const [open, setOpen] = useState(false);
+  // Cards with games in progress start expanded — that's when the
+  // scores matter. Everything else stays collapsed for scannability.
   const liveCount = live ? live.games.filter((g) => g.status === "in_progress").length : 0;
+  const [open, setOpen] = useState(liveCount > 0);
   const summary = !live
     ? null
     : liveCount > 0
