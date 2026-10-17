@@ -63,8 +63,18 @@ function GameRow({ g, myPick }: { g: LiveCardGame; myPick?: string }) {
         : "upcoming";
   const teamCls = (t: string) =>
     t !== myPick ? "" : pickState === "missed" ? "font-semibold text-slate-400" : "font-bold text-[#c2410c]";
+  // Finals get a whisper of green/red so won/lost reads at a glance.
+  // Live and upcoming rows stay neutral — no color noise while in doubt.
+  const rowTint =
+    g.status === "final" && myPick
+      ? pickState === "hit"
+        ? "rounded-lg bg-green-50/70 px-2"
+        : pickState === "missed"
+          ? "rounded-lg bg-red-50/70 px-2"
+          : ""
+      : "";
   return (
-    <div className="border-b border-slate-50 py-2 last:border-0">
+    <div className={`border-b border-slate-50 py-2 last:border-0 ${rowTint}`}>
       <div className="flex items-baseline justify-between gap-2">
         <p className="truncate font-display text-[15px] font-semibold uppercase tracking-wide">{g.label}</p>
         <span className="flex shrink-0 items-center gap-1.5">
