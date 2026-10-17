@@ -12,6 +12,50 @@ function ordinal(n: number) {
   return n + (s[(v - 20) % 10] || s[v] || s[0]);
 }
 
+// Honest freshness label for the live scores view — the sync runs every
+// 15 minutes, so the UI says "updated N min ago" instead of implying
+// real-time scores.
+function syncedAgoLabel(iso: string | null): string | null {
+  if (!iso) return null;
+  const mins = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+  if (mins < 1) return "updated just now";
+  if (mins === 1) return "updated 1 min ago";
+  return `updated ${mins} min ago`;
+}
+
+function kickoffLabel(iso: string | null): string {
+  if (!iso) return "";
+  return (
+    new Date(iso).toLocaleString("en-US", {
+      timeZone: ET,
+      weekday: "short",
+      hour: "numeric",
+      minute: "2-digit",
+    }) + " ET"
+  );
+}
+
+interface LiveGame {
+  id: string;
+  label: string;
+  home_team: string | null;
+  away_team: string | null;
+  starts_at: string | null;
+  status: string;
+  home_score: number | null;
+  away_score: number | null;
+  period: number | null;
+  clock: string | null;
+  sport: string | null;
+}
+
+interface LivePoolData {
+  games: LiveGame[];
+  pickByGame: Map<string, string>;
+  syncedAgo: string | null;
+  finalCount: number;
+}
+
 const ET = "America/New_York";
 
 // Compact lock label, always in ET to match the pool page's convention:
@@ -241,16 +285,74 @@ export default async function Dashboard({
     };
   }
 
+  // Per-game rows for the live dashboard view: linked games plus the
+  // viewer's picks, with the sync watermark for honest freshness.
+  // Only used for locked standard pick'em pools.
+  async function pickemLiveGames(poolId: string): Promise<LivePoolData | null> {
+    const { data: links } = await supabase
+      .from("pickem_pool_games")
+      .select("game_id")
+      .eq("pool_id", poolId);
+    const gameIds = ((links ?? []) as any[]).map((l: any) => l.game_id);
+    if (gameIds.length === 0) return null;
+    const { data: games } = await supabase
+      .from("games")
+      .select(
+        "id, label, home_team, away_team, starts_at, status, home_score, away_score, period, clock, sport"
+      )
+      .in("id", gameIds);
+    const gameList = ((games ?? []) as any[]) as LiveGame[];
+    if (gameList.length === 0) return null;
+    const { data: picks } = await supabase
+      .from("pickem_picks")
+      .select("game_id, picked_team")
+      .eq("pool_id", poolId)
+      .eq("user_id", userId);
+    const pickByGame = new Map(
+      ((picks ?? []) as any[]).map((p: any) => [p.game_id, String(p.picked_team ?? "").toUpperCase()])
+    );
+    // Most common sport among the games — pools are single-sport in practice.
+    const sportCounts = new Map<string, number>();
+    for (const g of gameList) {
+      const s = String(g.sport ?? "").toUpperCase();
+      if (s) sportCounts.set(s, (sportCounts.get(s) ?? 0) + 1);
+    }
+    const sport = [...sportCounts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
+    let syncedAgo: string | null = null;
+    if (sport) {
+      const { data: syncRow } = await supabase
+        .from("sync_state")
+        .select("synced_at")
+        .eq("sport", sport)
+        .maybeSingle();
+      syncedAgo = syncedAgoLabel((syncRow as any)?.synced_at ?? null);
+    }
+    const rank = (g: LiveGame) => (g.status === "in_progress" ? 0 : g.status === "scheduled" ? 1 : 2);
+    const sorted = [...gameList].sort(
+      (a, b) => rank(a) - rank(b) || new Date(a.starts_at ?? 0).getTime() - new Date(b.starts_at ?? 0).getTime()
+    );
+    return {
+      games: sorted,
+      pickByGame,
+      syncedAgo,
+      finalCount: gameList.filter((g) => g.status === "final").length,
+    };
+  }
+
   const happening = [...liveRoster.map((p) => ({ ...p, kind: "roster" as const })), ...livePickem.map((p) => ({ ...p, kind: "pickem" as const }))]
     .sort((a, b) => new Date(b.lock_at).getTime() - new Date(a.lock_at).getTime());
 
   const standings = new Map<string, { rank: number | null; points: number | null; count: number } | null>();
+  const liveData = new Map<string, LivePoolData | null>();
   await Promise.all(
     happening
       .filter((p) => new Date(p.lock_at).getTime() <= now)
       .map(async (p) => {
         const s = p.kind === "roster" ? await rosterStanding(p.id) : await pickemStanding(p.id);
         standings.set(p.id, s);
+        if (p.kind === "pickem" && (p as any).variant === "standard") {
+          liveData.set(p.id, await pickemLiveGames(p.id));
+        }
       })
   );
 
@@ -301,6 +403,7 @@ export default async function Dashboard({
             {happening.map((p: any) => {
               const locked = new Date(p.lock_at).getTime() <= now;
               const st = standings.get(p.id);
+              const live = locked ? liveData.get(p.id) : undefined;
               const href =
                 p.kind === "roster"
                   ? `/groups/${p.group_id}/pools/${p.id}`
@@ -329,6 +432,102 @@ export default async function Dashboard({
                         <span>{lockLabel(p.lock_at)}</span>
                       )}
                     </p>
+                    {live && live.games.length > 0 && (
+                      <div className="mt-3 border-t border-slate-100 pt-1">
+                        {live.games.map((g) => {
+                          const away = String(g.away_team ?? "").toUpperCase();
+                          const home = String(g.home_team ?? "").toUpperCase();
+                          const myPick = live.pickByGame.get(g.id);
+                          const hs = g.home_score ?? 0;
+                          const as = g.away_score ?? 0;
+                          const decided = g.status === "in_progress" || g.status === "final";
+                          const leader = decided ? (hs > as ? home : as > hs ? away : null) : null;
+                          const pickState = !myPick
+                            ? null
+                            : g.status === "final"
+                              ? leader === myPick
+                                ? "hit"
+                                : leader
+                                  ? "missed"
+                                  : null
+                              : g.status === "in_progress"
+                                ? leader === myPick
+                                  ? "hitting"
+                                  : null
+                                : "upcoming";
+                          const teamCls = (t: string) =>
+                            t !== myPick
+                              ? ""
+                              : pickState === "missed"
+                                ? "font-semibold text-slate-400"
+                                : "font-bold text-[#c2410c]";
+                          return (
+                            <div key={g.id} className="border-b border-slate-50 py-2 last:border-0">
+                              <div className="flex items-baseline justify-between gap-2">
+                                <p className="truncate font-display text-[15px] font-semibold uppercase tracking-wide">
+                                  {g.label}
+                                </p>
+                                {g.status === "in_progress" ? (
+                                  <span className="inline-flex shrink-0 items-center gap-1 text-[11px] font-bold tracking-wide text-red-700">
+                                    <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-red-600" />
+                                    LIVE{g.period ? ` Q${g.period}` : ""}
+                                    {g.clock ? ` ${g.clock}` : ""}
+                                  </span>
+                                ) : g.status === "final" ? (
+                                  <span className="shrink-0 text-[11px] font-bold tracking-wide text-slate-400">
+                                    FINAL
+                                  </span>
+                                ) : (
+                                  <span className="shrink-0 text-[11px] font-bold tracking-wide text-slate-400">
+                                    {kickoffLabel(g.starts_at)}
+                                  </span>
+                                )}
+                              </div>
+                              <p className="font-display text-2xl font-semibold tracking-wide">
+                                {g.status === "scheduled" ? (
+                                  <>
+                                    <span className={teamCls(away)}>{away}</span>
+                                    <span className="text-slate-300"> – </span>
+                                    <span className={teamCls(home)}>{home}</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <span className={teamCls(away)}>
+                                      {away} {as}
+                                    </span>
+                                    <span className="text-slate-300"> – </span>
+                                    <span className={teamCls(home)}>
+                                      {hs} {home}
+                                    </span>
+                                  </>
+                                )}
+                              </p>
+                              {myPick && (
+                                <p className="text-xs text-slate-500">
+                                  Your pick:{" "}
+                                  <span
+                                    className={
+                                      pickState === "missed"
+                                        ? "font-semibold text-slate-400"
+                                        : "font-bold text-[#c2410c]"
+                                    }
+                                  >
+                                    {myPick}
+                                  </span>
+                                  {pickState === "hitting" && " · hitting"}
+                                  {pickState === "hit" && " · hit"}
+                                  {pickState === "missed" && " · missed"}
+                                </p>
+                              )}
+                            </div>
+                          );
+                        })}
+                        <p className="pb-1 pt-1 text-center text-[11px] tracking-wide text-slate-400">
+                          {live.finalCount} of {live.games.length} final
+                          {live.syncedAgo ? ` · ${live.syncedAgo}` : ""}
+                        </p>
+                      </div>
+                    )}
                   </Card>
                 </Link>
               );

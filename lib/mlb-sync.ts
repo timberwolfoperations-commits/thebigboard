@@ -17,6 +17,7 @@
 //   pitching strikeouts only.
 
 import { createServiceClient } from "./supabase/service";
+import { touchSyncState } from "./sync-state";
 
 const scoreboardUrl = (dates: string) =>
   `https://site.api.espn.com/apis/site/v2/sports/baseball/mlb/scoreboard?dates=${dates}`;
@@ -170,9 +171,13 @@ export async function syncMlb(): Promise<MlbSyncResult> {
     const homeAbbr = String(home.team?.abbreviation ?? "").toUpperCase();
     const awayAbbr = String(away.team?.abbreviation ?? "").toUpperCase();
     const status = espnStatus(comp.status?.type?.state);
+    const period = Number(comp.status?.period) || null;
+    const clock = typeof comp.status?.displayClock === "string" ? comp.status.displayClock : null;
     rows.push({
       external_id: String(ev.id),
       sport: "MLB",
+      period,
+      clock,
       label: `${away.team?.name ?? awayAbbr} at ${home.team?.name ?? homeAbbr}`,
       home_team: homeAbbr || null,
       away_team: awayAbbr || null,
@@ -229,5 +234,6 @@ export async function syncMlb(): Promise<MlbSyncResult> {
     stat_lines_upserted += lines.length;
   }
 
+  await touchSyncState("MLB");
   return { games_upserted, stat_lines_upserted };
 }

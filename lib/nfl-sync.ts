@@ -7,6 +7,7 @@
 // name + team pair.
 
 import { createServiceClient } from "./supabase/service";
+import { touchSyncState } from "./sync-state";
 
 const SCOREBOARD_URL =
   "https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard";
@@ -111,9 +112,13 @@ export async function syncNfl(): Promise<NflSyncResult> {
     const homeAbbr = String(home.team?.abbreviation ?? "").toUpperCase();
     const awayAbbr = String(away.team?.abbreviation ?? "").toUpperCase();
     const status = espnStatus(comp.status?.type?.state);
+    const period = Number(comp.status?.period) || null;
+    const clock = typeof comp.status?.displayClock === "string" ? comp.status.displayClock : null;
     rows.push({
       external_id: String(ev.id),
       sport: "NFL",
+      period,
+      clock,
       label: `${away.team?.name ?? awayAbbr} at ${home.team?.name ?? homeAbbr}`,
       home_team: homeAbbr || null,
       away_team: awayAbbr || null,
@@ -170,5 +175,6 @@ export async function syncNfl(): Promise<NflSyncResult> {
     stat_lines_upserted += lines.length;
   }
 
+  await touchSyncState("NFL");
   return { games_upserted, stat_lines_upserted };
 }

@@ -8,6 +8,7 @@
 // CFB would need boxscore parsing — not built yet.
 
 import { createServiceClient } from "./supabase/service";
+import { touchSyncState } from "./sync-state";
 
 const SCOREBOARD_URL =
   "https://site.api.espn.com/apis/site/v2/sports/football/college-football/scoreboard";
@@ -64,6 +65,8 @@ export async function syncCfb(): Promise<CfbSyncResult> {
     const homeAbbr = String(home.team?.abbreviation ?? "").toUpperCase();
     const awayAbbr = String(away.team?.abbreviation ?? "").toUpperCase();
     const status = espnStatus(comp.status?.type?.state);
+    const period = Number(comp.status?.period) || null;
+    const clock = typeof comp.status?.displayClock === "string" ? comp.status.displayClock : null;
     const homeRank = rankOf(home);
     const awayRank = rankOf(away);
     const isTop25 = homeRank != null || awayRank != null;
@@ -76,6 +79,8 @@ export async function syncCfb(): Promise<CfbSyncResult> {
       away_team: awayAbbr || null,
       home_rank: homeRank,
       away_rank: awayRank,
+      period,
+      clock,
       starts_at: ev.date ?? null,
       status,
       home_score: num(home.score) || null,
@@ -96,5 +101,6 @@ export async function syncCfb(): Promise<CfbSyncResult> {
     games_upserted = upserted?.length ?? 0;
   }
 
+  await touchSyncState("CFB");
   return { games_upserted, top25_upserted };
 }
