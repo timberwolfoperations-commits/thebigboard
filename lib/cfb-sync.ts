@@ -33,7 +33,13 @@ function num(v: unknown): number {
 function rankOf(competitor: any): number | null {
   const r = competitor?.curatedRank?.current;
   const n = typeof r === "string" ? parseInt(r, 10) : Number(r);
-  return Number.isFinite(n) ? n : null;
+  if (!Number.isFinite(n) || n > 25) return null; // ESPN reports 99 for unranked
+  return n;
+}
+
+// "#4 Ohio State" — plain name when unranked.
+function rankedName(name: string, rank: number | null): string {
+  return rank != null ? `#${rank} ${name}` : name;
 }
 
 export async function syncCfb(): Promise<CfbSyncResult> {
@@ -58,14 +64,18 @@ export async function syncCfb(): Promise<CfbSyncResult> {
     const homeAbbr = String(home.team?.abbreviation ?? "").toUpperCase();
     const awayAbbr = String(away.team?.abbreviation ?? "").toUpperCase();
     const status = espnStatus(comp.status?.type?.state);
-    const isTop25 = [rankOf(home), rankOf(away)].some((r) => r != null && r <= 25);
+    const homeRank = rankOf(home);
+    const awayRank = rankOf(away);
+    const isTop25 = homeRank != null || awayRank != null;
     if (isTop25) top25_upserted++;
     rows.push({
       external_id: String(ev.id),
       sport: "CFB",
-      label: `${away.team?.name ?? awayAbbr} at ${home.team?.name ?? homeAbbr}`,
+      label: `${rankedName(away.team?.name ?? awayAbbr, awayRank)} at ${rankedName(home.team?.name ?? homeAbbr, homeRank)}`,
       home_team: homeAbbr || null,
       away_team: awayAbbr || null,
+      home_rank: homeRank,
+      away_rank: awayRank,
       starts_at: ev.date ?? null,
       status,
       home_score: num(home.score) || null,

@@ -450,17 +450,19 @@ export async function createPool(groupId: string, formData: FormData) {
   redirect(`/groups/${groupId}/pools/${data.id}`);
 }
 
-// Commish pulls fresh NFL scores on demand (mid-game). Runs the ESPN sync
+// Commish pulls fresh scores on demand (mid-game). Runs the ESPN sync
 // server-side with the service key — the CRON_SECRET never leaves the server.
 export async function refreshScores() {
   await getUser();
   const { syncNfl } = await import("./nfl-sync");
   const { syncMlb } = await import("./mlb-sync");
+  const { syncCfb } = await import("./cfb-sync");
   const nfl = await syncNfl();
   const mlb = await syncMlb();
+  const cfb = await syncCfb();
   revalidatePath("/scoring");
   return {
-    games_upserted: nfl.games_upserted + mlb.games_upserted,
+    games_upserted: nfl.games_upserted + mlb.games_upserted + cfb.games_upserted,
     stat_lines_upserted: nfl.stat_lines_upserted + mlb.stat_lines_upserted,
   };
 }
