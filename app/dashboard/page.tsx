@@ -455,6 +455,7 @@ export default async function Dashboard({
               return (
                 <HappeningPoolCard
                   key={`${p.kind}-${p.id}`}
+                  poolKey={`${p.kind}-${p.id}`}
                   header={
                     <>
                       <Link

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Card } from "@/components/ui";
 
 // Accordion card for a happening-now pool. The header is always visible;
@@ -42,10 +42,14 @@ function kickoffLabel(iso: string | null): string {
 }
 
 export default function HappeningPoolCard({
+  poolKey,
   header,
   sub,
   live,
 }: {
+  // Stable per-pool key (e.g. "pickem-<id>") — the collapse choice is
+  // remembered in localStorage so it survives reloads and back-nav.
+  poolKey: string;
   header: ReactNode;
   sub: ReactNode;
   live: LiveCardData | null;
@@ -54,6 +58,24 @@ export default function HappeningPoolCard({
   // scores matter. Everything else stays collapsed for scannability.
   const liveCount = live ? live.games.filter((g) => g.status === "in_progress").length : 0;
   const [open, setOpen] = useState(liveCount > 0);
+  const [ready, setReady] = useState(false);
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(`bb-pool-open:${poolKey}`);
+      if (stored !== null) setOpen(stored === "1");
+    } catch {
+      // Private mode etc. — just fall back to the default.
+    }
+    setReady(true);
+  }, [poolKey]);
+  useEffect(() => {
+    if (!ready) return;
+    try {
+      localStorage.setItem(`bb-pool-open:${poolKey}`, open ? "1" : "0");
+    } catch {
+      // Non-fatal.
+    }
+  }, [open, ready, poolKey]);
   const summary = !live
     ? null
     : liveCount > 0
