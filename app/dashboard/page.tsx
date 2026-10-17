@@ -5,6 +5,7 @@ import { computePickemLeaderboard } from "@/lib/pickem-scoring";
 import { computePoolPoints } from "@/lib/pool-scoring";
 import { Card, SectionTitle } from "@/components/ui";
 import DashboardGroupMenu from "@/components/dashboard-group-menu";
+import HappeningPoolCard from "@/components/happening-pool-card";
 
 function ordinal(n: number) {
   const s = ["th", "st", "nd", "rd"];
@@ -409,15 +410,21 @@ export default async function Dashboard({
                   ? `/groups/${p.group_id}/pools/${p.id}`
                   : `/groups/${p.group_id}/pickem/${p.id}`;
               return (
-                <Link key={`${p.kind}-${p.id}`} href={href}>
-                  <Card className="transition hover:border-slate-400">
-                    <div className="flex items-center justify-between gap-2">
-                      <p className="truncate font-display text-lg font-semibold uppercase tracking-wide">
+                <HappeningPoolCard
+                  key={`${p.kind}-${p.id}`}
+                  header={
+                    <>
+                      <Link
+                        href={href}
+                        className="truncate font-display text-lg font-semibold uppercase tracking-wide hover:text-[#c2410c]"
+                      >
                         {p.name}
-                      </p>
+                      </Link>
                       {variantPill(p.kind, p.variant)}
-                    </div>
-                    <p className="mt-1 text-sm text-slate-600">
+                    </>
+                  }
+                  sub={
+                    <p className="text-sm text-slate-600">
                       <span className="font-medium text-slate-500">{groupName.get(p.group_id)}</span>
                       {" · "}
                       {locked ? (
@@ -432,104 +439,18 @@ export default async function Dashboard({
                         <span>{lockLabel(p.lock_at)}</span>
                       )}
                     </p>
-                    {live && live.games.length > 0 && (
-                      <div className="mt-3 border-t border-slate-100 pt-1">
-                        {live.games.map((g) => {
-                          const away = String(g.away_team ?? "").toUpperCase();
-                          const home = String(g.home_team ?? "").toUpperCase();
-                          const myPick = live.pickByGame.get(g.id);
-                          const hs = g.home_score ?? 0;
-                          const as = g.away_score ?? 0;
-                          const decided = g.status === "in_progress" || g.status === "final";
-                          const leader = decided ? (hs > as ? home : as > hs ? away : null) : null;
-                          const pickState = !myPick
-                            ? null
-                            : g.status === "final"
-                              ? leader === myPick
-                                ? "hit"
-                                : leader
-                                  ? "missed"
-                                  : null
-                              : g.status === "in_progress"
-                                ? leader === myPick
-                                  ? "hitting"
-                                  : null
-                                : "upcoming";
-                          const teamCls = (t: string) =>
-                            t !== myPick
-                              ? ""
-                              : pickState === "missed"
-                                ? "font-semibold text-slate-400"
-                                : "font-bold text-[#c2410c]";
-                          return (
-                            <div key={g.id} className="border-b border-slate-50 py-2 last:border-0">
-                              <div className="flex items-baseline justify-between gap-2">
-                                <p className="truncate font-display text-[15px] font-semibold uppercase tracking-wide">
-                                  {g.label}
-                                </p>
-                                {g.status === "in_progress" ? (
-                                  <span className="inline-flex shrink-0 items-center gap-1 text-[11px] font-bold tracking-wide text-red-700">
-                                    <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-red-600" />
-                                    LIVE{g.period ? ` Q${g.period}` : ""}
-                                    {g.clock ? ` ${g.clock}` : ""}
-                                  </span>
-                                ) : g.status === "final" ? (
-                                  <span className="shrink-0 text-[11px] font-bold tracking-wide text-slate-400">
-                                    FINAL
-                                  </span>
-                                ) : (
-                                  <span className="shrink-0 text-[11px] font-bold tracking-wide text-slate-400">
-                                    {kickoffLabel(g.starts_at)}
-                                  </span>
-                                )}
-                              </div>
-                              <p className="font-display text-2xl font-semibold tracking-wide">
-                                {g.status === "scheduled" ? (
-                                  <>
-                                    <span className={teamCls(away)}>{away}</span>
-                                    <span className="text-slate-300"> – </span>
-                                    <span className={teamCls(home)}>{home}</span>
-                                  </>
-                                ) : (
-                                  <>
-                                    <span className={teamCls(away)}>
-                                      {away} {as}
-                                    </span>
-                                    <span className="text-slate-300"> – </span>
-                                    <span className={teamCls(home)}>
-                                      {hs} {home}
-                                    </span>
-                                  </>
-                                )}
-                              </p>
-                              {myPick && (
-                                <p className="text-xs text-slate-500">
-                                  Your pick:{" "}
-                                  <span
-                                    className={
-                                      pickState === "missed"
-                                        ? "font-semibold text-slate-400"
-                                        : "font-bold text-[#c2410c]"
-                                    }
-                                  >
-                                    {myPick}
-                                  </span>
-                                  {pickState === "hitting" && " · hitting"}
-                                  {pickState === "hit" && " · hit"}
-                                  {pickState === "missed" && " · missed"}
-                                </p>
-                              )}
-                            </div>
-                          );
-                        })}
-                        <p className="pb-1 pt-1 text-center text-[11px] tracking-wide text-slate-400">
-                          {live.finalCount} of {live.games.length} final
-                          {live.syncedAgo ? ` · ${live.syncedAgo}` : ""}
-                        </p>
-                      </div>
-                    )}
-                  </Card>
-                </Link>
+                  }
+                  live={
+                    live
+                      ? {
+                          games: live.games,
+                          picks: Object.fromEntries(live.pickByGame),
+                          syncedAgo: live.syncedAgo,
+                          finalCount: live.finalCount,
+                        }
+                      : null
+                  }
+                />
               );
             })}
           </div>
