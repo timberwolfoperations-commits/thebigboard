@@ -66,11 +66,14 @@ export default function PickemGameCard({
   game,
   myPick,
   canPick,
+  reveal,
   action,
 }: {
   game: PickemCardGame;
   myPick: string | null;
   canPick: boolean;
+  // Everyone's picks per team, shown only after lock (null = keep secret).
+  reveal: { team: string; names: string[] }[] | null;
   action: (formData: FormData) => Promise<void>;
 }) {
   const [optimisticPick, setOptimisticPick] = useOptimistic<string | null, string>(
@@ -127,6 +130,17 @@ export default function PickemGameCard({
           </span>
         )}
       </p>
+      {reveal && reveal.length > 0 && (
+        <div className="mt-2 border-t border-slate-100 pt-2">
+          {reveal.map((r) => (
+            <p key={r.team} className="py-0.5 text-center text-xs text-slate-500">
+              <span className="font-bold text-slate-900">{r.team}</span>
+              {" — "}
+              {r.names.join(", ")}
+            </p>
+          ))}
+        </div>
+      )}
     </Card>
   );
 }

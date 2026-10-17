@@ -56,7 +56,42 @@ export default async function PickemPoolPage({
     .eq("user_id", user.id);
   const myPickByGame = new Map(((myPicks ?? []) as any[]).map((p) => [p.game_id, p.picked_team]));
 
+
   const locked = new Date(pool.lock_at).getTime() <= Date.now();
+
+  // Everyone's picks, revealed after lock — the trash-talk view. Kept
+  // secret before lock so nobody can copy. Ordered away-team first to
+  // match the button layout.
+  const revealByGame = new Map<string, { team: string; names: string[] }[]>();
+  if (locked && gameList.length > 0) {
+    const { data: allPicks } = await supabase
+      .from("pickem_picks")
+      .select("game_id, picked_team, profiles(display_name)")
+      .eq("pool_id", poolId);
+    const byGame = new Map<string, Map<string, string[]>>();
+    for (const p of (allPicks ?? []) as any[]) {
+      const team = String(p.picked_team ?? "").toUpperCase();
+      const name = p.profiles?.display_name ?? "Player";
+      if (!byGame.has(p.game_id)) byGame.set(p.game_id, new Map());
+      const m = byGame.get(p.game_id)!;
+      if (!m.has(team)) m.set(team, []);
+      m.get(team)!.push(name);
+    }
+    for (const g of gameList) {
+      const m = byGame.get(g.id);
+      if (!m) continue;
+      const away = String(g.away_team ?? "").toUpperCase();
+      const home = String(g.home_team ?? "").toUpperCase();
+      const ordered = [away, home]
+        .filter((t, i, a) => t !== "" && a.indexOf(t) === i)
+        .map((t) => ({ team: t, names: (m.get(t) ?? []).slice().sort() }))
+        .filter((r) => r.names.length > 0);
+      for (const [t, names] of m) {
+        if (t !== away && t !== home) ordered.push({ team: t, names: names.slice().sort() });
+      }
+      revealByGame.set(g.id, ordered);
+    }
+  }
   const isCommish = pool.created_by === user.id;
   const isOverUnder = pool.variant === "over_under";
   const allFinal = gameList.length > 0 && gameList.every((g: any) => g.status === "final");
@@ -223,6 +258,7 @@ export default async function PickemPoolPage({
                 game={g}
                 myPick={myPickByGame.get(g.id) ?? null}
                 canPick={!locked && new Date(g.starts_at).getTime() > Date.now()}
+                reveal={locked ? revealByGame.get(g.id) ?? [] : null}
                 action={savePick}
               />
             ))}
