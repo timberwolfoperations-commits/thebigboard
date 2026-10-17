@@ -18,6 +18,8 @@ export interface LiveCardGame {
   away_score: number | null;
   period: number | null;
   clock: string | null;
+  swing: boolean;
+  splitLine: string | null;
 }
 
 export interface LiveCardData {
@@ -109,21 +111,28 @@ export default function HappeningPoolCard({
                       <p className="truncate font-display text-[15px] font-semibold uppercase tracking-wide">
                         {g.label}
                       </p>
-                      {g.status === "in_progress" ? (
-                        <span className="inline-flex shrink-0 items-center gap-1 text-[11px] font-bold tracking-wide text-red-700">
-                          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-red-600" />
-                          LIVE{g.period ? ` Q${g.period}` : ""}
-                          {g.clock ? ` ${g.clock}` : ""}
-                        </span>
-                      ) : g.status === "final" ? (
-                        <span className="shrink-0 text-[11px] font-bold tracking-wide text-slate-400">
-                          FINAL
-                        </span>
-                      ) : (
-                        <span className="shrink-0 text-[11px] font-bold tracking-wide text-slate-400">
-                          {kickoffLabel(g.starts_at)}
-                        </span>
-                      )}
+                      <span className="flex shrink-0 items-center gap-1.5">
+                        {g.swing && g.status !== "final" && (
+                          <span className="rounded-full bg-[#c2410c]/10 px-2 py-0.5 text-[10px] font-bold tracking-wide text-[#c2410c]">
+                            SWING
+                          </span>
+                        )}
+                        {g.status === "in_progress" ? (
+                          <span className="inline-flex items-center gap-1 text-[11px] font-bold tracking-wide text-red-700">
+                            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-red-600" />
+                            LIVE{g.period ? ` Q${g.period}` : ""}
+                            {g.clock ? ` ${g.clock}` : ""}
+                          </span>
+                        ) : g.status === "final" ? (
+                          <span className="text-[11px] font-bold tracking-wide text-slate-400">
+                            FINAL
+                          </span>
+                        ) : (
+                          <span className="text-[11px] font-bold tracking-wide text-slate-400">
+                            {kickoffLabel(g.starts_at)}
+                          </span>
+                        )}
+                      </span>
                     </div>
                     <p className="font-display text-2xl font-semibold tracking-wide">
                       {g.status === "scheduled" ? (
@@ -159,6 +168,9 @@ export default function HappeningPoolCard({
                         {pickState === "hitting" && " · hitting"}
                         {pickState === "hit" && " · hit"}
                         {pickState === "missed" && " · missed"}
+                        {g.swing && g.splitLine && (
+                          <span className="text-slate-400"> · {g.splitLine}</span>
+                        )}
                       </p>
                     )}
                   </div>

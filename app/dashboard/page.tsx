@@ -48,6 +48,10 @@ interface LiveGame {
   period: number | null;
   clock: string | null;
   sport: string | null;
+  // Swing game: the viewer's pick disagrees with at least one other
+  // entrant — these are the games that decide the standings.
+  swing: boolean;
+  splitLine: string | null;
 }
 
 interface LivePoolData {
@@ -312,6 +316,39 @@ export default async function Dashboard({
     const pickByGame = new Map(
       ((picks ?? []) as any[]).map((p: any) => [p.game_id, String(p.picked_team ?? "").toUpperCase()])
     );
+    // Everyone's picks per game — powers the swing-game tag. A game is a
+    // swing for the viewer when their pick disagrees with at least one
+    // other entrant.
+    const { data: allPicks } = await supabase
+      .from("pickem_picks")
+      .select("game_id, picked_team")
+      .eq("pool_id", poolId);
+    const splitByGame = new Map<string, Map<string, number>>();
+    for (const p of (allPicks ?? []) as any[]) {
+      const team = String(p.picked_team ?? "").toUpperCase();
+      if (!team) continue;
+      if (!splitByGame.has(p.game_id)) splitByGame.set(p.game_id, new Map());
+      const m = splitByGame.get(p.game_id)!;
+      m.set(team, (m.get(team) ?? 0) + 1);
+    }
+    for (const g of gameList) {
+      const myPick = pickByGame.get(g.id);
+      const counts = splitByGame.get(g.id);
+      const entries = [...(counts ?? new Map<string, number>()).entries()].map(([team, count]) => ({
+        team,
+        count,
+      }));
+      const myCount = myPick ? counts?.get(myPick) ?? 0 : 0;
+      const total = entries.reduce((a, e) => a + e.count, 0);
+      const swing = !!myPick && total - myCount > 0;
+      (g as any).swing = swing;
+      if (swing) {
+        const other = entries.find((e) => e.team !== myPick);
+        (g as any).splitLine = other ? `${myCount} on ${myPick}, ${other.count} on ${other.team}` : null;
+      } else {
+        (g as any).splitLine = null;
+      }
+    }
     // Most common sport among the games — pools are single-sport in practice.
     const sportCounts = new Map<string, number>();
     for (const g of gameList) {
@@ -330,7 +367,13 @@ export default async function Dashboard({
     }
     const rank = (g: LiveGame) => (g.status === "in_progress" ? 0 : g.status === "scheduled" ? 1 : 2);
     const sorted = [...gameList].sort(
-      (a, b) => rank(a) - rank(b) || new Date(a.starts_at ?? 0).getTime() - new Date(b.starts_at ?? 0).getTime()
+      (a, b) =>
+        rank(a) - rank(b) ||
+        // Within live games, swing games float to the top.
+        (a.status === "in_progress" && b.status === "in_progress"
+          ? Number(b.swing) - Number(a.swing)
+          : 0) ||
+        new Date(a.starts_at ?? 0).getTime() - new Date(b.starts_at ?? 0).getTime()
     );
     return {
       games: sorted,
