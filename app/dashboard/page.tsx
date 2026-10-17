@@ -31,7 +31,7 @@ function lockLabel(iso: string) {
   return `Locks ${d.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: ET })} ET`;
 }
 
-function variantPill(variant: string) {
+function variantPill(kind: string, variant?: string) {
   if (variant === "over_under") {
     return (
       <span className="inline-block rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-800">
@@ -39,7 +39,7 @@ function variantPill(variant: string) {
       </span>
     );
   }
-  if (variant === "pickem") {
+  if (kind === "pickem") {
     return (
       <span className="inline-block rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-800">
         pick&rsquo;em
@@ -312,7 +312,7 @@ export default async function Dashboard({
                       <p className="truncate font-display text-lg font-semibold uppercase tracking-wide">
                         {p.name}
                       </p>
-                      {variantPill(p.variant)}
+                      {variantPill(p.kind, p.variant)}
                     </div>
                     <p className="mt-1 text-sm text-slate-600">
                       <span className="font-medium text-slate-500">{groupName.get(p.group_id)}</span>
@@ -353,7 +353,7 @@ export default async function Dashboard({
                       <p className="truncate font-display text-lg font-semibold uppercase tracking-wide text-slate-500">
                         {p.name}
                       </p>
-                      {variantPill(p.variant)}
+                      {variantPill(p.kind, p.variant)}
                     </div>
                     <p className="mt-1 text-sm text-slate-500">
                       <span>{groupName.get(p.group_id)}</span>
