@@ -788,3 +788,19 @@ export async function settleOverdueBets(groupId: string) {
   }
   if (data && data.length > 0) revalidatePath(`/groups/${groupId}`);
 }
+
+// ------------------------------------------------------------ profile
+// Let a user change their own display name (magic-link sign-ins get the
+// email prefix by default). RLS already restricts updates to your own row.
+export async function updateDisplayName(formData: FormData) {
+  const { supabase, user } = await getUser();
+  const name = String(formData.get("display_name") ?? "").trim().slice(0, 40);
+  if (!name) throw new Error("Give yourself a name.");
+  const { error } = await supabase
+    .from("profiles")
+    .update({ display_name: name })
+    .eq("id", user.id);
+  if (error) throw new Error(error.message);
+  revalidatePath("/profile");
+  revalidatePath("/dashboard");
+}

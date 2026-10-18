@@ -46,6 +46,10 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         .maybeSingle()
     : { data: null };
 
+  const { data: profile } = user
+    ? await supabase.from("profiles").select("display_name").eq("id", user.id).maybeSingle()
+    : { data: null };
+
   return (
     <html lang="en" className={barlow.variable}>
       <body>
@@ -69,6 +73,9 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                     Scoring
                   </Link>
                 )}
+                <Link href="/profile" className="text-sm font-medium text-slate-700 underline-offset-4 hover:underline">
+                  {profile?.display_name ?? "Profile"}
+                </Link>
                 <SignOutButton />
               </div>
             )}
