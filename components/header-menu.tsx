@@ -1,34 +1,46 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { createClient } from "@/lib/supabase/client";
 import { createGroup, joinGroup } from "@/lib/actions";
 import { Field, inputClass, SubmitButton } from "@/components/ui";
 
-// The dashboard's group switcher: filters the pool list by group ("All
-// groups" by default), links through to each group page for management,
-// and houses the create/join forms that used to live on the dashboard.
-export default function DashboardGroupMenu({
+// The header's hamburger: one menu holding everything that used to crowd the
+// header and the dashboard top — group switching, new/join group, Scoring
+// (commish only), profile, sign out.
+export default function HeaderMenu({
   groups,
-  active,
+  displayName,
+  isAdmin,
 }: {
   groups: { id: string; name: string }[];
-  active: string | null;
+  displayName: string | null;
+  isAdmin: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState<"none" | "new" | "join">("none");
   const router = useRouter();
 
-  const label = active
-    ? (groups.find((g) => g.id === active)?.name ?? "All groups")
-    : "All groups";
-
-  function pick(id: string | null) {
+  function close() {
     setOpen(false);
     setMode("none");
+  }
+
+  function pick(id: string | null) {
+    close();
     router.push(id ? `/dashboard?group=${id}` : "/dashboard");
   }
+
+  async function signOut() {
+    const supabase = createClient();
+    await supabase.auth.signOut();
+    window.location.href = "/";
+  }
+
+  const itemClass =
+    "block w-full rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-slate-600 hover:bg-slate-100";
 
   return (
     <div className="relative">
@@ -37,52 +49,46 @@ export default function DashboardGroupMenu({
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
         aria-haspopup="menu"
-        className="flex items-center gap-2 rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-900 hover:bg-slate-100"
+        aria-label="Menu"
+        className="flex h-10 w-10 items-center justify-center rounded-full hover:bg-slate-100"
       >
-        <span className="max-w-44 truncate">{label}</span>
-        <span aria-hidden="true" className="text-xs text-slate-500">▾</span>
+        <span aria-hidden="true" className="flex flex-col items-center gap-1.5">
+          <span className="block h-0.5 w-5 bg-slate-900" />
+          <span className="block h-0.5 w-5 bg-slate-900" />
+          <span className="block h-0.5 w-5 bg-slate-900" />
+        </span>
       </button>
+
       {open && (
         <>
           <button
             type="button"
             aria-label="Close menu"
             className="fixed inset-0 z-10 cursor-default"
-            onClick={() => {
-              setOpen(false);
-              setMode("none");
-            }}
+            onClick={close}
           />
           <div
             role="menu"
-            className="absolute left-0 z-20 mt-2 w-72 rounded-2xl border border-slate-200 bg-white p-1.5 shadow-lg"
+            className="absolute right-0 z-20 mt-2 max-h-[70vh] w-72 overflow-y-auto rounded-2xl border border-slate-200 bg-white p-1.5 shadow-lg"
           >
-            <button
-              type="button"
-              onClick={() => pick(null)}
-              className={`block w-full rounded-xl px-3 py-2.5 text-left text-sm font-semibold hover:bg-slate-100 ${
-                !active ? "text-slate-900" : "text-slate-600"
-              }`}
-            >
+            <p className="px-3 pb-1 pt-2 text-xs font-semibold uppercase tracking-wider text-slate-400">
+              Groups
+            </p>
+            <button type="button" onClick={() => pick(null)} className={itemClass}>
               All groups
             </button>
             {groups.map((g) => (
-              <div
-                key={g.id}
-                className="flex items-center rounded-xl hover:bg-slate-100"
-              >
+              <div key={g.id} className="flex items-center rounded-xl hover:bg-slate-100">
                 <button
                   type="button"
                   onClick={() => pick(g.id)}
-                  className={`min-w-0 flex-1 truncate px-3 py-2.5 text-left text-sm font-semibold ${
-                    active === g.id ? "text-slate-900" : "text-slate-600"
-                  }`}
+                  className="min-w-0 flex-1 truncate px-3 py-2.5 text-left text-sm font-semibold text-slate-600"
                 >
                   {g.name}
                 </button>
                 <Link
                   href={`/groups/${g.id}`}
-                  onClick={() => setOpen(false)}
+                  onClick={close}
                   className="shrink-0 px-3 py-2.5 text-xs font-semibold text-slate-400 hover:text-slate-900"
                 >
                   Manage →
@@ -94,18 +100,10 @@ export default function DashboardGroupMenu({
 
             {mode === "none" && (
               <>
-                <button
-                  type="button"
-                  onClick={() => setMode("new")}
-                  className="block w-full rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-slate-600 hover:bg-slate-100"
-                >
+                <button type="button" onClick={() => setMode("new")} className={itemClass}>
                   + New group
                 </button>
-                <button
-                  type="button"
-                  onClick={() => setMode("join")}
-                  className="block w-full rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-slate-600 hover:bg-slate-100"
-                >
+                <button type="button" onClick={() => setMode("join")} className={itemClass}>
                   Join with invite link
                 </button>
               </>
@@ -144,6 +142,20 @@ export default function DashboardGroupMenu({
                 </div>
               </form>
             )}
+
+            <div className="my-1 border-t border-slate-100" />
+
+            {isAdmin && (
+              <Link href="/scoring" onClick={close} className={itemClass}>
+                Scoring
+              </Link>
+            )}
+            <Link href="/profile" onClick={close} className={itemClass}>
+              {displayName ?? "Profile"}
+            </Link>
+            <button type="button" onClick={signOut} className={itemClass}>
+              Sign out
+            </button>
           </div>
         </>
       )}

@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Barlow_Condensed } from "next/font/google";
 import { createClient } from "@/lib/supabase/server";
-import { SignOutButton } from "@/components/AuthButtons";
+import HeaderMenu from "@/components/header-menu";
 import "./globals.css";
 
 const barlow = Barlow_Condensed({
@@ -50,6 +50,18 @@ export default async function RootLayout({ children }: { children: React.ReactNo
     ? await supabase.from("profiles").select("display_name").eq("id", user.id).maybeSingle()
     : { data: null };
 
+  const { data: memberships } = user
+    ? await supabase
+        .from("group_members")
+        .select("groups(id, name)")
+        .eq("user_id", user.id)
+        .order("joined_at", { ascending: false })
+    : { data: null };
+  const menuGroups = ((memberships ?? []) as any[])
+    .map((m) => m.groups)
+    .filter((g) => g?.id)
+    .map((g) => ({ id: g.id as string, name: g.name as string }));
+
   return (
     <html lang="en" className={barlow.variable}>
       <body>
@@ -67,17 +79,11 @@ export default async function RootLayout({ children }: { children: React.ReactNo
               </span>
             </Link>
             {user && (
-              <div className="flex items-center gap-4">
-                {adminRow && (
-                  <Link href="/scoring" className="text-sm text-slate-500 underline-offset-4 hover:underline">
-                    Scoring
-                  </Link>
-                )}
-                <Link href="/profile" className="text-sm font-medium text-slate-700 underline-offset-4 hover:underline">
-                  {profile?.display_name ?? "Profile"}
-                </Link>
-                <SignOutButton />
-              </div>
+              <HeaderMenu
+                groups={menuGroups}
+                displayName={profile?.display_name ?? null}
+                isAdmin={!!adminRow}
+              />
             )}
           </div>
         </header>
