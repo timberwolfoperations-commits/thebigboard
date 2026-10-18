@@ -144,6 +144,39 @@ export default async function PoolPage({
         </p>
       </div>
 
+      {playerList.length > 0 && (
+        <div>
+          <SectionTitle>Leaderboard</SectionTitle>
+            {board.length === 0 ? (
+              <Card>
+                <p className="text-sm text-slate-500">No entries yet. Be the first.</p>
+              </Card>
+            ) : (
+              <div className="space-y-2">
+                {board.map((e: any, i: number) => (
+                  <Card key={e.id} className={e.user_id === user.id ? "border-slate-400" : ""}>
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="font-semibold">
+                        <span className="mr-2 font-display text-lg tabular-nums text-slate-400">{i + 1}</span>
+                        {e.profiles?.display_name ?? "Player"}
+                        {e.user_id === user.id && <span className="ml-1 text-xs text-slate-400">(you)</span>}
+                      </p>
+                      <p className="font-display text-3xl font-bold tabular-nums leading-none">
+                        {e.total}
+                      </p>
+                    </div>
+                    <p className="mt-1 text-sm text-slate-600">
+                      {e.picks
+                        .map((p: any) => `${p.name} (${pointsByPlayer.get(p.id) ?? 0})`)
+                        .join(" · ")}
+                    </p>
+                  </Card>
+                ))}
+              </div>
+            )}
+        </div>
+      )}
+
       {pool.description && (
         <Card>
           <SectionTitle>How it works</SectionTitle>
@@ -263,37 +296,6 @@ export default async function PoolPage({
               <p className="text-sm text-slate-500">Picks locked — you didn&rsquo;t get an entry in.</p>
             </Card>
           )}
-
-          <div>
-            <SectionTitle>Leaderboard</SectionTitle>
-            {board.length === 0 ? (
-              <Card>
-                <p className="text-sm text-slate-500">No entries yet. Be the first.</p>
-              </Card>
-            ) : (
-              <div className="space-y-2">
-                {board.map((e: any, i: number) => (
-                  <Card key={e.id} className={e.user_id === user.id ? "border-slate-400" : ""}>
-                    <div className="flex items-center justify-between gap-2">
-                      <p className="font-semibold">
-                        <span className="mr-2 font-display text-lg tabular-nums text-slate-400">{i + 1}</span>
-                        {e.profiles?.display_name ?? "Player"}
-                        {e.user_id === user.id && <span className="ml-1 text-xs text-slate-400">(you)</span>}
-                      </p>
-                      <p className="font-display text-3xl font-bold tabular-nums leading-none">
-                        {e.total}
-                      </p>
-                    </div>
-                    <p className="mt-1 text-sm text-slate-600">
-                      {e.picks
-                        .map((p: any) => `${p.name} (${pointsByPlayer.get(p.id) ?? 0})`)
-                        .join(" · ")}
-                    </p>
-                  </Card>
-                ))}
-              </div>
-            )}
-          </div>
 
           {isCommish && locked && board.length > 0 && (
             <div>

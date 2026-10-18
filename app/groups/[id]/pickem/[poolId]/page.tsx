@@ -198,6 +198,35 @@ export default async function PickemPoolPage({
         </p>
       </div>
 
+      <div>
+        <SectionTitle>Leaderboard</SectionTitle>
+        {board.length === 0 ? (
+          <Card>
+            <p className="text-sm text-slate-500">No picks yet. Be the first.</p>
+          </Card>
+        ) : (
+          <div className="space-y-2">
+            {board.map((r, i) => (
+              <Card key={r.user_id} className={r.user_id === user.id ? "border-slate-400" : ""}>
+                <div className="flex items-center justify-between gap-2">
+                  <p className="font-semibold">
+                    <span className="mr-2 font-display text-lg tabular-nums text-slate-400">{i + 1}</span>
+                    {r.display_name}
+                    {r.user_id === user.id && <span className="ml-1 text-xs text-slate-400">(you)</span>}
+                  </p>
+                  <p className="font-display text-3xl font-bold tabular-nums leading-none">
+                    {r.points}
+                    <span className="ml-1 align-middle text-xs font-normal text-slate-400">
+                      {r.correct}/{r.total_decided}
+                    </span>
+                  </p>
+                </div>
+              </Card>
+            ))}
+          </div>
+        )}
+      </div>
+
       <Card>
         <SectionTitle>How it works</SectionTitle>
         <p className="whitespace-pre-wrap text-sm text-slate-700">{howItWorks}</p>
@@ -270,35 +299,6 @@ export default async function PickemPoolPage({
           )}
         </div>
       )}
-
-      <div>
-        <SectionTitle>Leaderboard</SectionTitle>
-        {board.length === 0 ? (
-          <Card>
-            <p className="text-sm text-slate-500">No picks yet. Be the first.</p>
-          </Card>
-        ) : (
-          <div className="space-y-2">
-            {board.map((r, i) => (
-              <Card key={r.user_id} className={r.user_id === user.id ? "border-slate-400" : ""}>
-                <div className="flex items-center justify-between gap-2">
-                  <p className="font-semibold">
-                    <span className="mr-2 font-display text-lg tabular-nums text-slate-400">{i + 1}</span>
-                    {r.display_name}
-                    {r.user_id === user.id && <span className="ml-1 text-xs text-slate-400">(you)</span>}
-                  </p>
-                  <p className="font-display text-3xl font-bold tabular-nums leading-none">
-                    {r.points}
-                    <span className="ml-1 align-middle text-xs font-normal text-slate-400">
-                      {r.correct}/{r.total_decided}
-                    </span>
-                  </p>
-                </div>
-              </Card>
-            ))}
-          </div>
-        )}
-      </div>
 
       {isCommish && locked && gameList.length > 0 && (
         <div>

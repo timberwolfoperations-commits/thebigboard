@@ -34,6 +34,18 @@ export default async function RootLayout({ children }: { children: React.ReactNo
     data: { user },
   } = await supabase.auth.getUser();
 
+  // The Scoring page is a commish tool (stat grids, refresh) — only show the
+  // tab to group admins so regular members never see a dead-end link.
+  const { data: adminRow } = user
+    ? await supabase
+        .from("group_members")
+        .select("group_id")
+        .eq("user_id", user.id)
+        .eq("role", "admin")
+        .limit(1)
+        .maybeSingle()
+    : { data: null };
+
   return (
     <html lang="en" className={barlow.variable}>
       <body>
@@ -52,9 +64,11 @@ export default async function RootLayout({ children }: { children: React.ReactNo
             </Link>
             {user && (
               <div className="flex items-center gap-4">
-                <Link href="/scoring" className="text-sm text-slate-500 underline-offset-4 hover:underline">
-                  Scoring
-                </Link>
+                {adminRow && (
+                  <Link href="/scoring" className="text-sm text-slate-500 underline-offset-4 hover:underline">
+                    Scoring
+                  </Link>
+                )}
                 <SignOutButton />
               </div>
             )}
