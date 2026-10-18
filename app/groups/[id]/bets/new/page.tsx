@@ -25,6 +25,13 @@ export default async function NewBetPage({ params }: { params: Promise<{ id: str
   const defaultDate = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10);
   const create = createBet.bind(null, id);
 
+  // Default lock: 2 hours from now, in Eastern, for datetime-local.
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const lockDefault = (() => {
+    const d = new Date(new Date(Date.now() + 2 * 3600000).toLocaleString("en-US", { timeZone: "America/New_York" }));
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  })();
+
   return (
     <div className="space-y-6">
       <Link href={`/groups/${id}`} className="text-sm text-slate-500 underline-offset-4 hover:underline">
@@ -55,6 +62,15 @@ export default async function NewBetPage({ params }: { params: Promise<{ id: str
             <Field label="Settles on">
               <input name="settle_date" type="date" required defaultValue={defaultDate} className={inputClass} />
             </Field>
+          </div>
+
+          <div>
+            <Field label="Locks at (Eastern)">
+              <input name="lock_at" type="datetime-local" required defaultValue={lockDefault} className={inputClass} />
+            </Field>
+            <p className="mt-1 text-xs text-slate-400">
+              Nobody can accept after this time — set it to kickoff for a live bet.
+            </p>
           </div>
 
           <div>

@@ -207,6 +207,17 @@ export default async function Dashboard({
   );
   const myPendingBets = pendingBets.filter((b) => waitingBetIds.has(b.id));
 
+  // ---- open side bets (visible on the dashboard, not just the group page) --
+  const { data: openBets } = groupIds.length
+    ? await supabase
+        .from("bets")
+        .select("id, title, group_id, status, points, lock_at")
+        .in("group_id", visibleGroupIds)
+        .in("status", ["open", "awaiting"])
+        .order("created_at", { ascending: false })
+    : { data: [] as any[] };
+  const openBetList = (openBets ?? []) as any[];
+
   // ---- action items ------------------------------------------------------------
   type Action = { href: string; title: string; group: string; cta: string; detail: string };
   const actions: Action[] = [];
@@ -497,6 +508,33 @@ export default async function Dashboard({
           </div>
         )}
       </div>
+
+      {openBetList.length > 0 && (
+        <div>
+          <SectionTitle>Open bets</SectionTitle>
+          <div className="space-y-2">
+            {openBetList.map((b: any) => (
+              <Link key={b.id} href={`/groups/${b.group_id}/bets/${b.id}`}>
+                <Card className="transition hover:border-slate-400">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="truncate font-display text-lg font-semibold uppercase tracking-wide">
+                      {b.title}
+                    </p>
+                    <span className="shrink-0 rounded-full bg-slate-900 px-3 py-1 text-xs font-semibold text-white">
+                      {b.status === "awaiting" ? "Settling" : "Live"}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-sm text-slate-500">
+                    <span>{groupName.get(b.group_id)}</span>
+                    {" · "}
+                    <span>{b.points} pts on the line</span>
+                  </p>
+                </Card>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
 
       {settled.length > 0 && (
         <div>

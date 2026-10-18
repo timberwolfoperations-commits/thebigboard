@@ -49,6 +49,7 @@ export interface BetDetail {
   invite_token: string;
   status: "pending" | "open" | "awaiting" | "settled" | "disputed" | "void";
   settle_date: string;
+  lock_at: string | null;
   proposed_winner_id: string | null;
   proposed_by: string | null;
   created_at: string;
@@ -127,10 +128,13 @@ export async function createBet(groupId: string, formData: FormData) {
   const points =
     Math.max(0, parseInt(String(formData.get("points") ?? "10"), 10)) || 10;
   const settleDate = String(formData.get("settle_date") ?? "");
+  const lockAtRaw = String(formData.get("lock_at") ?? "").trim();
   const unique = [...new Set(formData.getAll("participants").map(String))];
 
   if (!title) throw new Error("Your bet needs a title.");
   if (!settleDate) throw new Error("Pick a settle date.");
+  if (!lockAtRaw) throw new Error("Pick a lock time.");
+  const lockAt = parseEasternLock(lockAtRaw);
   if (unique.length < 1) throw new Error("A bet needs at least one person in it.");
 
   // Everyone in the bet must belong to the group.
@@ -152,6 +156,7 @@ export async function createBet(groupId: string, formData: FormData) {
       points,
       created_by: user.id,
       settle_date: settleDate,
+      lock_at: lockAt.toISOString(),
       status: "pending",
       // 12 URL-safe characters — this bet's own invite link.
       invite_token: randomBytes(9).toString("base64").replace(/\+/g, "-").replace(/\//g, "_"),
@@ -185,13 +190,18 @@ export async function acceptBetInvite(token: string) {
 
 // Accept or decline a pending bet invite. Accepting when everyone is in
 // flips the bet live; declining removes you (voids the bet if <2 remain).
+// Nobody can accept after the bet's lock time — that's what makes live
+// bets fair.
 export async function respondToBet(betId: string, accept: boolean) {
   const { supabase } = await getUser();
   const { data: bet } = await supabase
     .from("bets")
-    .select("group_id")
+    .select("group_id, lock_at, status")
     .eq("id", betId)
     .single();
+  if (accept && bet?.status === "pending" && bet.lock_at && new Date(bet.lock_at).getTime() <= Date.now()) {
+    throw new Error("This bet locked before everyone accepted.");
+  }
   const { error } = await supabase.rpc("respond_to_bet", {
     p_bet_id: betId,
     p_accept: accept,

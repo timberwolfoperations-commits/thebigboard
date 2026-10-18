@@ -95,6 +95,27 @@ export default async function BetPage({
         {detail.description && <p className="mt-2 text-sm text-slate-600">{detail.description}</p>}
         <p className="mt-3 text-sm text-slate-500">
           {detail.points} points · settles {detail.settle_date}
+          {detail.lock_at && (
+            <>
+              {" · "}
+              {new Date(detail.lock_at).getTime() <= Date.now() ? (
+                <span className="font-semibold text-red-600">locked</span>
+              ) : (
+                <span>
+                  locks{" "}
+                  <span className="font-semibold">
+                    {new Date(detail.lock_at).toLocaleString("en-US", {
+                      timeZone: "America/New_York",
+                      weekday: "short",
+                      hour: "numeric",
+                      minute: "2-digit",
+                    })}{" "}
+                    ET
+                  </span>
+                </span>
+              )}
+            </>
+          )}
         </p>
         {detail.status === "pending" && (
           <div className="mt-4">
@@ -180,22 +201,32 @@ export default async function BetPage({
       {detail.status === "pending" && me && !me.accepted && (
         <Card className="border-amber-200 bg-amber-50">
           <SectionTitle>You&rsquo;re invited</SectionTitle>
-          <p className="text-sm text-slate-600">
-            {detail.participants.find((p) => p.user_id === detail.created_by)?.display_name ?? "Someone"}{" "}
-            wants you in this bet. Accept and it&rsquo;s on — the bet goes live once everyone&rsquo;s in.
-          </p>
-          <div className="mt-3 flex gap-2">
-            <form action={accept}>
-              <button className="rounded-full bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white hover:bg-slate-700">
-                Accept the bet
-              </button>
-            </form>
-            <form action={decline}>
-              <button className="rounded-full border border-slate-300 bg-white px-5 py-2.5 text-sm font-semibold text-slate-600 hover:border-slate-400">
-                Decline
-              </button>
-            </form>
-          </div>
+          {detail.lock_at && new Date(detail.lock_at).getTime() <= Date.now() ? (
+            <p className="text-sm text-slate-600">
+              This bet locked before everyone accepted — it&rsquo;s dead. Ask{" "}
+              {detail.participants.find((p) => p.user_id === detail.created_by)?.display_name ?? "the commish"}{" "}
+              to set a new one.
+            </p>
+          ) : (
+            <>
+              <p className="text-sm text-slate-600">
+                {detail.participants.find((p) => p.user_id === detail.created_by)?.display_name ?? "Someone"}{" "}
+                wants you in this bet. Accept and it&rsquo;s on — the bet goes live once everyone&rsquo;s in.
+              </p>
+              <div className="mt-3 flex gap-2">
+                <form action={accept}>
+                  <button className="rounded-full bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white hover:bg-slate-700">
+                    Accept the bet
+                  </button>
+                </form>
+                <form action={decline}>
+                  <button className="rounded-full border border-slate-300 bg-white px-5 py-2.5 text-sm font-semibold text-slate-600 hover:border-slate-400">
+                    Decline
+                  </button>
+                </form>
+              </div>
+            </>
+          )}
         </Card>
       )}
 
