@@ -208,15 +208,35 @@ export default async function Dashboard({
   const myPendingBets = pendingBets.filter((b) => waitingBetIds.has(b.id));
 
   // ---- open side bets (visible on the dashboard, not just the group page) --
+  // Includes pending bets (invites still out) so nothing live is invisible.
   const { data: openBets } = groupIds.length
     ? await supabase
         .from("bets")
         .select("id, title, group_id, status, points, lock_at")
         .in("group_id", visibleGroupIds)
-        .in("status", ["open", "awaiting"])
+        .in("status", ["pending", "open", "awaiting"])
         .order("created_at", { ascending: false })
     : { data: [] as any[] };
-  const openBetList = (openBets ?? []) as any[];
+  const openBetList = ((openBets ?? []) as any[]).sort((a, b) =>
+    a.status === "pending" && b.status !== "pending"
+      ? -1
+      : b.status === "pending" && a.status !== "pending"
+        ? 1
+        : 0
+  );
+  const betWaitingCount = new Map<string, number>();
+  if (openBetList.length) {
+    const { data: openParts } = await supabase
+      .from("bet_participants")
+      .select("bet_id, accepted")
+      .in(
+        "bet_id",
+        openBetList.map((b: any) => b.id)
+      );
+    for (const p of (openParts ?? []) as any[]) {
+      if (!p.accepted) betWaitingCount.set(p.bet_id, (betWaitingCount.get(p.bet_id) ?? 0) + 1);
+    }
+  }
 
   // ---- action items ------------------------------------------------------------
   type Action = { href: string; title: string; group: string; cta: string; detail: string };
@@ -444,6 +464,40 @@ export default async function Dashboard({
         </div>
       )}
 
+      {openBetList.length > 0 && (
+        <div>
+          <SectionTitle>Open bets</SectionTitle>
+          <div className="space-y-2">
+            {openBetList.map((b: any) => {
+              const waiting = betWaitingCount.get(b.id) ?? 0;
+              return (
+                <Link key={b.id} href={`/groups/${b.group_id}/bets/${b.id}`}>
+                  <Card className="transition hover:border-slate-400">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="truncate font-display text-lg font-semibold uppercase tracking-wide">
+                        {b.title}
+                      </p>
+                      <span className="shrink-0 rounded-full bg-slate-900 px-3 py-1 text-xs font-semibold text-white">
+                        {b.status === "pending" ? "Invites out" : b.status === "awaiting" ? "Settling" : "Live"}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-sm text-slate-500">
+                      <span>{groupName.get(b.group_id)}</span>
+                      {" · "}
+                      {b.status === "pending" && waiting > 0 ? (
+                        <span>waiting on {waiting}</span>
+                      ) : (
+                        <span>{b.points} pts on the line</span>
+                      )}
+                    </p>
+                  </Card>
+                </Link>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       <div>
         <SectionTitle>Happening now</SectionTitle>
         {happening.length === 0 ? (
@@ -508,33 +562,6 @@ export default async function Dashboard({
           </div>
         )}
       </div>
-
-      {openBetList.length > 0 && (
-        <div>
-          <SectionTitle>Open bets</SectionTitle>
-          <div className="space-y-2">
-            {openBetList.map((b: any) => (
-              <Link key={b.id} href={`/groups/${b.group_id}/bets/${b.id}`}>
-                <Card className="transition hover:border-slate-400">
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="truncate font-display text-lg font-semibold uppercase tracking-wide">
-                      {b.title}
-                    </p>
-                    <span className="shrink-0 rounded-full bg-slate-900 px-3 py-1 text-xs font-semibold text-white">
-                      {b.status === "awaiting" ? "Settling" : "Live"}
-                    </span>
-                  </div>
-                  <p className="mt-1 text-sm text-slate-500">
-                    <span>{groupName.get(b.group_id)}</span>
-                    {" · "}
-                    <span>{b.points} pts on the line</span>
-                  </p>
-                </Card>
-              </Link>
-            ))}
-          </div>
-        </div>
-      )}
 
       {settled.length > 0 && (
         <div>
