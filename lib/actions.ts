@@ -125,8 +125,8 @@ export async function createBet(groupId: string, formData: FormData) {
 
   const title = String(formData.get("title") ?? "").trim();
   const description = String(formData.get("description") ?? "").trim() || null;
-  const points =
-    Math.max(0, parseInt(String(formData.get("points") ?? "10"), 10)) || 10;
+  const rawPoints = parseInt(String(formData.get("points") ?? "10"), 10);
+  const points = Math.max(0, Number.isNaN(rawPoints) ? 10 : rawPoints);
   const settleDate = String(formData.get("settle_date") ?? "");
   const lockAtRaw = String(formData.get("lock_at") ?? "").trim();
   const unique = [...new Set(formData.getAll("participants").map(String))];
