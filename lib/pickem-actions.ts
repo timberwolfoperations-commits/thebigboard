@@ -158,12 +158,16 @@ export async function savePickemPick(poolId: string, formData: FormData) {
 // The commish taps once when every game is final: the leaderboard topper
 // gets 10 pts + 1 win on the group's lifetime board, same as a roster pool
 // win. One-shot — winner_user_id set means it's done.
+// Award the pick'em pool: everyone tied at the top score is crowned a
+// co-winner, 10 pts + 1 win each on the group's lifetime board. No
+// earliest-pick tiebreak. One-shot — any row in pickem_pool_winners means
+// it's done. The legacy winner_user_id/winner_points columns stay written
+// (first co-winner) so older reads keep working.
 export async function awardPickemWinner(poolId: string) {
   const { supabase, user } = await getUser();
   const { pool } = await loadPickemPool(poolId);
   if (pool.created_by !== user.id) throw new Error("Only the commish awards the winner.");
   if (new Date(pool.lock_at).getTime() > Date.now()) throw new Error("The pool isn't locked yet.");
-  if (pool.winner_user_id) throw new Error("This pool already has a winner.");
 
   const { data: links } = await supabase
     .from("pickem_pool_games")
@@ -179,12 +183,26 @@ export async function awardPickemWinner(poolId: string) {
 
   const { computePickemLeaderboard } = await import("./pickem-scoring");
   const board = await computePickemLeaderboard(supabase, poolId);
-  const winner = board[0];
-  if (!winner) throw new Error("No picks to award.");
+  if (!board.length) throw new Error("No picks to award.");
+
+  const { data: already } = await supabase
+    .from("pickem_pool_winners")
+    .select("user_id")
+    .eq("pool_id", poolId);
+  if ((already ?? []).length > 0 || pool.winner_user_id)
+    throw new Error("This pool already has a winner.");
+
+  const topScore = board[0].points;
+  const coWinners = board.filter((r) => r.points === topScore);
+
+  const { error: werr } = await supabase
+    .from("pickem_pool_winners")
+    .insert(coWinners.map((r) => ({ pool_id: poolId, user_id: r.user_id, points: 10 })));
+  if (werr) throw new Error(werr.message);
 
   const { error } = await supabase
     .from("pickem_pools")
-    .update({ winner_user_id: winner.user_id, winner_points: 10 })
+    .update({ winner_user_id: coWinners[0].user_id, winner_points: 10 })
     .eq("id", poolId);
   if (error) throw new Error(error.message);
 

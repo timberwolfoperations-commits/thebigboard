@@ -118,17 +118,16 @@ export default async function GroupPage({ params }: { params: Promise<{ id: stri
     cur.wins += 1;
     pointsByUser.set(w.winner_user_id, cur);
   }
-  // Pick'em champs too.
+  // Pick'em champs too — co-winners each land here with their own 10 pts.
   const { data: pickemWinners } = await supabase
-    .from("pickem_pools")
-    .select("winner_user_id, winner_points")
-    .eq("group_id", id)
-    .not("winner_user_id", "is", null);
+    .from("pickem_pool_winners")
+    .select("user_id, points, pickem_pools!inner(group_id)")
+    .eq("pickem_pools.group_id", id);
   for (const w of (pickemWinners ?? []) as any[]) {
-    const cur = pointsByUser.get(w.winner_user_id) ?? { points: 0, wins: 0 };
-    cur.points += w.winner_points;
+    const cur = pointsByUser.get(w.user_id) ?? { points: 0, wins: 0 };
+    cur.points += w.points;
     cur.wins += 1;
-    pointsByUser.set(w.winner_user_id, cur);
+    pointsByUser.set(w.user_id, cur);
   }
   const leaderboard = memberList
     .map((m) => ({ ...m, ...(pointsByUser.get(m.user_id) ?? { points: 0, wins: 0 }) }))

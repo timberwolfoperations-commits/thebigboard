@@ -144,6 +144,17 @@ export default async function PickemPoolPage({
 
   const board = await computePickemLeaderboard(supabase, poolId);
 
+  const { data: winnerRows } = await supabase
+    .from("pickem_pool_winners")
+    .select("user_id")
+    .eq("pool_id", poolId);
+  const winnerIds = new Set(((winnerRows ?? []) as any[]).map((w) => w.user_id));
+  const winnerNames = board.filter((r) => winnerIds.has(r.user_id)).map((r) => r.display_name);
+  const leaderNames =
+    board.length > 0
+      ? board.filter((r) => r.points === board[0].points).map((r) => r.display_name)
+      : [];
+
   const savePick = savePickemPick.bind(null, poolId);
   const saveProp = savePropPick.bind(null, poolId);
   const setLines = setPickemLines.bind(null, poolId);
@@ -302,13 +313,18 @@ export default async function PickemPoolPage({
 
       {isCommish && locked && gameList.length > 0 && (
         <div>
-          {pool.winner_user_id ? (
+          {pool.winner_user_id || winnerNames.length > 0 ? (
             <Card>
               <p className="text-sm">
                 <span className="font-semibold">
-                  Winner: {board.find((r) => r.user_id === pool.winner_user_id)?.display_name ?? "Player"}
+                  {winnerNames.length > 1 ? "Co-winners: " : "Winner: "}
+                  {winnerNames.length > 0
+                    ? winnerNames.join(", ")
+                    : (board.find((r) => r.user_id === pool.winner_user_id)?.display_name ?? "Player")}
                 </span>
-                <span className="text-slate-500"> · +{pool.winner_points} pts on the lifetime board</span>
+                <span className="text-slate-500">
+                  {" "}· +{pool.winner_points} pts{winnerNames.length > 1 ? " each" : ""} on the lifetime board
+                </span>
               </p>
             </Card>
           ) : pool.scratched ? (
@@ -324,13 +340,13 @@ export default async function PickemPoolPage({
                 <form action={awardWinner} className="flex items-center justify-between gap-3">
                   <p className="text-sm text-slate-600">
                     Every game&rsquo;s final. Award{" "}
-                    <span className="font-semibold text-slate-900">{board[0].display_name}</span>{" "}
-                    +10 pts?
+                    <span className="font-semibold text-slate-900">{leaderNames.join(", ")}</span>{" "}
+                    +10 pts{leaderNames.length > 1 ? " each" : ""}?
                   </p>
-                  <SubmitButton>Award winner</SubmitButton>
+                  <SubmitButton>Award {leaderNames.length > 1 ? "winners" : "winner"}</SubmitButton>
                 </form>
                 <form action={scratchPool} className="mt-2 flex items-center justify-between gap-3">
-                  <p className="text-sm text-slate-500">Or scratch it — tie, nobody wins, no points.</p>
+                  <p className="text-sm text-slate-500">Or scratch it — nobody wins, no points.</p>
                   <button
                     type="submit"
                     className="shrink-0 rounded-full border border-slate-300 px-5 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-100"
