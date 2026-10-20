@@ -308,21 +308,23 @@ export default async function BetPage({
       )}
 
       {/* ---- admin tools -------------------------------------------------- */}
-      {isAdmin && (detail.status === "open" || detail.status === "awaiting") && (
+      {isAdmin && (detail.status === "open" || detail.status === "awaiting" || detail.status === "pending") && (
         <Card>
           <SectionTitle>Admin</SectionTitle>
           <div className="flex flex-wrap items-end gap-4">
-            <form action={forceSettle} className="flex flex-wrap items-end gap-3">
-              <Field label="Force winner">
-                <select name="winner_id" required className={inputClass} defaultValue="">
-                  <option value="" disabled>Pick…</option>
-                  {detail.participants.map((p) => (
-                    <option key={p.user_id} value={p.user_id}>{p.display_name}</option>
-                  ))}
-                </select>
-              </Field>
-              <SubmitButton>Force settle</SubmitButton>
-            </form>
+            {detail.status !== "pending" && (
+              <form action={forceSettle} className="flex flex-wrap items-end gap-3">
+                <Field label="Force winner">
+                  <select name="winner_id" required className={inputClass} defaultValue="">
+                    <option value="" disabled>Pick…</option>
+                    {detail.participants.map((p) => (
+                      <option key={p.user_id} value={p.user_id}>{p.display_name}</option>
+                    ))}
+                  </select>
+                </Field>
+                <SubmitButton>Force settle</SubmitButton>
+              </form>
+            )}
             <form action={voidBet}>
               <DangerButton>Void bet</DangerButton>
             </form>
