@@ -90,10 +90,15 @@ export function parseBoxscore(boxscore: any): {
   return [...byKey.values()];
 }
 
-export async function syncNfl(): Promise<NflSyncResult> {
-  const supabase = createServiceClient();
-
-  const res = await fetch(SCOREBOARD_URL, { cache: "no-store" });
+// One scoreboard pull -> game rows. weekParam omitted = ESPN's current
+// week; pass a number to pull a specific week (used for next week below).
+async function fetchScoreboardRows(weekParam?: number): Promise<{
+  rows: Record<string, unknown>[];
+  liveIds: string[];
+  week: number | null;
+}> {
+  const url = weekParam ? `${SCOREBOARD_URL}?week=${weekParam}` : SCOREBOARD_URL;
+  const res = await fetch(url, { cache: "no-store" });
   if (!res.ok) throw new Error(`ESPN scoreboard fetch failed: ${res.status}`);
   const data = await res.json();
 
@@ -130,6 +135,28 @@ export async function syncNfl(): Promise<NflSyncResult> {
       season,
     });
     if (status === "in_progress" || status === "final") liveIds.push(String(ev.id));
+  }
+
+  return { rows, liveIds, week };
+}
+
+export async function syncNfl(): Promise<NflSyncResult> {
+  const supabase = createServiceClient();
+
+  const current = await fetchScoreboardRows();
+  let rows = current.rows;
+  const liveIds = current.liveIds;
+  // Also load next week's slate, so a commish can build next week's pool
+  // while this week is still being played. Pure add: next-week games are
+  // all "scheduled", so no boxscores ride along. If ESPN hasn't posted
+  // next week yet (offseason), the pull just comes back empty.
+  if (current.week) {
+    try {
+      const next = await fetchScoreboardRows(current.week + 1);
+      rows = [...rows, ...next.rows];
+    } catch {
+      // next week not posted yet — current week still syncs fine
+    }
   }
 
   let games_upserted = 0;
