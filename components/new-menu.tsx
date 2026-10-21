@@ -27,6 +27,11 @@ export default function NewMenu({ groupId }: { groupId: string }) {
       title: "Pick'em pool",
       desc: "Pick winners or over/under props",
     },
+    {
+      href: `/groups/${groupId}/survivor/new`,
+      title: "Survivor pool",
+      desc: "One pick a week — lose and you're out",
+    },
   ];
 
   return (

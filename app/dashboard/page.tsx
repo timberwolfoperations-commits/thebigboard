@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { computePickemLeaderboard } from "@/lib/pickem-scoring";
+import { computeSurvivorState } from "@/lib/survivor";
 import { computePoolPoints } from "@/lib/pool-scoring";
 import { Card, SectionTitle } from "@/components/ui";
 import HappeningPoolCard from "@/components/happening-pool-card";
@@ -151,6 +152,20 @@ export default async function Dashboard({
   const pickemIds = pickemList.map((p) => p.id);
   const now = Date.now();
 
+  // ---- survivor pools -------------------------------------------------------
+  const { data: survivorPools } = groupIds.length
+    ? await supabase
+        .from("survivor_pools")
+        .select("id, name, group_id, season, start_week, created_by")
+        .in("group_id", visibleGroupIds)
+        .order("created_at", { ascending: false })
+    : { data: [] as any[] };
+  const survivorList = (survivorPools ?? []) as any[];
+  const survivorStates = new Map<string, Awaited<ReturnType<typeof computeSurvivorState>>>();
+  for (const p of survivorList) {
+    survivorStates.set(p.id, await computeSurvivorState(supabase, p));
+  }
+
   const settledRoster = rosterList.filter((p) => p.winner_user_id);
   const liveRoster = rosterList.filter((p) => !p.winner_user_id);
   const settledPickem = pickemList.filter((p) => p.winner_user_id || p.scratched);
@@ -279,6 +294,32 @@ export default async function Dashboard({
       cta: "Respond",
       detail: `${b.points} pts on the line`,
     });
+  }
+  for (const p of survivorList) {
+    const st = survivorStates.get(p.id);
+    if (!st || st.decided || st.currentWeek === null) continue;
+    const mine = st.entries.find((e) => e.user_id === user.id);
+    if (!mine) {
+      if (st.firstKickoff && new Date(st.firstKickoff).getTime() > now) {
+        actions.push({
+          href: `/groups/${p.group_id}/survivor/${p.id}`,
+          title: p.name,
+          group: groupName.get(p.group_id) ?? "",
+          cta: "Join survivor",
+          detail: `Starts Week ${p.start_week} · ${st.entries.length} in`,
+        });
+      }
+      continue;
+    }
+    if (mine.alive && !mine.picks.has(st.currentWeek)) {
+      actions.push({
+        href: `/groups/${p.group_id}/survivor/${p.id}`,
+        title: p.name,
+        group: groupName.get(p.group_id) ?? "",
+        cta: "Make your pick",
+        detail: `Week ${st.currentWeek} survivor pick due · ${st.aliveCount} alive`,
+      });
+    }
   }
 
   // ---- standings for live (locked) pools ---------------------------------------
@@ -500,7 +541,7 @@ export default async function Dashboard({
 
       <div>
         <SectionTitle>Happening now</SectionTitle>
-        {happening.length === 0 ? (
+        {happening.length === 0 && survivorList.filter((p) => !survivorStates.get(p.id)?.decided).length === 0 ? (
           <Card>
             <p className="text-sm text-slate-500">No action on the board. Fix that.</p>
           </Card>
@@ -559,6 +600,43 @@ export default async function Dashboard({
                 />
               );
             })}
+            {survivorList
+              .filter((p) => !survivorStates.get(p.id)?.decided)
+              .map((p) => {
+                const st = survivorStates.get(p.id)!;
+                const mine = st.entries.find((e) => e.user_id === user.id);
+                return (
+                  <Link key={`survivor-${p.id}`} href={`/groups/${p.group_id}/survivor/${p.id}`}>
+                    <Card className="transition hover:border-slate-400">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="truncate font-display text-lg font-semibold uppercase tracking-wide">
+                          {p.name}
+                        </p>
+                        <span className="inline-block shrink-0 rounded-full bg-orange-100 px-2 py-0.5 text-xs font-semibold text-orange-900">
+                          survivor
+                        </span>
+                      </div>
+                      <p className="mt-1 text-sm text-slate-600">
+                        <span className="font-medium text-slate-500">{groupName.get(p.group_id)}</span>
+                        {" · "}
+                        {st.entries.length === 0 ? (
+                          <span>Starts Week {p.start_week} · no entries yet</span>
+                        ) : (
+                          <span>
+                            <span className="font-semibold text-slate-900">{st.aliveCount} alive</span>
+                            {st.currentWeek !== null ? ` · Week ${st.currentWeek}` : ""}
+                            {mine
+                              ? mine.alive
+                                ? " · you're alive"
+                                : ` · you're out (W${mine.eliminated_week})`
+                              : ""}
+                          </span>
+                        )}
+                      </p>
+                    </Card>
+                  </Link>
+                );
+              })}
           </div>
         )}
       </div>

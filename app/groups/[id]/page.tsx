@@ -133,6 +133,24 @@ export default async function GroupPage({ params }: { params: Promise<{ id: stri
     .map((m) => ({ ...m, ...(pointsByUser.get(m.user_id) ?? { points: 0, wins: 0 }) }))
     .sort((a, b) => b.points - a.points);
 
+  // ---- survivor pools -----------------------------------------------------
+  const { data: survivorPools } = await supabase
+    .from("survivor_pools")
+    .select("id, name, season, start_week")
+    .eq("group_id", id)
+    .order("created_at", { ascending: false });
+  const survivorList = (survivorPools ?? []) as any[];
+  const { data: survivorEntries } = survivorList.length
+    ? await supabase
+        .from("survivor_entries")
+        .select("pool_id")
+        .in("pool_id", survivorList.map((p) => p.id))
+    : { data: [] as any[] };
+  const survivorCountByPool = new Map<string, number>();
+  for (const e of (survivorEntries ?? []) as any[]) {
+    survivorCountByPool.set(e.pool_id, (survivorCountByPool.get(e.pool_id) ?? 0) + 1);
+  }
+
   const open = betList.filter((b) => b.status === "open");
   const pending = betList.filter((b) => b.status === "pending");
   const awaiting = betList.filter((b) => b.status === "awaiting");
@@ -248,7 +266,7 @@ export default async function GroupPage({ params }: { params: Promise<{ id: stri
         )}
       </div>
 
-      {(openPools.length > 0 || openPickem.length > 0) && (
+      {(openPools.length > 0 || openPickem.length > 0 || survivorList.length > 0) && (
         <div>
           <SectionTitle>Pools</SectionTitle>
           <div className="space-y-2">
@@ -299,6 +317,24 @@ export default async function GroupPage({ params }: { params: Promise<{ id: stri
                     <p className="mt-1 text-sm text-slate-600">
                       {p.week ? `Week ${p.week} · ` : ""}
                       {n} {n === 1 ? "picker" : "pickers"}
+                    </p>
+                  </Card>
+                </Link>
+              );
+            })}
+            {survivorList.map((p: any) => {
+              const n = survivorCountByPool.get(p.id) ?? 0;
+              return (
+                <Link key={p.id} href={`/groups/${id}/survivor/${p.id}`}>
+                  <Card className="transition hover:border-slate-400">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="font-display text-lg font-semibold uppercase tracking-wide">{p.name}</p>
+                      <span className="inline-block shrink-0 rounded-full bg-orange-100 px-2.5 py-0.5 text-xs font-semibold text-orange-900">
+                        survivor
+                      </span>
+                    </div>
+                    <p className="mt-1 text-sm text-slate-600">
+                      Starts Week {p.start_week} · {n} {n === 1 ? "entry" : "entries"}
                     </p>
                   </Card>
                 </Link>
