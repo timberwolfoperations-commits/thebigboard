@@ -146,16 +146,19 @@ export async function syncNfl(): Promise<NflSyncResult> {
   const current = await fetchScoreboardRows();
   let rows = current.rows;
   const liveIds = current.liveIds;
-  // Also load next week's slate, so a commish can build next week's pool
-  // while this week is still being played. Pure add: next-week games are
-  // all "scheduled", so no boxscores ride along. If ESPN hasn't posted
-  // next week yet (offseason), the pull just comes back empty.
+  // Also load the next two weeks' slates, so a commish can build next
+  // week's pool — or set up a survivor starting two weeks out — while
+  // this week is still being played. Pure add: those games are all
+  // "scheduled", so no boxscores ride along. If ESPN hasn't posted a
+  // week yet (offseason), the pull just comes back empty.
   if (current.week) {
-    try {
-      const next = await fetchScoreboardRows(current.week + 1);
-      rows = [...rows, ...next.rows];
-    } catch {
-      // next week not posted yet — current week still syncs fine
+    for (const ahead of [current.week + 1, current.week + 2]) {
+      try {
+        const next = await fetchScoreboardRows(ahead);
+        rows = [...rows, ...next.rows];
+      } catch {
+        // week not posted yet — current week still syncs fine
+      }
     }
   }
 
