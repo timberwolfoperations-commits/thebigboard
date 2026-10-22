@@ -34,6 +34,16 @@ export default async function SurvivorPoolPage({
     .single();
   if (!pool || pool.group_id !== id) redirect(`/groups/${id}`);
 
+  // Guests (open pools) aren't group members — their way back is the
+  // Pools tab, not the group page they can't open.
+  const { data: membership } = await supabase
+    .from("group_members")
+    .select("group_id")
+    .eq("group_id", pool.group_id)
+    .eq("user_id", user.id)
+    .maybeSingle();
+  const isMember = Boolean(membership);
+
   const state = await computeSurvivorState(supabase, pool);
   const now = Date.now();
   const mine = state.entries.find((e) => e.user_id === user.id) ?? null;
@@ -83,9 +93,15 @@ export default async function SurvivorPoolPage({
 
   return (
     <div className="space-y-6">
-      <Link href={`/groups/${id}`} className="text-sm text-slate-500 underline-offset-4 hover:underline">
-        ← Back to group
-      </Link>
+      {isMember ? (
+        <Link href={`/groups/${id}`} className="text-sm text-slate-500 underline-offset-4 hover:underline">
+          ← Back to group
+        </Link>
+      ) : (
+        <Link href="/pools" className="text-sm text-slate-500 underline-offset-4 hover:underline">
+          ← Back to pools
+        </Link>
+      )}
 
       <div>
         <h1 className="font-display text-4xl font-bold uppercase leading-none tracking-wide">
