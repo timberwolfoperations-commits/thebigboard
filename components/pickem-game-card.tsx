@@ -30,6 +30,20 @@ function fmtKickoff(iso: string | null): string {
   });
 }
 
+// The frozen line, favorite-first, from the HOME team's spread (negative
+// = home favored): "MIA -19.5". Zero is a true pick'em.
+export function spreadLabel(
+  homeTeam: string,
+  awayTeam: string,
+  spread: number | null
+): string | null {
+  if (spread == null || !Number.isFinite(spread)) return null;
+  if (spread === 0) return "EVEN";
+  const fav = spread < 0 ? homeTeam : awayTeam;
+  if (!fav) return null;
+  return `${fav} -${Math.abs(spread)}`;
+}
+
 function TeamButton({
   gameId,
   team,
@@ -67,6 +81,7 @@ export default function PickemGameCard({
   myPick,
   canPick,
   reveal,
+  spread,
   action,
 }: {
   game: PickemCardGame;
@@ -74,6 +89,9 @@ export default function PickemGameCard({
   canPick: boolean;
   // Everyone's picks per team, shown only after lock (null = keep secret).
   reveal: { team: string; names: string[] }[] | null;
+  // Frozen against-the-spread line (home team's number) for ATS pools;
+  // null/omitted = straight-up pool, no line shown.
+  spread?: number | null;
   action: (formData: FormData) => Promise<void>;
 }) {
   const [optimisticPick, setOptimisticPick] = useOptimistic<string | null, string>(
@@ -90,12 +108,18 @@ export default function PickemGameCard({
   const away = String(game.away_team ?? "").toUpperCase();
   const home = String(game.home_team ?? "").toUpperCase();
   const sel = (optimisticPick ?? "").toUpperCase();
+  const line = spreadLabel(home, away, spread ?? null);
 
   return (
     <Card>
       <p className="mb-2 text-center text-xs font-medium uppercase tracking-wide text-slate-500">
         {game.label}
       </p>
+      {line && (
+        <p className="-mt-1 mb-2 text-center text-xs font-bold uppercase tracking-wide text-slate-700">
+          {line}
+        </p>
+      )}
       <div className="flex items-center gap-2">
         <TeamButton
           gameId={game.id}

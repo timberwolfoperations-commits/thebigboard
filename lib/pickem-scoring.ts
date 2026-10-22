@@ -5,6 +5,9 @@
 // - Linked games come from the games table (API-fed). The winner of a
 //   final game is derived from home_score/away_score; a tie scores for
 //   nobody.
+// - Standard pools can also grade against the spread (use_spread): the
+//   line frozen on pickem_pool_games at creation decides who covered —
+//   never the live line on games, which keeps moving until kickoff.
 // - Picks are public to the group (like roster entries) — trash talk
 //   requires knowing who took the Bills.
 
@@ -36,22 +39,49 @@ function gameWinner(g: PickemGame): string | null {
   return null; // tie: no point for anyone
 }
 
+// Against the spread: homeSpread is the HOME team's frozen number
+// (negative = home favored). Home covers when home_score + spread beats
+// the away score, away covers when it falls short; landing exactly on
+// the number is a push — nobody scores, same as a tie above. A game
+// whose line never posted (null snapshot) grades straight up instead.
+function coveringTeam(g: PickemGame, homeSpread: number | null): string | null {
+  if (g.status !== "final" || g.home_score == null || g.away_score == null) return null;
+  if (homeSpread == null) return gameWinner(g);
+  const home = String(g.home_team ?? "").toUpperCase();
+  const away = String(g.away_team ?? "").toUpperCase();
+  const adjusted = g.home_score + homeSpread;
+  if (adjusted > g.away_score) return home;
+  if (adjusted < g.away_score) return away;
+  return null; // push: no point for anyone
+}
+
 export async function computePickemLeaderboard(
   supabase: any,
   poolId: string
 ): Promise<PickemRow[]> {
   const { data: pool } = await supabase
     .from("pickem_pools")
-    .select("id, variant")
+    .select("id, variant, use_spread")
     .eq("id", poolId)
     .single();
   if (!pool) throw new Error("Pool not found.");
 
   const { data: links } = await supabase
     .from("pickem_pool_games")
-    .select("game_id")
+    .select("game_id, spread")
     .eq("pool_id", poolId);
   const gameIds = ((links ?? []) as any[]).map((l) => l.game_id);
+  // Frozen per-pool lines, snapshotted at creation (migration 023). Post-
+  // gREST hands numeric columns back as strings, so coerce defensively.
+  const spreadByGame = new Map<string, number | null>(
+    ((links ?? []) as any[]).map((l) => {
+      const s = l.spread == null ? null : Number(l.spread);
+      return [l.game_id, Number.isFinite(s as number) ? (s as number) : null] as [
+        string,
+        number | null,
+      ];
+    })
+  );
 
   const { data: games } = gameIds.length
     ? await supabase
@@ -70,7 +100,9 @@ export async function computePickemLeaderboard(
 
   switch (pool.variant) {
     case "standard":
-      return scoreStandard(gameList, pickList);
+      return pool.use_spread
+        ? scoreStandard(gameList, pickList, spreadByGame)
+        : scoreStandard(gameList, pickList);
     case "over_under":
       return scoreOverUnder(supabase, poolId, gameList);
     // Future variants plug in here: case "elimination": ..., etc.
@@ -79,9 +111,22 @@ export async function computePickemLeaderboard(
   }
 }
 
-// v1: 1 point per correct pick. Only final games count.
-function scoreStandard(games: PickemGame[], picks: any[]): PickemRow[] {
-  const winners = new Map<string, string | null>(games.map((g) => [g.id, gameWinner(g)]));
+// v1: 1 point per correct pick. Only final games count. spreads is
+// present only for against-the-spread pools (use_spread): the winner of
+// each final game is then who COVERED the frozen line, not who won
+// outright. Without it this is the original straight-up scorer, untouched.
+function scoreStandard(
+  games: PickemGame[],
+  picks: any[],
+  spreads?: Map<string, number | null>
+): PickemRow[] {
+  const ats = spreads != null;
+  const winners = new Map<string, string | null>(
+    games.map((g) => [
+      g.id,
+      ats ? coveringTeam(g, spreads.get(g.id) ?? null) : gameWinner(g),
+    ])
+  );
   const decided = new Set(games.filter((g) => g.status === "final").map((g) => g.id));
 
   const byUser = new Map<string, any[]>();
