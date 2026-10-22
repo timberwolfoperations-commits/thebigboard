@@ -71,8 +71,8 @@ export async function computePickemLeaderboard(
     .select("game_id, spread")
     .eq("pool_id", poolId);
   const gameIds = ((links ?? []) as any[]).map((l) => l.game_id);
-  // Frozen per-pool lines, snapshotted at creation (migration 023). Post-
-  // gREST hands numeric columns back as strings, so coerce defensively.
+  // Frozen per-pool lines, snapshotted at creation (migration 023). The
+  // API hands numeric columns back as strings sometimes, so coerce.
   const spreadByGame = new Map<string, number | null>(
     ((links ?? []) as any[]).map((l) => {
       const s = l.spread == null ? null : Number(l.spread);
