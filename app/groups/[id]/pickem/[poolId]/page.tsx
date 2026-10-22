@@ -34,6 +34,16 @@ export default async function PickemPoolPage({
   const { data: pool } = await supabase.from("pickem_pools").select("*").eq("id", poolId).single();
   if (!pool) redirect(`/groups/${id}`);
 
+  // Guests (open pools) aren't group members — their way back is the
+  // Pools tab, not the group page they can't open.
+  const { data: membership } = await supabase
+    .from("group_members")
+    .select("group_id")
+    .eq("group_id", pool.group_id)
+    .eq("user_id", user.id)
+    .maybeSingle();
+  const isMember = Boolean(membership);
+
   const { data: links } = await supabase
     .from("pickem_pool_games")
     .select("game_id")
@@ -191,9 +201,15 @@ export default async function PickemPoolPage({
 
   return (
     <div className="space-y-6">
-      <Link href={`/groups/${id}`} className="text-sm text-slate-500 underline-offset-4 hover:underline">
-        ← Back to group
-      </Link>
+      {isMember ? (
+        <Link href={`/groups/${id}`} className="text-sm text-slate-500 underline-offset-4 hover:underline">
+          ← Back to group
+        </Link>
+      ) : (
+        <Link href="/pools" className="text-sm text-slate-500 underline-offset-4 hover:underline">
+          ← Back to pools
+        </Link>
+      )}
 
       <div className="text-center">
         <h1 className="font-display text-4xl font-bold uppercase leading-none tracking-wide">{pool.name}</h1>
