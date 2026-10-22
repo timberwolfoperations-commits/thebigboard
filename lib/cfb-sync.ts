@@ -43,6 +43,20 @@ function rankedName(name: string, rank: number | null): string {
   return rank != null ? `#${rank} ${name}` : name;
 }
 
+// ESPN odds[0] is DraftKings: spread is the HOME team's number (negative
+// when home is favored), overUnder is the total. Either can be absent
+// until the book posts lines (small-school games, far-out slates) — null
+// then, and the next sync fills it in once the line exists.
+function espnOdds(comp: any): { spread: number | null; over_under: number | null } {
+  const odds = comp?.odds?.[0];
+  const spread = Number(odds?.spread);
+  const total = Number(odds?.overUnder);
+  return {
+    spread: Number.isFinite(spread) ? spread : null,
+    over_under: Number.isFinite(total) ? total : null,
+  };
+}
+
 export async function syncCfb(): Promise<CfbSyncResult> {
   const supabase = createServiceClient();
 
@@ -70,6 +84,7 @@ export async function syncCfb(): Promise<CfbSyncResult> {
     const homeRank = rankOf(home);
     const awayRank = rankOf(away);
     const isTop25 = homeRank != null || awayRank != null;
+    const odds = espnOdds(comp);
     if (isTop25) top25_upserted++;
     rows.push({
       external_id: String(ev.id),
@@ -85,6 +100,8 @@ export async function syncCfb(): Promise<CfbSyncResult> {
       status,
       home_score: num(home.score) || null,
       away_score: num(away.score) || null,
+      spread: odds.spread,
+      over_under: odds.over_under,
       week,
       season,
       is_top25: isTop25,
