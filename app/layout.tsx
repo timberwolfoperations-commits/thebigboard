@@ -3,6 +3,7 @@ import Link from "next/link";
 import { Barlow_Condensed } from "next/font/google";
 import { createClient } from "@/lib/supabase/server";
 import HeaderMenu from "@/components/header-menu";
+import BottomBar from "@/components/bottom-bar";
 import "./globals.css";
 
 const barlow = Barlow_Condensed({
@@ -79,15 +80,25 @@ export default async function RootLayout({ children }: { children: React.ReactNo
               </span>
             </Link>
             {user && (
-              <HeaderMenu
-                groups={menuGroups}
-                displayName={profile?.display_name ?? null}
-                isAdmin={!!adminRow}
-              />
+              // Mobile gets the bottom tab bar instead — the header keeps
+              // only the logo + wordmark below the md breakpoint. Desktop
+              // is unchanged (hamburger included, no bottom bar).
+              <div className="hidden md:block">
+                <HeaderMenu
+                  groups={menuGroups}
+                  displayName={profile?.display_name ?? null}
+                  isAdmin={!!adminRow}
+                />
+              </div>
             )}
           </div>
         </header>
-        <main className="mx-auto max-w-3xl px-4 py-6">{children}</main>
+        <main
+          className={`mx-auto max-w-3xl px-4 pt-6 ${user ? "pb-28 md:pb-6" : "pb-6"}`}
+        >
+          {children}
+        </main>
+        {user && <BottomBar />}
       </body>
     </html>
   );
