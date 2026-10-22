@@ -18,6 +18,30 @@ export async function GET(request: Request) {
       ? await supabase.auth.exchangeCodeForSession(code)
       : await supabase.auth.verifyOtp({ type: type as EmailOtpType, token_hash: token_hash as string });
     if (!error) {
+      // Store the name Google provided. The signup trigger only sees the
+      // metadata present the moment the account is created, so anyone who
+      // first arrived by magic link is stuck with their email prefix even
+      // after they later sign in with Google. On every sign-in, fill the
+      // profile name from Google when the current one is still that
+      // auto-default (blank or the email prefix). A name the user typed
+      // on the Profile page is never overwritten.
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      const rawName = user?.user_metadata?.full_name ?? user?.user_metadata?.name;
+      const googleName = typeof rawName === "string" ? rawName.trim() : "";
+      if (user && googleName) {
+        const emailPrefix = user.email?.split("@")[0];
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("display_name")
+          .eq("id", user.id)
+          .maybeSingle();
+        const current = profile?.display_name?.trim();
+        if (profile && (!current || current === emailPrefix)) {
+          await supabase.from("profiles").update({ display_name: googleName }).eq("id", user.id);
+        }
+      }
       return NextResponse.redirect(`${origin}${next}`);
     }
   }
