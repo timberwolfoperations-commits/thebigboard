@@ -30,15 +30,28 @@ function fmtKickoff(iso: string | null): string {
   });
 }
 
+// One side's number, from the HOME team's spread (negative = home
+// favored): the home team wears the spread as-is, the away team wears
+// its mirror — so each pick button carries its own line, sportsbook
+// style. "+7" for a dog, "-3.5" for a favorite, "PK" for a pick'em.
+export function teamLine(isHome: boolean, spread: number | null): string | null {
+  if (spread == null || !Number.isFinite(spread)) return null;
+  const n = isHome ? spread : -spread;
+  if (n === 0) return "PK";
+  return `${n > 0 ? "+" : "-"}${Math.abs(n)}`;
+}
+
 function TeamButton({
   gameId,
   team,
+  line,
   selected,
   disabled,
   action,
 }: {
   gameId: string;
   team: string;
+  line?: string | null;
   selected: boolean;
   disabled: boolean;
   action: (formData: FormData) => Promise<void>;
@@ -50,13 +63,14 @@ function TeamButton({
       <button
         type="submit"
         disabled={disabled}
-        className={`w-full rounded-xl border px-3 py-3 text-sm font-bold transition ${
+        className={`flex w-full flex-col items-center rounded-xl border px-3 py-3 text-sm font-bold leading-tight transition ${
           selected
             ? "border-[#c2410c] bg-[#c2410c] text-white"
             : "border-slate-300 bg-white text-slate-800 hover:border-slate-500"
         } disabled:cursor-not-allowed disabled:opacity-60`}
       >
-        {team}
+        <span>{team}</span>
+        {line && <span className="mt-0.5 text-[11px] font-semibold opacity-80">{line}</span>}
       </button>
     </form>
   );
@@ -67,6 +81,7 @@ export default function PickemGameCard({
   myPick,
   canPick,
   reveal,
+  spread,
   action,
 }: {
   game: PickemCardGame;
@@ -74,6 +89,9 @@ export default function PickemGameCard({
   canPick: boolean;
   // Everyone's picks per team, shown only after lock (null = keep secret).
   reveal: { team: string; names: string[] }[] | null;
+  // Frozen against-the-spread line (home team's number) for ATS pools;
+  // null/omitted = straight-up pool, no line shown.
+  spread?: number | null;
   action: (formData: FormData) => Promise<void>;
 }) {
   const [optimisticPick, setOptimisticPick] = useOptimistic<string | null, string>(
@@ -90,6 +108,8 @@ export default function PickemGameCard({
   const away = String(game.away_team ?? "").toUpperCase();
   const home = String(game.home_team ?? "").toUpperCase();
   const sel = (optimisticPick ?? "").toUpperCase();
+  const awayLine = teamLine(false, spread ?? null);
+  const homeLine = teamLine(true, spread ?? null);
 
   return (
     <Card>
@@ -100,6 +120,7 @@ export default function PickemGameCard({
         <TeamButton
           gameId={game.id}
           team={away}
+          line={awayLine}
           selected={sel === away && away !== ""}
           disabled={!canPick}
           action={pick}
@@ -108,6 +129,7 @@ export default function PickemGameCard({
         <TeamButton
           gameId={game.id}
           team={home}
+          line={homeLine}
           selected={sel === home && home !== ""}
           disabled={!canPick}
           action={pick}

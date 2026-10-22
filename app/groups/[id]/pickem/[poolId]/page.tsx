@@ -4,7 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { savePickemPick, savePropPick, setPickemLines, awardPickemWinner, scratchPickemPool, getRecentPropPlayers, getCopyableLinePools } from "@/lib/pickem-actions";
 import { computePickemLeaderboard } from "@/lib/pickem-scoring";
 import { PROP_STAT_LABELS } from "@/lib/prop-stats";
-import { STANDARD_HOW_IT_WORKS, OVER_UNDER_HOW_IT_WORKS } from "@/lib/pickem-copy";
+import { STANDARD_HOW_IT_WORKS, OVER_UNDER_HOW_IT_WORKS, ATS_HOW_IT_WORKS } from "@/lib/pickem-copy";
 import { Card, SectionTitle, SubmitButton } from "@/components/ui";
 import PickemGameCard from "@/components/pickem-game-card";
 import PropCard from "@/components/prop-card";
@@ -46,9 +46,19 @@ export default async function PickemPoolPage({
 
   const { data: links } = await supabase
     .from("pickem_pool_games")
-    .select("game_id")
+    .select("game_id, spread")
     .eq("pool_id", poolId);
   const gameIds = ((links ?? []) as any[]).map((l) => l.game_id);
+  // Frozen lines for against-the-spread pools (snapshotted at creation).
+  const spreadByGame = new Map<string, number | null>(
+    ((links ?? []) as any[]).map((l) => {
+      const s = l.spread == null ? null : Number(l.spread);
+      return [l.game_id, Number.isFinite(s as number) ? (s as number) : null] as [
+        string,
+        number | null,
+      ];
+    })
+  );
 
   const { data: games } = gameIds.length
     ? await supabase
@@ -104,6 +114,7 @@ export default async function PickemPoolPage({
   }
   const isCommish = pool.created_by === user.id;
   const isOverUnder = pool.variant === "over_under";
+  const useSpread = !isOverUnder && Boolean(pool.use_spread);
   const allFinal = gameList.length > 0 && gameList.every((g: any) => g.status === "final");
 
   const { data: propLines } = isOverUnder
@@ -193,9 +204,12 @@ export default async function PickemPoolPage({
     // Blank → variant default. Also repairs pools saved with the standard
     // default while on over/under (the old form's defaultValue bug) — a
     // commish who deliberately typed that text into an over/under pool is
-    // not a case worth preserving the wrong copy for.
-    if (!saved) return isOverUnder ? OVER_UNDER_HOW_IT_WORKS : STANDARD_HOW_IT_WORKS;
+    // not a case worth preserving the wrong copy for. Same repair for
+    // against-the-spread pools: the untouched standard default would tell
+    // players to pick winners in a pool that grades covers.
+    if (!saved) return isOverUnder ? OVER_UNDER_HOW_IT_WORKS : useSpread ? ATS_HOW_IT_WORKS : STANDARD_HOW_IT_WORKS;
     if (isOverUnder && saved === STANDARD_HOW_IT_WORKS) return OVER_UNDER_HOW_IT_WORKS;
+    if (useSpread && saved === STANDARD_HOW_IT_WORKS) return ATS_HOW_IT_WORKS;
     return pool.description;
   })();
 
@@ -214,7 +228,13 @@ export default async function PickemPoolPage({
       <div className="text-center">
         <h1 className="font-display text-4xl font-bold uppercase leading-none tracking-wide">{pool.name}</h1>
         <p className="mt-1 text-sm text-slate-500">
-          {pool.week ? `Week ${pool.week} · ` : ""}{isOverUnder ? "over/under" : "pick'em"} ·{" "}
+          {pool.week ? `Week ${pool.week} · ` : ""}
+          {useSpread
+            ? "Against the spread · lines set when the pool was created"
+            : isOverUnder
+              ? "over/under"
+              : "pick'em"}{" "}
+          ·{" "}
           {locked ? (
             <span className="font-semibold text-red-600">locked</span>
           ) : (
@@ -315,6 +335,7 @@ export default async function PickemPoolPage({
                 myPick={myPickByGame.get(g.id) ?? null}
                 canPick={!locked && new Date(g.starts_at).getTime() > Date.now()}
                 reveal={locked ? revealByGame.get(g.id) ?? [] : null}
+                spread={useSpread ? (spreadByGame.get(g.id) ?? null) : null}
                 action={savePick}
               />
             ))}

@@ -90,6 +90,10 @@ export async function createPickemPool(groupId: string, formData: FormData) {
   const lockAt = parseEasternLock(String(formData.get("lock_at") ?? ""));
   const variant = String(formData.get("variant") ?? "standard");
   const isPublic = formData.get("is_public") != null;
+  // Against the spread is a standard-variant grading mode (migration
+  // 023): picks grade against the line frozen at creation, not straight
+  // up. Meaningless for over/under, so it's standard-only.
+  const useSpread = variant === "standard" && formData.get("use_spread") != null;
 
   if (!name) throw new Error("Give your pool a name.");
   if (!["standard", "over_under"].includes(variant)) {
@@ -100,12 +104,25 @@ export async function createPickemPool(groupId: string, formData: FormData) {
   const gameIds = [...new Set(formData.getAll("game_ids").map(String))].filter(Boolean);
   if (gameIds.length === 0) throw new Error("Check at least one game for the slate.");
 
-  // Only link games that actually exist in the games table.
+  // Only link games that actually exist in the games table. For an ATS
+  // pool this also reads each game's current line — the one frozen onto
+  // the pool below. games.spread is the live DraftKings number; null
+  // until the book posts one for that game.
   const { data: games } = await supabase
     .from("games")
-    .select("id")
+    .select("id, spread")
     .in("id", gameIds);
-  const validIds = new Set(((games ?? []) as any[]).map((g) => g.id));
+  const gameRows = (games ?? []) as any[];
+  const validIds = new Set(gameRows.map((g) => g.id));
+  const spreadById = new Map<string, number | null>(
+    gameRows.map((g) => {
+      const s = g.spread == null ? null : Number(g.spread);
+      return [g.id, Number.isFinite(s as number) ? (s as number) : null] as [
+        string,
+        number | null,
+      ];
+    })
+  );
   const linked = gameIds.filter((id) => validIds.has(id));
   if (linked.length === 0) throw new Error("Those games aren't in the slate anymore.");
 
@@ -120,15 +137,24 @@ export async function createPickemPool(groupId: string, formData: FormData) {
       week: Number.isFinite(week) ? week : null,
       lock_at: lockAt.toISOString(),
       is_public: isPublic,
+      use_spread: useSpread,
       created_by: user.id,
     })
     .select("id")
     .single();
   if (error) throw new Error(error.message);
 
+  // ATS pools freeze each game's line right here: lines move all week,
+  // and everyone in the pool has to grade against the same number.
   const { error: gErr } = await supabase
     .from("pickem_pool_games")
-    .insert(linked.map((game_id) => ({ pool_id: pool.id, game_id })));
+    .insert(
+      linked.map((game_id) => ({
+        pool_id: pool.id,
+        game_id,
+        spread: useSpread ? (spreadById.get(game_id) ?? null) : null,
+      }))
+    );
   if (gErr) throw new Error(gErr.message);
 
   revalidatePath(`/groups/${groupId}`);

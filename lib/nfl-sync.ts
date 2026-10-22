@@ -32,6 +32,20 @@ function num(v: unknown): number {
   return Number.isFinite(n) ? n : 0;
 }
 
+// ESPN odds[0] is DraftKings: spread is the HOME team's number (negative
+// when home is favored), overUnder is the total. Either can be absent
+// until the book posts lines — null then, and the next sync fills it in
+// once the line exists.
+function espnOdds(comp: any): { spread: number | null; over_under: number | null } {
+  const odds = comp?.odds?.[0];
+  const spread = Number(odds?.spread);
+  const total = Number(odds?.overUnder);
+  return {
+    spread: Number.isFinite(spread) ? spread : null,
+    over_under: Number.isFinite(total) ? total : null,
+  };
+}
+
 // ESPN boxscore.players: [{ team: {abbreviation}, statistics: [{name, keys,
 // athletes: [{athlete: {displayName}, stats: []}]}] }]. Fold each athlete's
 // categories into one row with the football formula keys. Exported for tests.
@@ -119,6 +133,7 @@ async function fetchScoreboardRows(weekParam?: number): Promise<{
     const status = espnStatus(comp.status?.type?.state);
     const period = Number(comp.status?.period) || null;
     const clock = typeof comp.status?.displayClock === "string" ? comp.status.displayClock : null;
+    const odds = espnOdds(comp);
     rows.push({
       external_id: String(ev.id),
       sport: "NFL",
@@ -131,6 +146,8 @@ async function fetchScoreboardRows(weekParam?: number): Promise<{
       status,
       home_score: num(home.score) || null,
       away_score: num(away.score) || null,
+      spread: odds.spread,
+      over_under: odds.over_under,
       week,
       season,
     });
