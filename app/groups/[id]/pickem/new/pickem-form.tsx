@@ -189,6 +189,21 @@ export default function PickemForm({
         )}
         </div>
 
+        <label className="flex items-start gap-2 text-sm text-slate-700">
+          <input
+            type="checkbox"
+            name="is_public"
+            className="mt-0.5 h-4 w-4 shrink-0 accent-[#c2410c]"
+          />
+          <span>
+            <span className="font-medium">Open pool — anyone signed in can join</span>
+            <span className="block text-xs text-slate-500">
+              Shows up in everyone&rsquo;s Open pools list. Guests play this pool only —
+              they don&rsquo;t join the group.
+            </span>
+          </span>
+        </label>
+
         <SubmitButton>Create pool</SubmitButton>
       </form>
     </Card>

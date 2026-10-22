@@ -34,6 +34,33 @@ async function memberRole(
   return data.role as "admin" | "member";
 }
 
+// Playing a pool takes group membership OR a guest seat in that pool
+// (open pools, migration 022). Creating pools stays members-only — this
+// only gates entry/pick actions on a pool that already exists.
+async function assertPoolAccess(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  groupId: string,
+  poolId: string,
+  userId: string
+) {
+  const { data: membership } = await supabase
+    .from("group_members")
+    .select("role")
+    .eq("group_id", groupId)
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (membership) return membership.role as "admin" | "member";
+  const { data: guest } = await supabase
+    .from("pool_guests")
+    .select("id")
+    .eq("pool_type", "survivor")
+    .eq("pool_id", poolId)
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (guest) return "guest" as const;
+  throw new Error("You're not in this group.");
+}
+
 async function loadSurvivorPool(
   supabase: Awaited<ReturnType<typeof createClient>>,
   poolId: string
@@ -52,6 +79,7 @@ export async function createSurvivorPool(groupId: string, formData: FormData) {
   await memberRole(supabase, groupId, user.id);
 
   const name = String(formData.get("name") ?? "").trim() || "NFL Survivor";
+  const isPublic = formData.get("is_public") != null;
   const [seasonRaw, weekRaw] = String(formData.get("start") ?? "").split(":");
   const season = parseInt(seasonRaw ?? "", 10);
   const startWeek = parseInt(weekRaw ?? "", 10);
@@ -73,7 +101,7 @@ export async function createSurvivorPool(groupId: string, formData: FormData) {
 
   const { data: pool, error } = await supabase
     .from("survivor_pools")
-    .insert({ group_id: groupId, name, season, start_week: startWeek, created_by: user.id })
+    .insert({ group_id: groupId, name, season, start_week: startWeek, is_public: isPublic, created_by: user.id })
     .select("id")
     .single();
   if (error) throw new Error(error.message);
@@ -85,7 +113,7 @@ export async function createSurvivorPool(groupId: string, formData: FormData) {
 export async function joinSurvivorPool(poolId: string) {
   const { supabase, user } = await getUser();
   const pool = await loadSurvivorPool(supabase, poolId);
-  await memberRole(supabase, pool.group_id, user.id);
+  await assertPoolAccess(supabase, pool.group_id, poolId, user.id);
 
   const state = await computeSurvivorState(supabase, pool);
   if (state.firstKickoff && new Date(state.firstKickoff).getTime() <= Date.now()) {
@@ -106,7 +134,7 @@ export async function joinSurvivorPool(poolId: string) {
 export async function saveSurvivorPick(poolId: string, formData: FormData) {
   const { supabase, user } = await getUser();
   const pool = await loadSurvivorPool(supabase, poolId);
-  await memberRole(supabase, pool.group_id, user.id);
+  await assertPoolAccess(supabase, pool.group_id, poolId, user.id);
 
   const gameId = String(formData.get("game_id") ?? "");
   const team = String(formData.get("picked_team") ?? "").toUpperCase();

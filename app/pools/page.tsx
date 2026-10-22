@@ -4,9 +4,11 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { computePickemLeaderboard } from "@/lib/pickem-scoring";
 import { computeSurvivorState } from "@/lib/survivor";
+import { loadHostNames, loadMyGuestPoolIds, loadOpenPoolDiscovery } from "@/lib/open-pools";
 import { Card } from "@/components/ui";
 import ExpandableCard from "@/components/expandable-card";
 import PoolsNewMenu from "@/components/pools-new-menu";
+import OpenPoolCard from "@/components/open-pool-card";
 
 // Pools tab: every pool the user is in, across all their groups — the
 // cross-group score-checker. Cards expand in place to a glanceable
@@ -87,6 +89,13 @@ export default async function PoolsPage() {
   const groupIds = groups.map((g) => g.id);
   const groupName = new Map(groups.map((g) => [g.id, g.name]));
 
+  // Open pools: unjoined ones are discovery cards at the bottom; pools
+  // I've joined as a guest are unioned into the lists below so they get
+  // the same expandable lobby cards (standings, pick status) as member
+  // pools.
+  const openPoolCards = await loadOpenPoolDiscovery(supabase, user.id, groupIds);
+  const myGuests = await loadMyGuestPoolIds(supabase, user.id);
+
   // ---- pick'em pools --------------------------------------------------------
   const { data: pickemPools } = groupIds.length
     ? await supabase
@@ -96,6 +105,16 @@ export default async function PoolsPage() {
         .order("lock_at", { ascending: false })
     : { data: [] as any[] };
   const pickemList = (pickemPools ?? []) as any[];
+  const guestPickemIds = [...myGuests.pickem].filter(
+    (pid) => !pickemList.some((p) => p.id === pid)
+  );
+  if (guestPickemIds.length) {
+    const { data: guestPickemPools } = await supabase
+      .from("pickem_pools")
+      .select("id, name, variant, group_id, lock_at, winner_user_id, winner_points, scratched")
+      .in("id", guestPickemIds);
+    pickemList.push(...((guestPickemPools ?? []) as any[]));
+  }
   const pickemIds = pickemList.map((p) => p.id);
 
   // Viewer's pick counts per pool (standard: games picked; over/under:
@@ -153,6 +172,27 @@ export default async function PoolsPage() {
         .order("created_at", { ascending: false })
     : { data: [] as any[] };
   const survivorList = (survivorPools ?? []) as any[];
+  const guestSurvivorIds = [...myGuests.survivor].filter(
+    (pid) => !survivorList.some((p) => p.id === pid)
+  );
+  if (guestSurvivorIds.length) {
+    const { data: guestSurvivorPools } = await supabase
+      .from("survivor_pools")
+      .select("id, name, group_id, season, start_week, created_by")
+      .in("id", guestSurvivorIds);
+    survivorList.push(...((guestSurvivorPools ?? []) as any[]));
+  }
+  // Host group names for guest pools — the groups row itself is
+  // members-only (it carries the invite token), so names come from the
+  // open_pool_hosts view.
+  const joinedGuestPoolIds = [...guestPickemIds, ...guestSurvivorIds];
+  if (joinedGuestPoolIds.length) {
+    const hostNames = await loadHostNames(supabase, joinedGuestPoolIds);
+    for (const p of [...pickemList, ...survivorList]) {
+      const host = hostNames.get(p.id);
+      if (host && !groupName.has(p.group_id)) groupName.set(p.group_id, host);
+    }
+  }
   const survivorStates = new Map<string, Awaited<ReturnType<typeof computeSurvivorState>>>();
   for (const p of survivorList) {
     survivorStates.set(p.id, await computeSurvivorState(supabase, p));
@@ -358,6 +398,21 @@ export default async function PoolsPage() {
         </Card>
       ) : (
         <div className="space-y-2">{items.map((it) => <div key={it.key}>{it.node}</div>)}</div>
+      )}
+      {openPoolCards.length > 0 && (
+        <div className="pt-2">
+          <h2 className="font-display text-xl font-semibold uppercase tracking-wider text-slate-900">
+            Open pools
+          </h2>
+          <p className="mb-2 mt-0.5 text-sm text-slate-500">
+            Anyone can jump in — guests play the pool, not the group.
+          </p>
+          <div className="space-y-2">
+            {openPoolCards.map((p) => (
+              <OpenPoolCard key={`${p.type}-${p.id}`} pool={p} />
+            ))}
+          </div>
+        </div>
       )}
     </div>
   );

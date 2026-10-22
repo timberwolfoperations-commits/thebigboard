@@ -34,6 +34,33 @@ async function memberRole(
   return data.role as "admin" | "member";
 }
 
+// Playing a pool takes group membership OR a guest seat in that pool
+// (open pools, migration 022). Creating pools stays members-only — this
+// only gates pick/entry actions on a pool that already exists.
+async function assertPoolAccess(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  groupId: string,
+  poolId: string,
+  userId: string
+) {
+  const { data: membership } = await supabase
+    .from("group_members")
+    .select("role")
+    .eq("group_id", groupId)
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (membership) return membership.role as "admin" | "member";
+  const { data: guest } = await supabase
+    .from("pool_guests")
+    .select("id")
+    .eq("pool_type", "pickem")
+    .eq("pool_id", poolId)
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (guest) return "guest" as const;
+  throw new Error("You're not in this group.");
+}
+
 // datetime-local has no timezone; the app is Eastern-first for v1.
 function parseEasternLock(raw: string): Date {
   const d = new Date(`${raw}:00-04:00`); // EDT (Oct). Revisit in EST.
@@ -62,6 +89,7 @@ export async function createPickemPool(groupId: string, formData: FormData) {
   const season = parseInt(String(formData.get("season") ?? ""), 10);
   const lockAt = parseEasternLock(String(formData.get("lock_at") ?? ""));
   const variant = String(formData.get("variant") ?? "standard");
+  const isPublic = formData.get("is_public") != null;
 
   if (!name) throw new Error("Give your pool a name.");
   if (!["standard", "over_under"].includes(variant)) {
@@ -91,6 +119,7 @@ export async function createPickemPool(groupId: string, formData: FormData) {
       season: Number.isFinite(season) ? season : null,
       week: Number.isFinite(week) ? week : null,
       lock_at: lockAt.toISOString(),
+      is_public: isPublic,
       created_by: user.id,
     })
     .select("id")
@@ -111,7 +140,7 @@ export async function createPickemPool(groupId: string, formData: FormData) {
 export async function savePickemPick(poolId: string, formData: FormData) {
   const { supabase, user } = await getUser();
   const { pool } = await loadPickemPool(poolId);
-  await memberRole(supabase, pool.group_id, user.id);
+  await assertPoolAccess(supabase, pool.group_id, poolId, user.id);
   if (new Date(pool.lock_at).getTime() <= Date.now()) {
     throw new Error("Picks are locked.");
   }
@@ -414,7 +443,7 @@ export async function getCopyableLinePools(
 export async function savePropPick(poolId: string, formData: FormData) {
   const { supabase, user } = await getUser();
   const { pool } = await loadPickemPool(poolId);
-  await memberRole(supabase, pool.group_id, user.id);
+  await assertPoolAccess(supabase, pool.group_id, poolId, user.id);
   if (pool.variant !== "over_under") throw new Error("This pool isn't over/under.");
   if (new Date(pool.lock_at).getTime() <= Date.now()) {
     throw new Error("Picks are locked.");
