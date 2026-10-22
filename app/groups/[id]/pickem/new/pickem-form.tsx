@@ -68,6 +68,11 @@ export default function PickemForm({
   const [sport, setSport] = useState<"NFL" | "MLB" | "CFB">("NFL");
   const games = sport === "MLB" ? mlbGames : sport === "CFB" ? cfbGames : nflGames;
   const isOverUnder = variant === "over_under";
+  // null = untouched, so the default follows the sport: college pools
+  // grade against the spread out of the box, NFL pools straight up.
+  // Touching the checkbox makes it the commish's call from then on.
+  const [useSpread, setUseSpread] = useState<boolean | null>(null);
+  const ats = !isOverUnder && (useSpread ?? sport === "CFB");
   // null = untouched, so the text follows the variant; typing once makes it
   // the commish's own words and variant switches stop touching it.
   const [rules, setRules] = useState<string | null>(null);
@@ -168,6 +173,9 @@ export default function PickemForm({
                     className="h-4 w-4 accent-[#c2410c]"
                   />
                   <span className="font-medium">{g.label}</span>
+                  {ats && g.line && (
+                    <span className="text-xs font-semibold text-slate-500">{g.line}</span>
+                  )}
                   <span className="text-xs text-slate-400">{fmtKickoff(g.starts_at)} ET</span>
                 </label>
               ))}
@@ -188,6 +196,24 @@ export default function PickemForm({
           </p>
         )}
         </div>
+
+        {!isOverUnder && (
+          <label className="flex items-start gap-2 text-sm text-slate-700">
+            <input
+              type="checkbox"
+              name="use_spread"
+              checked={useSpread ?? sport === "CFB"}
+              onChange={(e) => setUseSpread(e.target.checked)}
+              className="mt-0.5 h-4 w-4 shrink-0 accent-[#c2410c]"
+            />
+            <span>
+              <span className="font-medium">Against the spread</span>
+              <span className="block text-xs text-slate-500">
+                Picks are graded against the line, not straight up. Lines freeze when the pool is created.
+              </span>
+            </span>
+          </label>
+        )}
 
         <label className="flex items-start gap-2 text-sm text-slate-700">
           <input
