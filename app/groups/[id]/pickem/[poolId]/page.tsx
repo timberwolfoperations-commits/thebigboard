@@ -4,7 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { savePickemPick, savePropPick, setPickemLines, awardPickemWinner, scratchPickemPool, getRecentPropPlayers, getCopyableLinePools } from "@/lib/pickem-actions";
 import { computePickemLeaderboard } from "@/lib/pickem-scoring";
 import { PROP_STAT_LABELS } from "@/lib/prop-stats";
-import { STANDARD_HOW_IT_WORKS, OVER_UNDER_HOW_IT_WORKS } from "@/lib/pickem-copy";
+import { STANDARD_HOW_IT_WORKS, OVER_UNDER_HOW_IT_WORKS, ATS_HOW_IT_WORKS } from "@/lib/pickem-copy";
 import { Card, SectionTitle, SubmitButton } from "@/components/ui";
 import PickemGameCard from "@/components/pickem-game-card";
 import PropCard from "@/components/prop-card";
@@ -204,9 +204,12 @@ export default async function PickemPoolPage({
     // Blank → variant default. Also repairs pools saved with the standard
     // default while on over/under (the old form's defaultValue bug) — a
     // commish who deliberately typed that text into an over/under pool is
-    // not a case worth preserving the wrong copy for.
-    if (!saved) return isOverUnder ? OVER_UNDER_HOW_IT_WORKS : STANDARD_HOW_IT_WORKS;
+    // not a case worth preserving the wrong copy for. Same repair for
+    // against-the-spread pools: the untouched standard default would tell
+    // players to pick winners in a pool that grades covers.
+    if (!saved) return isOverUnder ? OVER_UNDER_HOW_IT_WORKS : useSpread ? ATS_HOW_IT_WORKS : STANDARD_HOW_IT_WORKS;
     if (isOverUnder && saved === STANDARD_HOW_IT_WORKS) return OVER_UNDER_HOW_IT_WORKS;
+    if (useSpread && saved === STANDARD_HOW_IT_WORKS) return ATS_HOW_IT_WORKS;
     return pool.description;
   })();
 
