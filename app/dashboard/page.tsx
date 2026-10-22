@@ -4,8 +4,10 @@ import { createClient } from "@/lib/supabase/server";
 import { computePickemLeaderboard } from "@/lib/pickem-scoring";
 import { computeSurvivorState } from "@/lib/survivor";
 import { computePoolPoints } from "@/lib/pool-scoring";
+import { loadHostNames, loadMyGuestPoolIds, loadOpenPoolDiscovery } from "@/lib/open-pools";
 import { Card, SectionTitle } from "@/components/ui";
 import HappeningPoolCard from "@/components/happening-pool-card";
+import OpenPoolCard from "@/components/open-pool-card";
 
 function ordinal(n: number) {
   const s = ["th", "st", "nd", "rd"];
@@ -130,6 +132,17 @@ export default async function Dashboard({
   const visibleGroupIds =
     groupFilter && groupIds.includes(groupFilter) ? [groupFilter] : groupIds;
 
+  // ---- open pools (discovery + my guest seats) ------------------------------
+  // Unjoined public pools surface ONLY as discovery cards further down —
+  // never in Needs your action. Pools I've joined as a guest are unioned
+  // into the member pool lists below, so every downstream section
+  // (needs-action, happening, settled) treats them exactly like member
+  // pools.
+  const openPoolCards = await loadOpenPoolDiscovery(supabase, user.id, groupIds);
+  const myGuests = groupFilter
+    ? { pickem: new Set<string>(), survivor: new Set<string>() }
+    : await loadMyGuestPoolIds(supabase, user.id);
+
   // ---- pools across visible groups -----------------------------------------
   const { data: rosterPools } = groupIds.length
     ? await supabase
@@ -148,6 +161,16 @@ export default async function Dashboard({
 
   const rosterList = (rosterPools ?? []) as any[];
   const pickemList = (pickemPools ?? []) as any[];
+  const guestPickemIds = [...myGuests.pickem].filter(
+    (pid) => !pickemList.some((p) => p.id === pid)
+  );
+  if (guestPickemIds.length) {
+    const { data: guestPickemPools } = await supabase
+      .from("pickem_pools")
+      .select("id, name, variant, group_id, lock_at, winner_user_id, winner_points, scratched")
+      .in("id", guestPickemIds);
+    pickemList.push(...((guestPickemPools ?? []) as any[]));
+  }
   const rosterIds = rosterList.map((p) => p.id);
   const pickemIds = pickemList.map((p) => p.id);
   const now = Date.now();
@@ -161,6 +184,27 @@ export default async function Dashboard({
         .order("created_at", { ascending: false })
     : { data: [] as any[] };
   const survivorList = (survivorPools ?? []) as any[];
+  const guestSurvivorIds = [...myGuests.survivor].filter(
+    (pid) => !survivorList.some((p) => p.id === pid)
+  );
+  if (guestSurvivorIds.length) {
+    const { data: guestSurvivorPools } = await supabase
+      .from("survivor_pools")
+      .select("id, name, group_id, season, start_week, created_by")
+      .in("id", guestSurvivorIds);
+    survivorList.push(...((guestSurvivorPools ?? []) as any[]));
+  }
+  // Host group names for guest pools — the groups row itself is
+  // members-only (it carries the invite token), so names come from the
+  // open_pool_hosts view.
+  const joinedGuestPoolIds = [...guestPickemIds, ...guestSurvivorIds];
+  if (joinedGuestPoolIds.length) {
+    const hostNames = await loadHostNames(supabase, joinedGuestPoolIds);
+    for (const p of [...pickemList, ...survivorList]) {
+      const host = hostNames.get(p.id);
+      if (host && !groupName.has(p.group_id)) groupName.set(p.group_id, host);
+    }
+  }
   const survivorStates = new Map<string, Awaited<ReturnType<typeof computeSurvivorState>>>();
   for (const p of survivorList) {
     survivorStates.set(p.id, await computeSurvivorState(supabase, p));
@@ -535,6 +579,17 @@ export default async function Dashboard({
                 </Link>
               );
             })}
+          </div>
+        </div>
+      )}
+
+      {openPoolCards.length > 0 && (
+        <div>
+          <SectionTitle>Open pools</SectionTitle>
+          <div className="space-y-2">
+            {openPoolCards.map((p) => (
+              <OpenPoolCard key={`${p.type}-${p.id}`} pool={p} />
+            ))}
           </div>
         </div>
       )}
