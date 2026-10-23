@@ -83,14 +83,86 @@ export function shuffle<T>(arr: readonly T[], rng: () => number = Math.random): 
 }
 
 // ------------------------------------------------------- question supply
-// One page of Open Trivia DB results, as createQuiz fetches it: the raw
-// results on success, null when the service didn't answer (network
-// error, bad status, non-zero response code). createQuiz injects the
-// real fetcher; tests inject a stub.
-export type TriviaSetFetcher = (
-  difficulty: string,
-  amount: number
-) => Promise<any[] | null>;
+// How createQuiz buys questions from the Open Trivia DB.
+//
+// ONE pull does the buying: amount=50, the chosen category, and NO
+// difficulty param. The bank answers with a natural spread of levels
+// and every row carries its own `difficulty`, so a single response can
+// fill an Easy, Medium or Hard quiz alike (selection below). The old
+// strategy — a burst of small per-difficulty fetches, with top-ups
+// repeating the same URLs verbatim — broke live on 2026-10-22:
+// OpenTDB rate-limits per IP (response_code 5) and Vercel's egress IPs
+// are shared and heavily throttled, so the later fetches in the burst
+// came back empty and a 10-question Medium/Mixed create died with
+// "Only got 5…". Fewer requests, each asking for more, is the whole
+// fix. Nothing from OpenTDB is ever cached either (cache: "no-store"
+// in the puller below): a cached repeat hands back the very same
+// questions and dedupe adds zero.
+//
+// Medium is still a BLEND — aim for half Medium, fill with Easy —
+// because the bank's own Medium runs hard ("hard as hell," per the
+// first Medium quiz played). Any easy+medium mix totalling the count
+// is acceptable; hards never make a Medium set. Easy takes only
+// easies, Hard only hards. The quiz row still stores the chosen
+// difficulty — the blend is a selection-time behavior only.
+export const TRIVIA_PULL_AMOUNT = 50;
+// OpenTDB's rate-limit window is per-IP over ~5s; wait it out once.
+export const TRIVIA_RATE_LIMIT_WAIT_MS = 5500;
+
+export const TRIVIA_RATE_LIMIT_MESSAGE =
+  "The trivia bank is rate-limiting us right now — give it a few seconds and try again.";
+export const TRIVIA_UNAVAILABLE_MESSAGE =
+  "The trivia service didn't answer — try again in a minute.";
+export function triviaShortMessage(got: number, count: number, categoryLabel: string): string {
+  return `Only got ${got} of ${count} questions for ${categoryLabel} — try fewer questions or a different category.`;
+}
+
+// One OpenTDB request's outcome. response_code 5 (rate limit) gets its
+// own kind because it's the one failure worth a wait-and-retry; every
+// other non-answer (network error, bad status, other non-zero code)
+// folds into "unavailable". response_code 1 ("no results for that
+// query") is an answer, not an outage: ok with an empty page, so a
+// genuinely thin category flows into the fallback / short-set paths
+// instead of claiming the service never replied.
+export type TriviaPullOutcome =
+  | { kind: "ok"; results: any[] }
+  | { kind: "rate_limited" }
+  | { kind: "unavailable" };
+
+// One OpenTDB request. difficulty omitted = the big mixed pull;
+// present = the difficulty-specific fallback page.
+export type TriviaPuller = (args: {
+  amount: number;
+  difficulty?: string;
+}) => Promise<TriviaPullOutcome>;
+
+// The real puller over an injected fetch (the action passes the global
+// one; tests pass a stub), no-store on every request it ever makes.
+export function createOpenTdbPuller(args: {
+  fetchImpl: typeof fetch;
+  categoryId: number | null;
+}): TriviaPuller {
+  return async ({ amount, difficulty }) => {
+    const url = new URL("https://opentdb.com/api.php");
+    url.searchParams.set("amount", String(amount));
+    url.searchParams.set("type", "multiple");
+    if (args.categoryId != null) url.searchParams.set("category", String(args.categoryId));
+    if (difficulty) url.searchParams.set("difficulty", difficulty);
+    try {
+      const res = await args.fetchImpl(url, { cache: "no-store" });
+      if (!res.ok) return { kind: "unavailable" };
+      const json: any = await res.json();
+      if (json?.response_code === 5) return { kind: "rate_limited" };
+      if (json?.response_code === 1) return { kind: "ok", results: [] };
+      if (json?.response_code !== 0 || !Array.isArray(json?.results)) {
+        return { kind: "unavailable" };
+      }
+      return { kind: "ok", results: json.results };
+    } catch {
+      return { kind: "unavailable" };
+    }
+  };
+}
 
 // Dedupe key: the DECODED question text, so the same question wearing
 // different entity spellings in two responses still counts once.
@@ -98,41 +170,66 @@ function triviaQuestionKey(raw: any): string {
   return decodeEntities(String(raw?.question ?? "")).trim().toLowerCase();
 }
 
-// Assemble the frozen question set for a new quiz.
-//
-// Easy and Hard are a single fetch, exactly as they've always been.
-// Medium is a BLEND — half Easy, half Medium, shuffled together.
-// OpenTDB's own difficulty labels skew hard: the first Medium quiz
-// played "hard as hell," so a Medium set built purely from Medium
-// questions doesn't feel like one. The quiz row still stores difficulty
-// 'medium' (labels and boards unchanged) — the blend is a fetch-time
-// behavior only, invisible everywhere else.
-//
-// Returns the raw result rows — length === count on success, fewer
-// when the bank couldn't supply enough unique questions — plus
-// `unavailable` when every fetch went unanswered, so the caller keeps
-// picking the right error of the two creation has always had.
+// Pick `count` questions of the wanted flavour out of a deduped pool,
+// bucketing by each row's own difficulty label. Medium aims for
+// ceil(count/2) mediums, then easies, then any mediums left over —
+// easies fill in when mediums run short and vice versa, never hards.
+// The pick is shuffled so the levels interleave through the run.
+function selectTriviaSet(
+  pool: readonly any[],
+  difficulty: string,
+  count: number,
+  rng: () => number
+): any[] {
+  const bucket = (level: string) =>
+    shuffle(pool.filter((r) => String(r?.difficulty ?? "") === level), rng);
+  let chosen: any[];
+  if (difficulty === "medium") {
+    const mediums = bucket("medium");
+    const easies = bucket("easy");
+    const aim = Math.ceil(count / 2);
+    chosen = [...mediums.slice(0, aim), ...easies, ...mediums.slice(aim)].slice(0, count);
+  } else {
+    chosen = bucket(difficulty).slice(0, count);
+  }
+  return shuffle(chosen, rng);
+}
+
+export type TriviaSetFailure = "rate_limited" | "unavailable" | "short";
+
+// Assemble the frozen question set for a new quiz from ONE pull (see
+// the supply note above), plus at most one difficulty-specific
+// fallback when a narrow category's pull can't fill the count.
+// Returns the raw result rows — length === count on success — or a
+// failure kind the caller turns into the matching error message
+// (rate_limited / unavailable / short). `sleep` is injectable so
+// tests don't wait out the real rate-limit pause.
 export async function assembleTriviaSet(args: {
   count: number;
   difficulty: string;
-  fetchSet: TriviaSetFetcher;
+  pull: TriviaPuller;
+  sleep?: (ms: number) => Promise<void>;
   rng?: () => number;
-}): Promise<{ results: any[]; unavailable: boolean }> {
-  const { count, difficulty, fetchSet } = args;
+}): Promise<{ results: any[]; failure: TriviaSetFailure | null }> {
+  const { count, difficulty, pull } = args;
   const rng = args.rng ?? Math.random;
+  const sleep =
+    args.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
 
-  if (difficulty !== "medium") {
-    const results = await fetchSet(difficulty, count);
-    if (results == null) return { results: [], unavailable: true };
-    return { results, unavailable: false };
+  // The pull, with the one bounded retry: a rate-limited bank gets
+  // its window to breathe, then exactly one more try. Any other
+  // non-answer is the "didn't answer" failure, no retry, no fallback.
+  let outcome = await pull({ amount: TRIVIA_PULL_AMOUNT });
+  if (outcome.kind === "rate_limited") {
+    await sleep(TRIVIA_RATE_LIMIT_WAIT_MS);
+    outcome = await pull({ amount: TRIVIA_PULL_AMOUNT });
+    if (outcome.kind === "rate_limited") return { results: [], failure: "rate_limited" };
   }
+  if (outcome.kind === "unavailable") return { results: [], failure: "unavailable" };
 
-  const pool: any[] = [];
   const seen = new Set<string>();
-  let answered = 0;
-  const add = (rows: any[] | null) => {
-    if (rows == null) return;
-    answered++;
+  const pool: any[] = [];
+  const add = (rows: readonly any[]) => {
     for (const r of rows) {
       const key = triviaQuestionKey(r);
       if (key && !seen.has(key)) {
@@ -141,19 +238,21 @@ export async function assembleTriviaSet(args: {
       }
     }
   };
+  add(outcome.results);
 
-  add(await fetchSet("easy", Math.ceil(count / 2)));
-  add(await fetchSet("medium", Math.floor(count / 2)));
-  // The two pages can overlap (or come back short), leaving the pool
-  // under count: top up once from Medium, then once from Easy, asking
-  // only for the deficit each time.
-  if (pool.length < count) add(await fetchSet("medium", count - pool.length));
-  if (pool.length < count) add(await fetchSet("easy", count - pool.length));
-
-  return {
-    results: shuffle(pool, rng).slice(0, count),
-    unavailable: answered === 0,
-  };
+  let selected = selectTriviaSet(pool, difficulty, count, rng);
+  if (selected.length < count) {
+    // The pull didn't hold enough of the wanted level (narrow
+    // category): ONE difficulty-specific fetch — never a top-up loop —
+    // merged and deduped into the same pool, then re-select.
+    const fallback = await pull({ amount: count, difficulty });
+    if (fallback.kind === "ok") {
+      add(fallback.results);
+      selected = selectTriviaSet(pool, difficulty, count, rng);
+    }
+  }
+  if (selected.length < count) return { results: selected, failure: "short" };
+  return { results: selected, failure: null };
 }
 
 // ------------------------------------------------------------- serve payload

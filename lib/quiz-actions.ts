@@ -10,12 +10,16 @@ import {
   QUIZ_COUNTS,
   QUIZ_DIFFICULTIES,
   QUIZ_WINNER_POINTS,
+  TRIVIA_RATE_LIMIT_MESSAGE,
+  TRIVIA_UNAVAILABLE_MESSAGE,
   assembleTriviaSet,
+  createOpenTdbPuller,
   decodeEntities,
   gradeAnswer,
   pickQuizWinners,
   shuffle,
   toServedQuestion,
+  triviaShortMessage,
   type QuizQuestionRow,
   type ServedQuestion,
 } from "@/lib/quiz";
@@ -126,38 +130,20 @@ export async function createQuiz(groupId: string, formData: FormData) {
   const closeAt = parseEasternLock(String(formData.get("close_at") ?? ""));
   if (closeAt.getTime() <= Date.now()) throw new Error("Close time has to be in the future.");
 
-  // Fetch and freeze. Anything short of the full set — API down, a
+  // Fetch and freeze. Anything short of the full set — bank down, a
   // combo with too few questions — fails creation outright; a silently
   // short quiz would grade everyone's run against different totals.
-  // What a fetch looks like per difficulty (single page for Easy/Hard;
-  // Medium is a half-Easy/half-Medium blend because the bank's own
-  // Medium runs hard) lives in assembleTriviaSet — this is just the
-  // real OpenTDB page behind it, null when the service didn't answer.
-  const fetchSet = async (difficulty: string, amount: number): Promise<any[] | null> => {
-    const url = new URL("https://opentdb.com/api.php");
-    url.searchParams.set("amount", String(amount));
-    url.searchParams.set("type", "multiple");
-    if (category.id != null) url.searchParams.set("category", String(category.id));
-    url.searchParams.set("difficulty", difficulty);
-    try {
-      const res = await fetch(url, { cache: "no-store" });
-      if (!res.ok) return null;
-      const json: any = await res.json();
-      if (json?.response_code !== 0 || !Array.isArray(json?.results)) return null;
-      return json.results;
-    } catch {
-      return null;
-    }
-  };
-
-  const { results, unavailable } = await assembleTriviaSet({ count, difficulty, fetchSet });
-  if (unavailable) {
-    throw new Error("The trivia service didn't answer — try again in a minute.");
-  }
-  if (results.length !== count) {
-    throw new Error(
-      `Only got ${results.length} ${difficulty} questions for ${category.label} — try Mixed or an easier difficulty.`
-    );
+  // The supply strategy itself (ONE amount=50 pull with no difficulty
+  // param, selection by each row's own difficulty label, a single
+  // difficulty-specific fallback, one rate-limit retry — and why the
+  // old burst of small fetches starved live) lives in assembleTriviaSet
+  // in lib/quiz.ts; this just hands it the real puller.
+  const pull = createOpenTdbPuller({ fetchImpl: fetch, categoryId: category.id });
+  const { results, failure } = await assembleTriviaSet({ count, difficulty, pull });
+  if (failure === "rate_limited") throw new Error(TRIVIA_RATE_LIMIT_MESSAGE);
+  if (failure === "unavailable") throw new Error(TRIVIA_UNAVAILABLE_MESSAGE);
+  if (failure === "short" || results.length !== count) {
+    throw new Error(triviaShortMessage(results.length, count, category.label));
   }
 
   const questions = results.map((r, idx) => {
