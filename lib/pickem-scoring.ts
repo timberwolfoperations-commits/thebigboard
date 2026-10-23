@@ -28,6 +28,10 @@ export interface PickemRow {
   total_decided: number;
   points: number;
   earliest_pick: string;
+  // Bots (migration 024) ride the same standings with user_id = bot id,
+  // flagged so displays can tag them and the award can skip them. For a
+  // bot row, user_id is a pickem_bots id, never a profile id.
+  is_bot: boolean;
 }
 
 function gameWinner(g: PickemGame): string | null {
@@ -99,10 +103,41 @@ export async function computePickemLeaderboard(
   const pickList = (picks ?? []) as any[];
 
   switch (pool.variant) {
-    case "standard":
+    case "standard": {
+      // Bots (migration 024) are pool-scoped rows, not profiles — their
+      // picks live in pickem_bot_picks. Shape them exactly like human
+      // picks and merge, so standings/reveal math never knows the
+      // difference; the is_bot flag rides along for tags and the award
+      // filter. A missing table (migration not run yet) reads as no
+      // bots, which is the pre-024 behavior.
+      const { data: botRows } = await supabase
+        .from("pickem_bots")
+        .select("id, name")
+        .eq("pool_id", poolId);
+      const bots = (botRows ?? []) as any[];
+      let merged = pickList;
+      if (bots.length > 0) {
+        const botName = new Map(bots.map((b) => [b.id, b.name]));
+        const { data: botPicks } = await supabase
+          .from("pickem_bot_picks")
+          .select("bot_id, game_id, picked_team, created_at")
+          .eq("pool_id", poolId);
+        merged = [
+          ...pickList,
+          ...((botPicks ?? []) as any[]).map((bp) => ({
+            user_id: bp.bot_id,
+            game_id: bp.game_id,
+            picked_team: bp.picked_team,
+            created_at: bp.created_at,
+            profiles: { display_name: botName.get(bp.bot_id) ?? "Bot" },
+            is_bot: true,
+          })),
+        ];
+      }
       return pool.use_spread
-        ? scoreStandard(gameList, pickList, spreadByGame)
-        : scoreStandard(gameList, pickList);
+        ? scoreStandard(gameList, merged, spreadByGame)
+        : scoreStandard(gameList, merged);
+    }
     case "over_under":
       return scoreOverUnder(supabase, poolId, gameList);
     // Future variants plug in here: case "elimination": ..., etc.
@@ -155,6 +190,7 @@ function scoreStandard(
         (min: string, p: any) => (p.created_at < min ? p.created_at : min),
         ps[0]?.created_at ?? ""
       ),
+      is_bot: Boolean(ps[0]?.is_bot),
     };
   });
 
@@ -250,6 +286,7 @@ async function scoreOverUnder(
         (min: string, p: any) => (p.created_at < min ? p.created_at : min),
         ps[0]?.created_at ?? ""
       ),
+      is_bot: false, // over/under has no bots — standard variant only
     };
   });
 

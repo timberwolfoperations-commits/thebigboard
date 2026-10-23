@@ -3,6 +3,13 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import {
+  buildBotPicks,
+  isBotPersonality,
+  suggestedBotName,
+  MAX_BOTS_PER_POOL,
+  type BotGameInput,
+} from "@/lib/pickem-bots";
 
 // ------------------------------------------------------------- pick'em pools
 // Pick winners, not players. The slate of games comes from the games table
@@ -247,8 +254,14 @@ export async function awardPickemWinner(poolId: string) {
   if ((already ?? []).length > 0 || pool.winner_user_id)
     throw new Error("This pool already has a winner.");
 
-  const topScore = board[0].points;
-  const coWinners = board.filter((r) => r.points === topScore);
+  // Bots play for pride, not the pot: if a bot tops the board, the best
+  // HUMAN score takes the award (co-winner logic unchanged among
+  // humans). A bot can never land in pickem_pool_winners — that table's
+  // user_id references profiles, and a bot has no profile.
+  const humans = board.filter((r) => !r.is_bot);
+  if (!humans.length) throw new Error("No human picks to award.");
+  const topScore = humans[0].points;
+  const coWinners = humans.filter((r) => r.points === topScore);
 
   const { error: werr } = await supabase
     .from("pickem_pool_winners")
@@ -293,6 +306,115 @@ export async function scratchPickemPool(poolId: string) {
     .from("pickem_pools")
     .update({ scratched: true })
     .eq("id", poolId);
+  if (error) throw new Error(error.message);
+
+  revalidatePath(`/groups/${pool.group_id}/pickem/${poolId}`);
+  revalidatePath(`/groups/${pool.group_id}`);
+}
+
+// ------------------------------------------------------------- pool bots
+// The commish can staff a standard pick'em pool with bots (migration
+// 024): pool-scoped entrants that auto-pick every game that hasn't
+// kicked off yet — once, at add time — then play like anyone else.
+// Their picks reveal at each game's kickoff, they ride the leaderboard
+// with a BOT tag, and they can never win the award or touch the
+// group's lifetime board (see awardPickemWinner + the schema notes).
+export async function addPickemBot(poolId: string, formData: FormData) {
+  const { supabase, user } = await getUser();
+  const { pool } = await loadPickemPool(poolId);
+  if (pool.created_by !== user.id) throw new Error("Only the commish adds bots.");
+  if (pool.variant !== "standard") throw new Error("Bots only play standard pick'em.");
+  if (pool.winner_user_id || pool.scratched) throw new Error("This pool is settled.");
+
+  const personality = String(formData.get("personality") ?? "");
+  if (!isBotPersonality(personality)) throw new Error("Pick a personality for the bot.");
+
+  const { data: existing } = await supabase
+    .from("pickem_bots")
+    .select("id, name")
+    .eq("pool_id", poolId);
+  const botRows = (existing ?? []) as any[];
+  if (botRows.length >= MAX_BOTS_PER_POOL) {
+    throw new Error(`That's ${MAX_BOTS_PER_POOL} bots — the humans are officially outnumbered.`);
+  }
+
+  let name = String(formData.get("name") ?? "").trim();
+  if (!name) name = suggestedBotName(botRows.map((b) => b.name));
+  if (name.length > 40) throw new Error("That name is too long, even for a bot.");
+  if (botRows.some((b) => String(b.name).trim().toLowerCase() === name.toLowerCase())) {
+    throw new Error("That bot name is already running in this pool.");
+  }
+
+  const { data: bot, error: bErr } = await supabase
+    .from("pickem_bots")
+    .insert({ pool_id: poolId, name, personality, created_by: user.id })
+    .select("id")
+    .single();
+  if (bErr || !bot) throw new Error(bErr?.message ?? "The bot didn't take.");
+
+  // The bot's card: every linked game that hasn't kicked off. Lines
+  // resolve frozen-first (the pool's own snapshot), then the game's
+  // live line — buildBotPicks applies the personality to whatever line
+  // each game has, with the home/away fallback when there's none.
+  const { data: links } = await supabase
+    .from("pickem_pool_games")
+    .select("game_id, spread")
+    .eq("pool_id", poolId);
+  const linkRows = (links ?? []) as any[];
+  const gameIds = linkRows.map((l) => l.game_id);
+  const frozenByGame = new Map<string, number | null>(
+    linkRows.map((l) => {
+      const s = l.spread == null ? null : Number(l.spread);
+      return [l.game_id, Number.isFinite(s as number) ? (s as number) : null] as [
+        string,
+        number | null,
+      ];
+    })
+  );
+  const { data: games } = gameIds.length
+    ? await supabase
+        .from("games")
+        .select("id, home_team, away_team, starts_at, spread")
+        .in("id", gameIds)
+    : { data: [] };
+  const inputs: BotGameInput[] = ((games ?? []) as any[]).map((g) => {
+    const live = g.spread == null ? null : Number(g.spread);
+    return {
+      game_id: g.id,
+      starts_at: g.starts_at,
+      home_team: g.home_team,
+      away_team: g.away_team,
+      frozen_spread: frozenByGame.get(g.id) ?? null,
+      live_spread: Number.isFinite(live as number) ? (live as number) : null,
+    };
+  });
+
+  const picks = buildBotPicks(personality, inputs, Date.now());
+  if (picks.length > 0) {
+    const { error: pErr } = await supabase.from("pickem_bot_picks").insert(
+      picks.map((p) => ({ bot_id: bot.id, pool_id: poolId, game_id: p.game_id, picked_team: p.picked_team }))
+    );
+    if (pErr) throw new Error(pErr.message);
+  }
+
+  revalidatePath(`/groups/${pool.group_id}/pickem/${poolId}`);
+  revalidatePath(`/groups/${pool.group_id}`);
+}
+
+// Take a bot out of the pool: its row goes, its picks cascade with it,
+// and nothing human is touched. Standings re-derive without it.
+export async function removePickemBot(poolId: string, formData: FormData) {
+  const { supabase, user } = await getUser();
+  const { pool } = await loadPickemPool(poolId);
+  if (pool.created_by !== user.id) throw new Error("Only the commish removes bots.");
+
+  const botId = String(formData.get("bot_id") ?? "");
+  if (!botId) throw new Error("Which bot?");
+  const { error } = await supabase
+    .from("pickem_bots")
+    .delete()
+    .eq("id", botId)
+    .eq("pool_id", poolId);
   if (error) throw new Error(error.message);
 
   revalidatePath(`/groups/${pool.group_id}/pickem/${poolId}`);
