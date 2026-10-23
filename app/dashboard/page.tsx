@@ -407,7 +407,8 @@ export default async function Dashboard({
 
   // Per-game rows for the live dashboard view: linked games plus the
   // viewer's picks, with the sync watermark for honest freshness.
-  // Only used for locked standard pick'em pools.
+  // Used for locked standard pick'em pools, and for unlocked ones once
+  // their first game has kicked off.
   async function pickemLiveGames(poolId: string): Promise<LivePoolData | null> {
     const { data: links } = await supabase
       .from("pickem_pool_games")
@@ -503,16 +504,36 @@ export default async function Dashboard({
 
   const standings = new Map<string, { rank: number | null; points: number | null; count: number } | null>();
   const liveData = new Map<string, LivePoolData | null>();
+  // Standard pick'em pools go "live" per game, not per pool: once the
+  // first game kicks off, the pool renders like a locked one (standing +
+  // per-game rows) even though later games are still open for picks.
+  // startedPickem tracks those unlocked-but-underway pools. Needs-action
+  // derivation above is untouched — such a pool can sit in both places.
+  const startedPickem = new Set<string>();
   await Promise.all(
-    happening
-      .filter((p) => new Date(p.lock_at).getTime() <= now)
-      .map(async (p) => {
+    happening.map(async (p) => {
+      const poolLocked = new Date(p.lock_at).getTime() <= now;
+      const standardPickem = p.kind === "pickem" && (p as any).variant === "standard";
+      if (!poolLocked && !standardPickem) return;
+      let underway = poolLocked;
+      if (standardPickem) {
+        const ld = await pickemLiveGames(p.id);
+        if (poolLocked) {
+          liveData.set(p.id, ld);
+        } else if (
+          ld &&
+          ld.games.some((g) => g.starts_at != null && new Date(g.starts_at).getTime() <= now)
+        ) {
+          liveData.set(p.id, ld);
+          startedPickem.add(p.id);
+          underway = true;
+        }
+      }
+      if (underway) {
         const s = p.kind === "roster" ? await rosterStanding(p.id) : await pickemStanding(p.id);
         standings.set(p.id, s);
-        if (p.kind === "pickem" && (p as any).variant === "standard") {
-          liveData.set(p.id, await pickemLiveGames(p.id));
-        }
-      })
+      }
+    })
   );
 
   const settled = [
@@ -604,8 +625,9 @@ export default async function Dashboard({
           <div className="space-y-2">
             {happening.map((p: any) => {
               const locked = new Date(p.lock_at).getTime() <= now;
+              const inFlight = locked || startedPickem.has(p.id);
               const st = standings.get(p.id);
-              const live = locked ? liveData.get(p.id) : undefined;
+              const live = inFlight ? liveData.get(p.id) : undefined;
               const href =
                 p.kind === "roster"
                   ? `/groups/${p.group_id}/pools/${p.id}`
@@ -629,7 +651,7 @@ export default async function Dashboard({
                     <p className="text-sm text-slate-600">
                       <span className="font-medium text-slate-500">{groupName.get(p.group_id)}</span>
                       {" · "}
-                      {locked ? (
+                      {inFlight ? (
                         st && st.rank != null ? (
                           <span className="font-semibold text-slate-900">
                             {ordinal(st.rank)} of {st.count} · {st.points} pts
