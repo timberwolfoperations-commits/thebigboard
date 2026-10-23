@@ -129,6 +129,17 @@ export default async function GroupPage({ params }: { params: Promise<{ id: stri
     cur.wins += 1;
     pointsByUser.set(w.user_id, cur);
   }
+  // Quiz champs too — same deal, from quiz_winners.
+  const { data: quizWinners } = await supabase
+    .from("quiz_winners")
+    .select("user_id, points, quizzes!inner(group_id)")
+    .eq("quizzes.group_id", id);
+  for (const w of (quizWinners ?? []) as any[]) {
+    const cur = pointsByUser.get(w.user_id) ?? { points: 0, wins: 0 };
+    cur.points += w.points;
+    cur.wins += 1;
+    pointsByUser.set(w.user_id, cur);
+  }
   const leaderboard = memberList
     .map((m) => ({ ...m, ...(pointsByUser.get(m.user_id) ?? { points: 0, wins: 0 }) }))
     .sort((a, b) => b.points - a.points);
@@ -190,6 +201,37 @@ export default async function GroupPage({ params }: { params: Promise<{ id: stri
   for (const pk of (pickemPicks ?? []) as any[]) {
     if (!pickersByPool.has(pk.pool_id)) pickersByPool.set(pk.pool_id, new Set());
     pickersByPool.get(pk.pool_id)!.add(pk.user_id);
+  }
+
+  // ---- quizzes -------------------------------------------------------------
+  const { data: quizzes } = await supabase
+    .from("quizzes")
+    .select("id, title, category_label, question_count, close_at, created_at")
+    .eq("group_id", id)
+    .order("created_at", { ascending: false });
+  const quizList = ((quizzes ?? []) as any[]).slice(0, 8);
+  const { data: quizRuns } = quizList.length
+    ? await supabase
+        .from("quiz_runs")
+        .select("quiz_id, finished_at")
+        .in("quiz_id", quizList.map((q) => q.id))
+    : { data: [] as any[] };
+  const playedByQuiz = new Map<string, number>();
+  for (const r of (quizRuns ?? []) as any[]) {
+    if (!r.finished_at) continue;
+    playedByQuiz.set(r.quiz_id, (playedByQuiz.get(r.quiz_id) ?? 0) + 1);
+  }
+  const { data: quizWinnerRows } = quizList.length
+    ? await supabase
+        .from("quiz_winners")
+        .select("quiz_id, user_id")
+        .in("quiz_id", quizList.map((q) => q.id))
+    : { data: [] as any[] };
+  const quizWinnersByQuiz = new Map<string, string[]>();
+  for (const w of (quizWinnerRows ?? []) as any[]) {
+    const arr = quizWinnersByQuiz.get(w.quiz_id) ?? [];
+    arr.push(nameOf(w.user_id));
+    quizWinnersByQuiz.set(w.quiz_id, arr);
   }
 
   const host = (await headers()).get("host") ?? "";
@@ -335,6 +377,64 @@ export default async function GroupPage({ params }: { params: Promise<{ id: stri
                     </div>
                     <p className="mt-1 text-sm text-slate-600">
                       Starts Week {p.start_week} · {n} {n === 1 ? "entry" : "entries"}
+                    </p>
+                  </Card>
+                </Link>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {quizList.length > 0 && (
+        <div>
+          <SectionTitle>Quizzes</SectionTitle>
+          <div className="space-y-2">
+            {quizList.map((q: any) => {
+              const closed = new Date(q.close_at).getTime() <= Date.now();
+              const played = playedByQuiz.get(q.id) ?? 0;
+              const champs = quizWinnersByQuiz.get(q.id) ?? [];
+              return (
+                <Link key={q.id} href={`/groups/${id}/quiz/${q.id}`}>
+                  <Card className="transition hover:border-slate-400">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="font-display text-lg font-semibold uppercase tracking-wide">{q.title}</p>
+                      <span className="flex shrink-0 gap-1">
+                        <span className="inline-block rounded-full bg-violet-100 px-2.5 py-0.5 text-xs font-semibold text-violet-800">
+                          quiz
+                        </span>
+                        <span
+                          className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+                            closed ? "bg-slate-100 text-slate-500" : "bg-blue-100 text-blue-800"
+                          }`}
+                        >
+                          {closed ? "closed" : "open"}
+                        </span>
+                      </span>
+                    </div>
+                    <p className="mt-1 text-sm text-slate-600">
+                      {q.category_label} · {q.question_count} questions ·{" "}
+                      {champs.length > 0 ? (
+                        <>
+                          {champs.join(", ")} won · +10 pts · {played}{" "}
+                          {played === 1 ? "run" : "runs"}
+                        </>
+                      ) : closed ? (
+                        <>
+                          Closed · {played} {played === 1 ? "run" : "runs"}
+                        </>
+                      ) : (
+                        <>
+                          Closes{" "}
+                          {new Date(q.close_at).toLocaleDateString("en-US", {
+                            timeZone: "America/New_York",
+                            weekday: "short",
+                            month: "short",
+                            day: "numeric",
+                          })}{" "}
+                          · {played} played
+                        </>
+                      )}
                     </p>
                   </Card>
                 </Link>

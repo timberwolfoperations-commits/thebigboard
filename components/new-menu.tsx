@@ -32,6 +32,11 @@ export default function NewMenu({ groupId }: { groupId: string }) {
       title: "Survivor pool",
       desc: "One pick a week — lose and you're out",
     },
+    {
+      href: `/groups/${groupId}/quiz/new`,
+      title: "Quiz",
+      desc: "The Hot Seat — 15 seconds a question",
+    },
   ];
 
   return (
