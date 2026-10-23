@@ -2,6 +2,7 @@
 
 import { useOptimistic } from "react";
 import { Card } from "@/components/ui";
+import BotTag from "@/components/bot-tag";
 
 // One game row with two team buttons — the shared pick UI every pick'em
 // variant reuses. The tapped team highlights instantly (useOptimistic) while
@@ -88,8 +89,9 @@ export default function PickemGameCard({
   myPick: string | null;
   canPick: boolean;
   // Everyone's picks per team, shown once the game has kicked off or the
-  // pool has locked (null = keep secret).
-  reveal: { team: string; names: string[] }[] | null;
+  // pool has locked (null = keep secret). Names carry an isBot flag so a
+  // bot's pick wears its tag in the reveal too.
+  reveal: { team: string; names: { name: string; isBot: boolean }[] }[] | null;
   // Frozen against-the-spread line (home team's number) for ATS pools;
   // null/omitted = straight-up pool, no line shown.
   spread?: number | null;
@@ -159,7 +161,13 @@ export default function PickemGameCard({
             <p key={r.team} className="py-0.5 text-center text-xs text-slate-500">
               <span className="font-bold text-slate-900">{r.team}</span>
               {" — "}
-              {r.names.join(", ")}
+              {r.names.map((n, i) => (
+                <span key={`${n.name}-${i}`}>
+                  {i > 0 && ", "}
+                  {n.name}
+                  {n.isBot && <BotTag />}
+                </span>
+              ))}
             </p>
           ))}
         </div>

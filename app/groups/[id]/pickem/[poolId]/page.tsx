@@ -1,14 +1,17 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { savePickemPick, savePropPick, setPickemLines, awardPickemWinner, scratchPickemPool, getRecentPropPlayers, getCopyableLinePools } from "@/lib/pickem-actions";
+import { savePickemPick, savePropPick, setPickemLines, awardPickemWinner, scratchPickemPool, addPickemBot, removePickemBot, getRecentPropPlayers, getCopyableLinePools } from "@/lib/pickem-actions";
 import { computePickemLeaderboard } from "@/lib/pickem-scoring";
+import { suggestedBotName } from "@/lib/pickem-bots";
 import { PROP_STAT_LABELS } from "@/lib/prop-stats";
 import { STANDARD_HOW_IT_WORKS, OVER_UNDER_HOW_IT_WORKS, ATS_HOW_IT_WORKS } from "@/lib/pickem-copy";
 import { Card, SectionTitle, SubmitButton } from "@/components/ui";
 import PickemGameCard from "@/components/pickem-game-card";
 import PropCard from "@/components/prop-card";
 import PropLinesEditor, { type PropLineDraft } from "@/components/prop-lines-editor";
+import PickemBotCard from "@/components/pickem-bot-card";
+import BotTag from "@/components/bot-tag";
 
 function fmtLock(iso: string): string {
   return new Date(iso).toLocaleString("en-US", {
@@ -89,24 +92,52 @@ export default async function PickemPoolPage({
     g.starts_at != null && new Date(g.starts_at).getTime() <= nowMs;
   const anyStarted = !isOverUnder && gameList.some(gameStarted);
 
+  // Bots in this pool (standard only; migration 024). Pool-scoped rows,
+  // not profiles — fetched for the reveal union below, the leaderboard
+  // tag (via computePickemLeaderboard), and the commish bot card. A
+  // missing table (migration not run yet) reads as no bots.
+  const { data: botRows } = !isOverUnder
+    ? await supabase
+        .from("pickem_bots")
+        .select("id, name, personality")
+        .eq("pool_id", poolId)
+        .order("created_at", { ascending: true })
+    : { data: [] as any[] };
+  const botList = (botRows ?? []) as any[];
+  const botNameById = new Map<string, string>(botList.map((b: any) => [b.id, b.name]));
+
   // Everyone's picks, revealed per the rule above — the trash-talk view.
   // Kept secret until a game starts so nobody can copy a live pick.
   // Ordered away-team first to match the button layout.
-  const revealByGame = new Map<string, { team: string; names: string[] }[]>();
+  const revealByGame = new Map<string, { team: string; names: { name: string; isBot: boolean }[] }[]>();
   if ((locked || anyStarted) && gameList.length > 0) {
     const { data: allPicks } = await supabase
       .from("pickem_picks")
       .select("game_id, picked_team, profiles(display_name)")
       .eq("pool_id", poolId);
-    const byGame = new Map<string, Map<string, string[]>>();
+    const byGame = new Map<string, Map<string, { name: string; isBot: boolean }[]>>();
+    const pushName = (gameId: string, team: string, entry: { name: string; isBot: boolean }) => {
+      if (!byGame.has(gameId)) byGame.set(gameId, new Map());
+      const m = byGame.get(gameId)!;
+      if (!m.has(team)) m.set(team, []);
+      m.get(team)!.push(entry);
+    };
     for (const p of (allPicks ?? []) as any[]) {
       const team = String(p.picked_team ?? "").toUpperCase();
-      const name = p.profiles?.display_name ?? "Player";
-      if (!byGame.has(p.game_id)) byGame.set(p.game_id, new Map());
-      const m = byGame.get(p.game_id)!;
-      if (!m.has(team)) m.set(team, []);
-      m.get(team)!.push(name);
+      pushName(p.game_id, team, { name: p.profiles?.display_name ?? "Player", isBot: false });
     }
+    // Bot picks ride the same reveal, flagged so the card tags them.
+    if (!isOverUnder && botList.length > 0) {
+      const { data: botPicks } = await supabase
+        .from("pickem_bot_picks")
+        .select("game_id, picked_team, bot_id")
+        .eq("pool_id", poolId);
+      for (const p of (botPicks ?? []) as any[]) {
+        const team = String(p.picked_team ?? "").toUpperCase();
+        pushName(p.game_id, team, { name: botNameById.get(p.bot_id) ?? "Bot", isBot: true });
+      }
+    }
+    const byName = (a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name);
     for (const g of gameList) {
       const m = byGame.get(g.id);
       if (!m) continue;
@@ -114,10 +145,10 @@ export default async function PickemPoolPage({
       const home = String(g.home_team ?? "").toUpperCase();
       const ordered = [away, home]
         .filter((t, i, a) => t !== "" && a.indexOf(t) === i)
-        .map((t) => ({ team: t, names: (m.get(t) ?? []).slice().sort() }))
+        .map((t) => ({ team: t, names: (m.get(t) ?? []).slice().sort(byName) }))
         .filter((r) => r.names.length > 0);
       for (const [t, names] of m) {
-        if (t !== away && t !== home) ordered.push({ team: t, names: names.slice().sort() });
+        if (t !== away && t !== home) ordered.push({ team: t, names: names.slice().sort(byName) });
       }
       revealByGame.set(g.id, ordered);
     }
@@ -180,9 +211,12 @@ export default async function PickemPoolPage({
     .eq("pool_id", poolId);
   const winnerIds = new Set(((winnerRows ?? []) as any[]).map((w) => w.user_id));
   const winnerNames = board.filter((r) => winnerIds.has(r.user_id)).map((r) => r.display_name);
+  // The award prompt names the leading HUMANS — a bot can top the board
+  // but can't take the pot (awardPickemWinner enforces the same rule).
+  const humanBoard = board.filter((r) => !r.is_bot);
   const leaderNames =
-    board.length > 0
-      ? board.filter((r) => r.points === board[0].points).map((r) => r.display_name)
+    humanBoard.length > 0
+      ? humanBoard.filter((r) => r.points === humanBoard[0].points).map((r) => r.display_name)
       : [];
 
   const savePick = savePickemPick.bind(null, poolId);
@@ -190,6 +224,8 @@ export default async function PickemPoolPage({
   const setLines = setPickemLines.bind(null, poolId);
   const awardWinner = awardPickemWinner.bind(null, poolId);
   const scratchPool = scratchPickemPool.bind(null, poolId);
+  const addBot = addPickemBot.bind(null, poolId);
+  const removeBot = removePickemBot.bind(null, poolId);
 
   const existingDrafts: PropLineDraft[] = propLineList.map((l) => ({
     player_name: l.player_name,
@@ -268,6 +304,7 @@ export default async function PickemPoolPage({
                   <p className="font-semibold">
                     <span className="mr-2 font-display text-lg tabular-nums text-slate-400">{i + 1}</span>
                     {r.display_name}
+                    {r.is_bot && <BotTag />}
                     {r.user_id === user.id && <span className="ml-1 text-xs text-slate-400">(you)</span>}
                   </p>
                   <p className="font-display text-3xl font-bold tabular-nums leading-none">
@@ -381,7 +418,7 @@ export default async function PickemPoolPage({
             </Card>
           ) : (
             allFinal &&
-            board.length > 0 && (
+            humanBoard.length > 0 && (
               <Card>
                 <form action={awardWinner} className="flex items-center justify-between gap-3">
                   <p className="text-sm text-slate-600">
@@ -404,6 +441,19 @@ export default async function PickemPoolPage({
             )
           )}
         </div>
+      )}
+
+      {/* Commish bot staffing (standard pick'em only): staff the pool
+          with auto-pickers, or pull one back out. Shown while the pool
+          is unsettled, or whenever bots are still on the roster. */}
+      {isCommish && !isOverUnder && (botList.length > 0 || (!pool.winner_user_id && !pool.scratched)) && (
+        <PickemBotCard
+          bots={botList.map((b: any) => ({ id: b.id, name: b.name, personality: b.personality }))}
+          suggestedName={suggestedBotName(botList.map((b: any) => b.name))}
+          canAdd={!pool.winner_user_id && !pool.scratched}
+          addAction={addBot}
+          removeAction={removeBot}
+        />
       )}
     </div>
   );

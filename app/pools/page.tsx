@@ -6,6 +6,7 @@ import { computePickemLeaderboard } from "@/lib/pickem-scoring";
 import { computeSurvivorState } from "@/lib/survivor";
 import { loadHostNames, loadMyGuestPoolIds, loadOpenPoolDiscovery } from "@/lib/open-pools";
 import { Card } from "@/components/ui";
+import BotTag from "@/components/bot-tag";
 import ExpandableCard from "@/components/expandable-card";
 import PoolsNewMenu from "@/components/pools-new-menu";
 import OpenPoolCard from "@/components/open-pool-card";
@@ -41,7 +42,7 @@ function StandingRows({
   rows,
   userId,
 }: {
-  rows: { user_id: string; display_name: string; points: number }[];
+  rows: { user_id: string; display_name: string; points: number; is_bot?: boolean }[];
   userId: string;
 }) {
   if (rows.length === 0) {
@@ -59,6 +60,7 @@ function StandingRows({
           <span className="w-6 shrink-0 text-xs text-slate-400">{i + 1}</span>
           <span className="min-w-0 truncate">
             {r.display_name}
+            {r.is_bot && <BotTag />}
             {r.user_id === userId && <span className="ml-1 text-xs font-normal text-slate-400">(you)</span>}
           </span>
           <span className="ml-auto shrink-0 font-semibold tabular-nums">{r.points} pts</span>
@@ -148,14 +150,14 @@ export default async function PoolsPage() {
     lineCount.set(l.pool_id, (lineCount.get(l.pool_id) ?? 0) + 1);
   }
 
-  const boards = new Map<string, { user_id: string; display_name: string; points: number }[]>();
+  const boards = new Map<string, { user_id: string; display_name: string; points: number; is_bot?: boolean }[]>();
   await Promise.all(
     pickemList.map(async (p) => {
       try {
         const board = await computePickemLeaderboard(supabase, p.id);
         boards.set(
           p.id,
-          board.map((r: any) => ({ user_id: r.user_id, display_name: r.display_name, points: r.points }))
+          board.map((r: any) => ({ user_id: r.user_id, display_name: r.display_name, points: r.points, is_bot: r.is_bot }))
         );
       } catch {
         boards.set(p.id, []);
