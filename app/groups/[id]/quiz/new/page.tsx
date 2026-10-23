@@ -58,6 +58,9 @@ export default async function NewQuizPage({
                     </option>
                   ))}
                 </select>
+                <p className="mt-1 text-xs leading-relaxed text-slate-400">
+                  Medium blends Easy and Medium questions — the bank's Medium runs hard.
+                </p>
               </Field>
               <Field label="Questions">
                 <select name="count" className={inputClass} defaultValue="10">
