@@ -77,13 +77,23 @@ export default async function PickemPoolPage({
   const myPickByGame = new Map(((myPicks ?? []) as any[]).map((p) => [p.game_id, p.picked_team]));
 
 
-  const locked = new Date(pool.lock_at).getTime() <= Date.now();
+  const nowMs = Date.now();
+  const locked = new Date(pool.lock_at).getTime() <= nowMs;
+  const isOverUnder = pool.variant === "over_under";
 
-  // Everyone's picks, revealed after lock — the trash-talk view. Kept
-  // secret before lock so nobody can copy. Ordered away-team first to
-  // match the button layout.
+  // Per-game reveal for standard pick'em: a game's picks go public once
+  // THAT game kicks off — nobody can pick or change it anymore — even
+  // while the pool itself is still open for later games. Pool lock still
+  // reveals everything. Over/under props stay pool-lock-only by design.
+  const gameStarted = (g: any) =>
+    g.starts_at != null && new Date(g.starts_at).getTime() <= nowMs;
+  const anyStarted = !isOverUnder && gameList.some(gameStarted);
+
+  // Everyone's picks, revealed per the rule above — the trash-talk view.
+  // Kept secret until a game starts so nobody can copy a live pick.
+  // Ordered away-team first to match the button layout.
   const revealByGame = new Map<string, { team: string; names: string[] }[]>();
-  if (locked && gameList.length > 0) {
+  if ((locked || anyStarted) && gameList.length > 0) {
     const { data: allPicks } = await supabase
       .from("pickem_picks")
       .select("game_id, picked_team, profiles(display_name)")
@@ -113,7 +123,6 @@ export default async function PickemPoolPage({
     }
   }
   const isCommish = pool.created_by === user.id;
-  const isOverUnder = pool.variant === "over_under";
   const useSpread = !isOverUnder && Boolean(pool.use_spread);
   const allFinal = gameList.length > 0 && gameList.every((g: any) => g.status === "final");
 
@@ -334,7 +343,7 @@ export default async function PickemPoolPage({
                 game={g}
                 myPick={myPickByGame.get(g.id) ?? null}
                 canPick={!locked && new Date(g.starts_at).getTime() > Date.now()}
-                reveal={locked ? revealByGame.get(g.id) ?? [] : null}
+                reveal={locked || gameStarted(g) ? revealByGame.get(g.id) ?? [] : null}
                 spread={useSpread ? (spreadByGame.get(g.id) ?? null) : null}
                 action={savePick}
               />
