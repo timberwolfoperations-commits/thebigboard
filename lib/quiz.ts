@@ -82,6 +82,80 @@ export function shuffle<T>(arr: readonly T[], rng: () => number = Math.random): 
   return out;
 }
 
+// ------------------------------------------------------- question supply
+// One page of Open Trivia DB results, as createQuiz fetches it: the raw
+// results on success, null when the service didn't answer (network
+// error, bad status, non-zero response code). createQuiz injects the
+// real fetcher; tests inject a stub.
+export type TriviaSetFetcher = (
+  difficulty: string,
+  amount: number
+) => Promise<any[] | null>;
+
+// Dedupe key: the DECODED question text, so the same question wearing
+// different entity spellings in two responses still counts once.
+function triviaQuestionKey(raw: any): string {
+  return decodeEntities(String(raw?.question ?? "")).trim().toLowerCase();
+}
+
+// Assemble the frozen question set for a new quiz.
+//
+// Easy and Hard are a single fetch, exactly as they've always been.
+// Medium is a BLEND — half Easy, half Medium, shuffled together.
+// OpenTDB's own difficulty labels skew hard: the first Medium quiz
+// played "hard as hell," so a Medium set built purely from Medium
+// questions doesn't feel like one. The quiz row still stores difficulty
+// 'medium' (labels and boards unchanged) — the blend is a fetch-time
+// behavior only, invisible everywhere else.
+//
+// Returns the raw result rows — length === count on success, fewer
+// when the bank couldn't supply enough unique questions — plus
+// `unavailable` when every fetch went unanswered, so the caller keeps
+// picking the right error of the two creation has always had.
+export async function assembleTriviaSet(args: {
+  count: number;
+  difficulty: string;
+  fetchSet: TriviaSetFetcher;
+  rng?: () => number;
+}): Promise<{ results: any[]; unavailable: boolean }> {
+  const { count, difficulty, fetchSet } = args;
+  const rng = args.rng ?? Math.random;
+
+  if (difficulty !== "medium") {
+    const results = await fetchSet(difficulty, count);
+    if (results == null) return { results: [], unavailable: true };
+    return { results, unavailable: false };
+  }
+
+  const pool: any[] = [];
+  const seen = new Set<string>();
+  let answered = 0;
+  const add = (rows: any[] | null) => {
+    if (rows == null) return;
+    answered++;
+    for (const r of rows) {
+      const key = triviaQuestionKey(r);
+      if (key && !seen.has(key)) {
+        seen.add(key);
+        pool.push(r);
+      }
+    }
+  };
+
+  add(await fetchSet("easy", Math.ceil(count / 2)));
+  add(await fetchSet("medium", Math.floor(count / 2)));
+  // The two pages can overlap (or come back short), leaving the pool
+  // under count: top up once from Medium, then once from Easy, asking
+  // only for the deficit each time.
+  if (pool.length < count) add(await fetchSet("medium", count - pool.length));
+  if (pool.length < count) add(await fetchSet("easy", count - pool.length));
+
+  return {
+    results: shuffle(pool, rng).slice(0, count),
+    unavailable: answered === 0,
+  };
+}
+
 // ------------------------------------------------------------- serve payload
 export interface QuizQuestionRow {
   id: string;

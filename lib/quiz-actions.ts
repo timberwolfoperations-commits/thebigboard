@@ -10,6 +10,7 @@ import {
   QUIZ_COUNTS,
   QUIZ_DIFFICULTIES,
   QUIZ_WINNER_POINTS,
+  assembleTriviaSet,
   decodeEntities,
   gradeAnswer,
   pickQuizWinners,
@@ -128,22 +129,29 @@ export async function createQuiz(groupId: string, formData: FormData) {
   // Fetch and freeze. Anything short of the full set — API down, a
   // combo with too few questions — fails creation outright; a silently
   // short quiz would grade everyone's run against different totals.
-  const url = new URL("https://opentdb.com/api.php");
-  url.searchParams.set("amount", String(count));
-  url.searchParams.set("type", "multiple");
-  if (category.id != null) url.searchParams.set("category", String(category.id));
-  url.searchParams.set("difficulty", difficulty);
-
-  let results: any[] = [];
-  try {
-    const res = await fetch(url, { cache: "no-store" });
-    if (!res.ok) throw new Error(`status ${res.status}`);
-    const json: any = await res.json();
-    if (json?.response_code !== 0 || !Array.isArray(json?.results)) {
-      throw new Error("no results");
+  // What a fetch looks like per difficulty (single page for Easy/Hard;
+  // Medium is a half-Easy/half-Medium blend because the bank's own
+  // Medium runs hard) lives in assembleTriviaSet — this is just the
+  // real OpenTDB page behind it, null when the service didn't answer.
+  const fetchSet = async (difficulty: string, amount: number): Promise<any[] | null> => {
+    const url = new URL("https://opentdb.com/api.php");
+    url.searchParams.set("amount", String(amount));
+    url.searchParams.set("type", "multiple");
+    if (category.id != null) url.searchParams.set("category", String(category.id));
+    url.searchParams.set("difficulty", difficulty);
+    try {
+      const res = await fetch(url, { cache: "no-store" });
+      if (!res.ok) return null;
+      const json: any = await res.json();
+      if (json?.response_code !== 0 || !Array.isArray(json?.results)) return null;
+      return json.results;
+    } catch {
+      return null;
     }
-    results = json.results;
-  } catch {
+  };
+
+  const { results, unavailable } = await assembleTriviaSet({ count, difficulty, fetchSet });
+  if (unavailable) {
     throw new Error("The trivia service didn't answer — try again in a minute.");
   }
   if (results.length !== count) {
