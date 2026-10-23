@@ -10,7 +10,8 @@ import NewMenu from "@/components/new-menu";
 // Groups tab: every group the user belongs to, expandable in place —
 // lifetime board top 3 and what's running, without leaving the list.
 // The lifetime-board math is the group page's own (settled bets +
-// roster-pool champs + pick'em co-winners), run for all groups at once.
+// roster-pool champs + pick'em co-winners + quiz winners), run for all
+// groups at once.
 
 const ET = "America/New_York";
 
@@ -80,6 +81,13 @@ export default async function GroupsPage() {
       .in("pickem_pools.group_id", groupIds);
     for (const w of (pickemWinners ?? []) as any[]) {
       add((w.pickem_pools as any)?.group_id, w.user_id, w.points);
+    }
+    const { data: quizWinners } = await supabase
+      .from("quiz_winners")
+      .select("user_id, points, quizzes!inner(group_id)")
+      .in("quizzes.group_id", groupIds);
+    for (const w of (quizWinners ?? []) as any[]) {
+      add((w.quizzes as any)?.group_id, w.user_id, w.points);
     }
   }
 
