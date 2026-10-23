@@ -87,7 +87,8 @@ export default function PickemGameCard({
   game: PickemCardGame;
   myPick: string | null;
   canPick: boolean;
-  // Everyone's picks per team, shown only after lock (null = keep secret).
+  // Everyone's picks per team, shown once the game has kicked off or the
+  // pool has locked (null = keep secret).
   reveal: { team: string; names: string[] }[] | null;
   // Frozen against-the-spread line (home team's number) for ATS pools;
   // null/omitted = straight-up pool, no line shown.
