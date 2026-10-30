@@ -1,9 +1,10 @@
 import type { ReactNode } from "react";
 
 // The curated avatar set: simple animal marks in the site's black &
-// cream theme. Each animal is drawn as a right half (mirrored by the
-// Avatar component) plus center details. INK doubles as the tile color
-// and the negative-space color, so eyes/noses always match the tile.
+// cream theme, drawn angular — crest, not cartoon. Each animal is a
+// right half (mirrored by the Avatar component) plus center details.
+// INK doubles as the tile color and the negative-space color, so
+// eyes/noses always match the tile.
 export const INK = "#141414";
 export const CREAM = "#f7f4ef";
 
@@ -27,51 +28,51 @@ export const ANIMAL_LIST: { key: AnimalKey; label: string }[] = [
 
 export const ANIMAL_ART: Record<AnimalKey, { half: ReactNode; center: ReactNode }> = {
   wolf: {
-    half: (<><path d="M24 8 L27 8.6 L30.5 2.6 L34 9.5 L36.5 15 L37 23 L34.5 31 L30 37.5 L24 40 Z"/></>),
-    center: (<><path fill={INK} d="M20.8 32.5 Q24 31.2 27.2 32.5 L25.8 36 Q24 36.9 22.2 36 Z"/><circle fill={INK} cx="30" cy="20" r="1.9"/><circle fill={INK} cx="18" cy="20" r="1.9"/></>),
+    half: (<><path d="M24 8 L28.5 9 L33.5 2.5 L36 10.5 L38.5 17 L36.8 26.5 L32 34.5 L24 41 Z"/><polygon fill={INK} points="29.8,8.6 32.6,4.8 33.2,10.2"/></>),
+    center: (<><polygon fill={INK} points="21.8,35.5 26.2,35.5 24,38.8"/><polygon fill={INK} points="28.5,21.0 32.3,19.8 32.3,21.400000000000002 28.5,22.2"/><polygon fill={INK} points="15.700000000000001,21.0 19.5,19.8 19.5,21.400000000000002 15.700000000000001,22.2"/></>),
   },
   fox: {
-    half: (<><path d="M24 9 L26.5 9.2 L34 1.2 L37.5 12 L39 19.5 L35.5 26.5 L36.5 28.2 L31 34.5 L24 40.5 Z"/></>),
-    center: (<><path fill={INK} d="M21.5 34 Q24 33 26.5 34 L25.4 37.2 Q24 37.8 22.6 37.2 Z"/><circle fill={INK} cx="30.5" cy="20.5" r="1.7"/><circle fill={INK} cx="17.5" cy="20.5" r="1.7"/></>),
+    half: (<><path d="M24 9 L27 9.5 L34 1.5 L37 12 L39 19 L35.5 26 L37 28.5 L31.5 34.5 L24 41.5 Z"/><polygon fill={INK} points="29.5,9.2 33,4.5 33.8,11.5"/></>),
+    center: (<><polygon fill={INK} points="22.2,36.5 25.8,36.5 24,39.2"/><polygon fill={INK} points="28.5,21.2 32.3,20.0 32.3,21.6 28.5,22.4"/><polygon fill={INK} points="15.700000000000001,21.2 19.5,20.0 19.5,21.6 15.700000000000001,22.4"/></>),
   },
   bear: {
-    half: (<><circle cx="33" cy="10" r="4.6"/><path d="M24 7 C31 7 36.5 12 37.5 19 C38.3 25 36 32 32 36.5 C29 39.8 26 41 24 41 Z"/></>),
-    center: (<><circle fill={INK} cx="33" cy="10" r="2"/><circle fill={INK} cx="15" cy="10" r="2"/><path fill={INK} d="M20.5 30.5 Q24 29.2 27.5 30.5 Q27 34 24 34.8 Q21 34 20.5 30.5 Z"/><circle fill={INK} cx="29.5" cy="19" r="1.8"/><circle fill={INK} cx="18.5" cy="19" r="1.8"/></>),
+    half: (<><polygon points="37.7,11.0 34.5,14.6 29.8,13.6 28.3,9.0 31.5,5.4 36.2,6.4"/><path d="M24 8 L32 9 L37 15 L37.5 24 L34 33 L29 38.5 L24 40 Z"/></>),
+    center: (<><polygon fill={INK} points="19.8,29.5 28.2,29.5 27.2,33.8 20.8,33.8"/><polygon points="21.9,30.3 26.1,30.3 24,32.8"/><polygon fill={INK} points="27.700000000000003,19.9 31.5,18.7 31.5,20.3 27.700000000000003,21.099999999999998"/><polygon fill={INK} points="16.5,19.9 20.299999999999997,18.7 20.299999999999997,20.3 16.5,21.099999999999998"/></>),
   },
   owl: {
-    half: (<><path d="M24 5 L28 7 L31 3.5 L33.5 8 C37 12 38 17 37.5 23 C37 32 31 40 24 41 Z"/></>),
-    center: (<><circle fill={INK} cx="30" cy="19" r="3.4"/><circle fill={INK} cx="18" cy="19" r="3.4"/><circle cx="30" cy="19" r="1.5"/><circle cx="18" cy="19" r="1.5"/><path fill={INK} d="M22.6 24.5 L25.4 24.5 L24 27.6 Z"/></>),
+    half: (<><path d="M24 6 L29 8 L32.5 4 L35 9.5 L37.5 16 L36.5 26 L31 36 L24 40 Z"/></>),
+    center: (<><polygon fill={INK} points="24,13 31.5,15.5 30.5,25.5 24,34 17.5,25.5 16.5,15.5"/><polygon fill="#f7f4ef" points="20.6,17.8 22.900000000000002,20.1 20.6,22.400000000000002 18.3,20.1"/><polygon fill="#f7f4ef" points="27.4,17.8 29.7,20.1 27.4,22.400000000000002 25.099999999999998,20.1"/><polygon points="22.8,24.2 25.2,24.2 24,27"/></>),
   },
   lion: {
     half: (<></>),
-    center: (<><circle cx="24" cy="22" r="17.5"/><circle cx="24" cy="5.5" r="4.6"/><circle cx="35.7" cy="10.3" r="4.6"/><circle cx="40.5" cy="22" r="4.6"/><circle cx="35.7" cy="33.7" r="4.6"/><circle cx="24" cy="38.5" r="4.6"/><circle cx="12.3" cy="33.7" r="4.6"/><circle cx="7.5" cy="22" r="4.6"/><circle cx="12.3" cy="10.3" r="4.6"/><circle cx="24" cy="23" r="11"/><circle fill={INK} cx="20.3" cy="21" r="1.35"/><circle fill={INK} cx="27.7" cy="21" r="1.35"/><path fill={INK} d="M21.8 26.8 Q24 25.8 26.2 26.8 L25.1 29.4 Q24 30 22.9 29.4 Z"/></>),
+    center: (<><polygon points="24.0,3.8 26.8,7.7 31.0,5.2 32.1,9.9 36.9,9.1 36.1,13.9 40.8,15.0 38.3,19.2 42.2,22.0 38.3,24.8 40.8,29.0 36.1,30.1 36.9,34.9 32.1,34.1 31.0,38.8 26.8,36.3 24.0,40.2 21.2,36.3 17.0,38.8 15.9,34.1 11.1,34.9 11.9,30.1 7.2,29.0 9.7,24.8 5.8,22.0 9.7,19.2 7.2,15.0 11.9,13.9 11.1,9.1 15.9,9.9 17.0,5.2 21.2,7.7"/><polygon points="34.0,27.1 28.1,33.0 19.9,33.0 14.0,27.1 14.0,18.9 19.9,13.0 28.1,13.0 34.0,18.9"/><polygon fill={INK} points="26.0,21.4 29.799999999999997,20.2 29.799999999999997,21.8 26.0,22.599999999999998"/><polygon fill={INK} points="18.200000000000003,21.4 22.0,20.2 22.0,21.8 18.200000000000003,22.599999999999998"/><polygon fill={INK} points="21.9,26.8 26.1,26.8 24,29.8"/></>),
   },
   stag: {
-    half: (<><path d="M28 14 C31.5 10 33 5.5 32.5 1.8 M30.3 10.5 C33.5 9.5 35.8 6.8 36.5 3.5 M29 12.8 C31 11 31.8 8.5 31.6 6" fill="none" stroke="currentColor" strokeWidth="3.1" strokeLinecap="round"/><path d="M25.5 14.5 L31 10.8 L36 12.2 L33.5 16.8 L28 16.5 Z"/><path d="M24 12.5 C28 12.5 31 14.5 32 18.5 L31 26.5 L28.5 34 L24 37 Z"/></>),
-    center: (<><path fill={INK} d="M21.8 31.3 Q24 30.3 26.2 31.3 L25.2 33.8 Q24 34.4 22.8 33.8 Z"/><circle fill={INK} cx="28.3" cy="21" r="1.6"/><circle fill={INK} cx="19.7" cy="21" r="1.6"/></>),
+    half: (<><path d="M28.5 13.5 L34.5 6.5 L34 1.5 M31.5 10.5 L38 7.5 L39 2.5 M30 12.2 L31.2 5.8" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="square"/><path d="M26 15 L33 11.5 L35.5 15 L31 17.5 Z"/><path d="M24 13 L30 12 L33.5 16 L32.5 25 L29.5 34 L24 38 Z"/></>),
+    center: (<><polygon fill={INK} points="22,32.5 26,32.5 24,35.5"/><polygon fill={INK} points="27.900000000000002,21.0 31.3,19.8 31.3,21.400000000000002 27.900000000000002,22.2"/><polygon fill={INK} points="16.7,21.0 20.099999999999998,19.8 20.099999999999998,21.400000000000002 16.7,22.2"/></>),
   },
   ram: {
-    half: (<><path d="M32.5 13.5 C38.5 11.5 41.5 17 39 22 C37 26 32.8 25.8 31.8 22.3 C31 19.6 33 17.3 35.3 18" fill="none" stroke="currentColor" strokeWidth="3.2" strokeLinecap="round"/><path d="M24 10 C29 10 32.5 13 33 18.5 L32 28 L29 35 L24 37.5 Z"/></>),
-    center: (<><circle fill={INK} cx="28.3" cy="20" r="1.6"/><circle fill={INK} cx="19.7" cy="20" r="1.6"/><circle fill={INK} cx="22.6" cy="33.2" r="0.95"/><circle fill={INK} cx="25.4" cy="33.2" r="0.95"/></>),
+    half: (<><path d="M32 14 L38.5 11.5 L41.5 16.5 L39.5 23 L34.5 24.5 L31.8 20.5 L33.5 16.8 L36.8 17.2" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="square" strokeLinejoin="miter"/><path d="M24 10.5 L30 10.5 L33 15 L32.5 24 L30 33 L24 36.5 Z"/></>),
+    center: (<><polygon fill={INK} points="22.4,31.8 25.6,31.8 24,34"/><polygon fill={INK} points="26.900000000000002,20.2 30.3,19.0 30.3,20.6 26.900000000000002,21.4"/><polygon fill={INK} points="17.7,20.2 21.099999999999998,19.0 21.099999999999998,20.6 17.7,21.4"/></>),
   },
   bull: {
-    half: (<><path d="M30 13.5 C36 13 41.5 9.5 44 4.5 C39 6 33.5 7.5 29.8 8.2 Z"/><path d="M30.5 15 Q37.5 13.5 39.5 17.5 Q35.5 20.5 30.8 18.5 Z"/><path d="M24 9.5 C28.5 9.5 31.5 12 32.5 16.5 L32 26 L29.5 33.5 L24 36 Z"/></>),
-    center: (<><path fill={INK} d="M19.2 29.5 Q24 28 28.8 29.5 L28.2 34 Q24 35.6 19.8 34 Z"/><circle cx="21.4" cy="31.8" r="1.05"/><circle cx="26.6" cy="31.8" r="1.05"/><circle fill={INK} cx="28.8" cy="19.5" r="1.6"/><circle fill={INK} cx="19.2" cy="19.5" r="1.6"/></>),
+    half: (<><path d="M30 13 L37 11.5 L44 5.5 L43.8 10.5 L38 15.5 L30.5 16 Z"/><path d="M30.5 17.5 L37.5 16.2 L38.8 19.5 L32 21.5 Z"/><path d="M24 9.5 L31 11 L33.5 17 L32.5 26.5 L29.5 34.5 L24 36.5 Z"/></>),
+    center: (<><polygon fill={INK} points="19.5,29.5 28.5,29.5 27.8,34 20.2,34"/><polygon fill="#f7f4ef" points="22.3,30.6 23.5,31.8 22.3,33.0 21.1,31.8"/><polygon fill="#f7f4ef" points="25.7,30.6 26.9,31.8 25.7,33.0 24.5,31.8"/><polygon fill={INK} points="28.1,19.599999999999998 31.5,18.4 31.5,20.0 28.1,20.799999999999997"/><polygon fill={INK} points="16.5,19.599999999999998 19.9,18.4 19.9,20.0 16.5,20.799999999999997"/></>),
   },
   horse: {
-    half: (<><path d="M24 11.5 L26.6 4 L29.8 10.8 C32.4 13.2 33.4 17 32.8 22 L30.8 31.5 L28.6 39 L24 42 Z"/></>),
-    center: (<><circle fill={INK} cx="28.3" cy="18.5" r="1.7"/><circle fill={INK} cx="19.7" cy="18.5" r="1.7"/><circle fill={INK} cx="25.8" cy="36.5" r="1.2"/><circle fill={INK} cx="22.2" cy="36.5" r="1.2"/></>),
+    half: (<><path d="M24 12 L27 4 L30.5 11 L33 15 L33.5 22 L31.5 31 L29 39 L24 42 Z"/></>),
+    center: (<><polygon fill={INK} points="26.6,19.4 30.4,18.2 30.4,19.8 26.6,20.599999999999998"/><polygon fill={INK} points="17.6,19.4 21.4,18.2 21.4,19.8 17.6,20.599999999999998"/><polygon fill={INK} points="26.3,34.8 27.5,36 26.3,37.2 25.1,36"/><polygon fill={INK} points="21.7,34.8 22.9,36 21.7,37.2 20.5,36"/></>),
   },
   boar: {
-    half: (<><path d="M24 8.5 L28 5.2 L30.8 10 C34.5 12 36.3 16 36.8 21 C37.2 27 34.8 33 30.2 36.5 L24 38.5 Z"/></>),
-    center: (<><ellipse fill={INK} cx="24" cy="30" rx="5.6" ry="4.3"/><ellipse cx="22" cy="30" rx="0.95" ry="1.3"/><ellipse cx="26" cy="30" rx="0.95" ry="1.3"/><path d="M18.2 35.2 L19.7 29.2 L21.6 34.4 Z"/><path d="M29.8 35.2 L28.3 29.2 L26.4 34.4 Z"/><circle fill={INK} cx="29" cy="19" r="1.7"/><circle fill={INK} cx="19" cy="19" r="1.7"/></>),
+    half: (<><path d="M24 9 L28.5 5 L31.5 10.5 L36 14 L37.5 21 L36 29 L31.5 36 L24 38.5 Z"/></>),
+    center: (<><polygon fill={INK} points="19.8,28.5 28.2,28.5 27.4,33.5 20.6,33.5"/><polygon fill="#f7f4ef" points="22.2,29.7 23.3,31 22.2,32.3 21.099999999999998,31"/><polygon fill="#f7f4ef" points="25.8,29.7 26.900000000000002,31 25.8,32.3 24.7,31"/><polygon points="18.3,34.2 19.7,28.6 21.2,33.8"/><polygon points="29.7,34.2 28.3,28.6 26.8,33.8"/><polygon fill={INK} points="27.5,19.9 31.299999999999997,18.7 31.299999999999997,20.3 27.5,21.099999999999998"/><polygon fill={INK} points="16.700000000000003,19.9 20.5,18.7 20.5,20.3 16.700000000000003,21.099999999999998"/></>),
   },
   cat: {
-    half: (<><path d="M24 10.5 L27 10.5 L31.5 3.8 L34.2 11 C36.7 14 37.6 18 37.2 22.5 C36.8 29 33.2 35 28.6 37.4 L24 38.5 Z"/></>),
-    center: (<><circle fill={INK} cx="29.5" cy="20" r="1.6"/><circle fill={INK} cx="18.5" cy="20" r="1.6"/><path fill={INK} d="M22.9 28.3 L25.1 28.3 L24 30.2 Z"/><path d="M29.5 26.5 L36.5 24.8 M29.8 28.8 L36.8 28.8 M18.5 26.5 L11.5 24.8 M18.2 28.8 L11.2 28.8" fill="none" stroke={INK} strokeWidth="0.9" strokeLinecap="round"/></>),
+    half: (<><path d="M24 11 L27.5 11 L32 4 L34.5 11.5 L37 15 L37.5 22 L35 30 L30 36.5 L24 38.5 Z"/></>),
+    center: (<><polygon fill={INK} points="29.3,17.9 30.8,20 29.3,22.1 27.8,20"/><polygon fill={INK} points="18.7,17.9 20.2,20 18.7,22.1 17.2,20"/><polygon fill={INK} points="22.9,28.3 25.1,28.3 24,30.2"/><path d="M29.5 26.5 L36.5 24.8 M29.8 28.8 L36.8 28.8 M18.5 26.5 L11.5 24.8 M18.2 28.8 L11.2 28.8" fill="none" stroke={INK} strokeWidth="0.9" strokeLinecap="round"/></>),
   },
   dog: {
-    half: (<><path d="M29.5 8.5 C35.5 7.5 38.8 12.5 37.8 19.5 C37 25 33.8 27 31.3 24.8 C29.8 23.4 29.3 20 29.4 15 Z"/><path d="M24 7 C29.5 7 33 10.5 34 16 L33 26 L29.5 34 L24 36.5 Z"/></>),
-    center: (<><ellipse fill={INK} cx="24" cy="29.3" rx="5.1" ry="3.9"/><path d="M21.4 26.6 Q24 25.6 26.6 26.6 L25.3 29.2 Q24 29.8 22.7 29.2 Z"/><circle fill={INK} cx="28.8" cy="17.5" r="1.7"/><circle fill={INK} cx="19.2" cy="17.5" r="1.7"/></>),
+    half: (<><path d="M29.5 9 L36 8 L38.5 14 L37 22 L33 25 L30 20 Z"/><path d="M24 8 L31 9 L34.5 14 L34 27 L30 35 L24 37.5 Z"/></>),
+    center: (<><polygon fill={INK} points="19.8,28 28.2,28 27.2,33.2 20.8,33.2"/><polygon points="22,25.6 26,25.6 24,28.4"/><polygon fill={INK} points="26.900000000000002,18.2 30.7,17.0 30.7,18.6 26.900000000000002,19.4"/><polygon fill={INK} points="17.3,18.2 21.099999999999998,17.0 21.099999999999998,18.6 17.3,19.4"/></>),
   },
 };
