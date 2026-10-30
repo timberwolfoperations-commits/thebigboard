@@ -13,6 +13,8 @@ import {
   TRIVIA_RATE_LIMIT_MESSAGE,
   TRIVIA_UNAVAILABLE_MESSAGE,
   assembleTriviaSet,
+  bankCategoryFor,
+  createBankPuller,
   createOpenTdbPuller,
   decodeEntities,
   gradeAnswer,
@@ -139,7 +141,27 @@ export async function createQuiz(groupId: string, formData: FormData) {
   // old burst of small fetches starved live) lives in assembleTriviaSet
   // in lib/quiz.ts; this just hands it the real puller.
   const pull = createOpenTdbPuller({ fetchImpl: fetch, categoryId: category.id });
-  const { results, failure } = await assembleTriviaSet({ count, difficulty, pull });
+  let { results, failure } = await assembleTriviaSet({ count, difficulty, pull });
+  if (failure) {
+    // Built-in bank fallback: whenever the live supply can't build the
+    // set — bank down (2026-10-29: OpenTDB stopped answering entirely
+    // and creation died), rate-limited past the retry, or too thin —
+    // assemble the same set from the 100 hand-written questions that
+    // ship with the app (lib/trivia-bank.ts) before failing the create.
+    // The bank holds easy/medium only, so a Hard quiz quietly builds
+    // from the Medium blend rather than not building at all. If the
+    // bank can't fill it either, the ORIGINAL failure is what surfaces.
+    const bankPull = createBankPuller({ bank: bankCategoryFor(category.label) });
+    const fb = await assembleTriviaSet({
+      count,
+      difficulty: difficulty === "hard" ? "medium" : difficulty,
+      pull: bankPull,
+    });
+    if (!fb.failure && fb.results.length === count) {
+      results = fb.results;
+      failure = null;
+    }
+  }
   if (failure === "rate_limited") throw new Error(TRIVIA_RATE_LIMIT_MESSAGE);
   if (failure === "unavailable") throw new Error(TRIVIA_UNAVAILABLE_MESSAGE);
   if (failure === "short" || results.length !== count) {

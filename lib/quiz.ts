@@ -3,6 +3,8 @@
 // entity decoding and choice shuffling, so the rules can be verified
 // without a database.
 
+import { TRIVIA_BANK, type BankCategory } from "@/lib/trivia-bank";
+
 // 15 seconds a question, hard — the whole point is nobody can look the
 // answer up. The server allows 2s of grace for network latency before
 // it calls a timeout; per-answer time is capped at the limit so a
@@ -161,6 +163,56 @@ export function createOpenTdbPuller(args: {
     } catch {
       return { kind: "unavailable" };
     }
+  };
+}
+
+// ------------------------------------------------------------ built-in bank
+// The fallback puller: serves the hand-written bank that ships with the
+// app (lib/trivia-bank.ts) through the same TriviaPuller interface, so
+// assembleTriviaSet's selection (dedupe, difficulty buckets, the Medium
+// blend) works on it unchanged. It never fails — the bank is local —
+// which is the entire point: createQuiz reaches for it whenever the
+// live OpenTDB supply fails for any reason, after OpenTDB went silent
+// mid-evening on 2026-10-29 and quiz creation died with it.
+
+// Which bank section serves a quiz category. The entertainment trio
+// maps to pop culture; the categories the bank doesn't cover (Mixed,
+// General Knowledge, Science & Nature, Video Games) draw on the whole
+// bank — a general set beats a dead create form.
+export function bankCategoryFor(categoryLabel: string): BankCategory | null {
+  switch (categoryLabel) {
+    case "Sports":
+      return "sports";
+    case "History":
+      return "history";
+    case "Geography":
+      return "geography";
+    case "Movies":
+    case "Television":
+    case "Music":
+      return "pop";
+    default:
+      return null;
+  }
+}
+
+export function createBankPuller(args: {
+  bank: BankCategory | null;
+}): TriviaPuller {
+  return async ({ difficulty }) => {
+    const rows = TRIVIA_BANK.filter(
+      (q) =>
+        (args.bank == null || q.bank === args.bank) &&
+        (difficulty == null || q.difficulty === difficulty)
+    ).map((q) => ({
+      type: "multiple",
+      category: q.bank,
+      difficulty: q.difficulty,
+      question: q.question,
+      correct_answer: q.correct_answer,
+      incorrect_answers: [...q.incorrect_answers],
+    }));
+    return { kind: "ok", results: rows };
   };
 }
 
