@@ -1,4 +1,7 @@
-import { ANIMAL_ART, CREAM, INK, type AnimalKey } from "./avatar-art";
+"use client";
+
+import { ANIMAL_ART, CREAM, INK } from "./avatar-art";
+import type { AnimalKey } from "@/lib/avatar-keys";
 
 // A player's mark next to their name: the animal they picked on their
 // profile, or their initials on the same black tile when they haven't

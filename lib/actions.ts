@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { GRACE_DAYS, AUTO_SETTLE_DAYS } from "@/lib/config";
-import { ANIMAL_KEYS } from "@/components/avatar-art";
+import { ANIMAL_KEYS } from "@/lib/avatar-keys";
 
 // ------------------------------------------------------------------ helpers
 
@@ -817,7 +817,7 @@ export async function updateDisplayName(formData: FormData) {
 }
 
 // Pick a profile avatar from the curated animal set (empty = initials).
-// The key list lives with the artwork in components/avatar-art.tsx.
+// The key list lives in lib/avatar-keys.ts (pure data, no JSX).
 export async function updateAvatar(formData: FormData) {
   const { supabase, user } = await getUser();
   const raw = String(formData.get("animal") ?? "").trim();

@@ -5,7 +5,7 @@ import { updateDisplayName, updateAvatar } from "@/lib/actions";
 import { Card, SectionTitle, SubmitButton } from "@/components/ui";
 import { SignOutButton } from "@/components/AuthButtons";
 import { Avatar } from "@/components/Avatar";
-import { ANIMAL_LIST } from "@/components/avatar-art";
+import { ANIMAL_LIST } from "@/lib/avatar-keys";
 
 export default async function ProfilePage() {
   const supabase = await createClient();
