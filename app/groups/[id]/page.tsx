@@ -7,6 +7,8 @@ import { GRACE_DAYS } from "@/lib/config";
 import { Card, SectionTitle, StatusBadge } from "@/components/ui";
 import CopyButton from "@/components/copy-button";
 import NewMenu from "@/components/new-menu";
+import { getAvatarMap } from "@/lib/avatars";
+import { Avatar } from "@/components/Avatar";
 
 function daysOverdue(settleDate: string) {
   const ms = Date.now() - new Date(settleDate + "T23:59:59").getTime();
@@ -143,6 +145,7 @@ export default async function GroupPage({ params }: { params: Promise<{ id: stri
   const leaderboard = memberList
     .map((m) => ({ ...m, ...(pointsByUser.get(m.user_id) ?? { points: 0, wins: 0 }) }))
     .sort((a, b) => b.points - a.points);
+  const avatars = await getAvatarMap(supabase, memberList.map((m) => m.user_id));
 
   // ---- survivor pools -----------------------------------------------------
   const { data: survivorPools } = await supabase
@@ -461,8 +464,9 @@ export default async function GroupPage({ params }: { params: Promise<{ id: stri
               key={m.user_id}
               className={`flex items-center justify-between px-5 py-3 ${i > 0 ? "border-t border-slate-100" : ""} ${m.user_id === user.id ? "bg-slate-50" : ""}`}
             >
-              <p className="flex items-baseline gap-2.5">
+              <p className="flex items-center gap-2.5">
                 <span className="font-display text-lg font-semibold tabular-nums text-slate-400">{i + 1}</span>
+                <Avatar name={m.name} animal={avatars.get(m.user_id)} size={28} />
                 <span className="text-sm font-medium">
                   {m.name}
                   {m.user_id === user.id && <span className="ml-1 text-xs text-slate-400">(you)</span>}

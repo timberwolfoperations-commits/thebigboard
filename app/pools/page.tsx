@@ -9,6 +9,8 @@ import { Card } from "@/components/ui";
 import ExpandableCard from "@/components/expandable-card";
 import PoolsNewMenu from "@/components/pools-new-menu";
 import OpenPoolCard from "@/components/open-pool-card";
+import { getAvatarMap } from "@/lib/avatars";
+import { Avatar } from "@/components/Avatar";
 
 // Pools tab: every pool the user is in, across all their groups — the
 // cross-group score-checker. Cards expand in place to a glanceable
@@ -40,9 +42,11 @@ function lockLabel(iso: string) {
 function StandingRows({
   rows,
   userId,
+  avatars,
 }: {
   rows: { user_id: string; display_name: string; points: number }[];
   userId: string;
+  avatars: Map<string, string | null>;
 }) {
   if (rows.length === 0) {
     return <p className="text-sm text-slate-500">No picks in yet.</p>;
@@ -52,11 +56,14 @@ function StandingRows({
       {rows.map((r, i) => (
         <div
           key={r.user_id}
-          className={`flex items-baseline py-1 text-sm ${
+          className={`flex items-center py-1 text-sm ${
             r.user_id === userId ? "font-semibold text-orange-700" : ""
           }`}
         >
           <span className="w-6 shrink-0 text-xs text-slate-400">{i + 1}</span>
+          <span className="mr-2 shrink-0">
+            <Avatar name={r.display_name} animal={avatars.get(r.user_id)} size={22} />
+          </span>
           <span className="min-w-0 truncate">
             {r.display_name}
             {r.user_id === userId && <span className="ml-1 text-xs font-normal text-slate-400">(you)</span>}
@@ -164,6 +171,11 @@ export default async function PoolsPage() {
   );
 
   // ---- survivor pools ---------------------------------------------------------
+  const avatars = await getAvatarMap(
+    supabase,
+    [...boards.values()].flatMap((rows) => rows.map((r) => r.user_id))
+  );
+
   const { data: survivorPools } = groupIds.length
     ? await supabase
         .from("survivor_pools")
@@ -263,7 +275,7 @@ export default async function PoolsPage() {
         >
           <p className="text-[11px] font-bold uppercase tracking-[0.11em] text-slate-400">Standings</p>
           <div className="mt-1">
-            <StandingRows rows={board.slice(0, 3)} userId={userId} />
+            <StandingRows rows={board.slice(0, 3)} userId={userId} avatars={avatars} />
           </div>
           {myIdx >= 3 && (
             <p className="mt-1 text-sm text-slate-600">

@@ -3,6 +3,8 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { savePickemPick, savePropPick, setPickemLines, awardPickemWinner, scratchPickemPool, getRecentPropPlayers, getCopyableLinePools } from "@/lib/pickem-actions";
 import { computePickemLeaderboard } from "@/lib/pickem-scoring";
+import { getAvatarMap } from "@/lib/avatars";
+import { Avatar } from "@/components/Avatar";
 import { PROP_STAT_LABELS } from "@/lib/prop-stats";
 import { STANDARD_HOW_IT_WORKS, OVER_UNDER_HOW_IT_WORKS, ATS_HOW_IT_WORKS } from "@/lib/pickem-copy";
 import { Card, SectionTitle, SubmitButton } from "@/components/ui";
@@ -173,6 +175,7 @@ export default async function PickemPoolPage({
   );
 
   const board = await computePickemLeaderboard(supabase, poolId);
+  const avatars = await getAvatarMap(supabase, board.map((r) => r.user_id));
 
   const { data: winnerRows } = await supabase
     .from("pickem_pool_winners")
@@ -265,10 +268,13 @@ export default async function PickemPoolPage({
             {board.map((r, i) => (
               <Card key={r.user_id} className={r.user_id === user.id ? "border-slate-400" : ""}>
                 <div className="flex items-center justify-between gap-2">
-                  <p className="font-semibold">
-                    <span className="mr-2 font-display text-lg tabular-nums text-slate-400">{i + 1}</span>
-                    {r.display_name}
-                    {r.user_id === user.id && <span className="ml-1 text-xs text-slate-400">(you)</span>}
+                  <p className="flex items-center gap-2.5 font-semibold">
+                    <span className="font-display text-lg tabular-nums text-slate-400">{i + 1}</span>
+                    <Avatar name={r.display_name} animal={avatars.get(r.user_id)} size={30} />
+                    <span>
+                      {r.display_name}
+                      {r.user_id === user.id && <span className="ml-1 text-xs font-normal text-slate-400">(you)</span>}
+                    </span>
                   </p>
                   <p className="font-display text-3xl font-bold tabular-nums leading-none">
                     {r.points}

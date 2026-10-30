@@ -1,9 +1,11 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { updateDisplayName } from "@/lib/actions";
+import { updateDisplayName, updateAvatar } from "@/lib/actions";
 import { Card, SectionTitle, SubmitButton } from "@/components/ui";
 import { SignOutButton } from "@/components/AuthButtons";
+import { Avatar } from "@/components/Avatar";
+import { ANIMAL_LIST } from "@/components/avatar-art";
 
 export default async function ProfilePage() {
   const supabase = await createClient();
@@ -17,6 +19,17 @@ export default async function ProfilePage() {
     .select("display_name")
     .eq("id", user.id)
     .maybeSingle();
+
+  // Avatar lives in its own query so a not-yet-run migration 026 leaves the
+  // rest of the profile page working (currentAnimal just stays null).
+  const { data: avatarRow } = await supabase
+    .from("profiles")
+    .select("avatar_animal")
+    .eq("id", user.id)
+    .maybeSingle();
+  const currentAnimal = ((avatarRow as any)?.avatar_animal ?? null) as
+    | string
+    | null;
 
   // Scoring is a commish tool — only surface it to group admins (same rule
   // as the layout/header menu). It lives here now that the mobile header
@@ -53,6 +66,46 @@ export default async function ProfilePage() {
             </p>
           </div>
           <SubmitButton>Save name</SubmitButton>
+        </form>
+      </Card>
+      <Card>
+        <form action={updateAvatar}>
+          <p className="text-sm font-semibold text-slate-700">Your mark</p>
+          <p className="mt-1 text-xs text-slate-400">
+            Sits next to your name on leaderboards. Black &amp; cream, like the
+            wordmark. Tap one to set it — saves right away.
+          </p>
+          <div className="mt-4 grid grid-cols-4 gap-2.5">
+            <button
+              type="submit"
+              name="animal"
+              value=""
+              className={`flex flex-col items-center gap-1.5 rounded-xl border px-1 py-3 text-xs font-medium ${
+                currentAnimal === null
+                  ? "border-slate-900 text-slate-900 ring-1 ring-slate-900"
+                  : "border-slate-200 text-slate-500 hover:border-slate-400"
+              }`}
+            >
+              <Avatar name={profile?.display_name ?? "You"} animal={null} size={44} />
+              Initials
+            </button>
+            {ANIMAL_LIST.map((a) => (
+              <button
+                key={a.key}
+                type="submit"
+                name="animal"
+                value={a.key}
+                className={`flex flex-col items-center gap-1.5 rounded-xl border px-1 py-3 text-xs font-medium ${
+                  currentAnimal === a.key
+                    ? "border-slate-900 text-slate-900 ring-1 ring-slate-900"
+                    : "border-slate-200 text-slate-500 hover:border-slate-400"
+                }`}
+              >
+                <Avatar name={a.label} animal={a.key} size={44} />
+                {a.label}
+              </button>
+            ))}
+          </div>
         </form>
       </Card>
       {isAdmin && (

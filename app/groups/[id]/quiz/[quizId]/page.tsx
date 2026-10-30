@@ -2,6 +2,8 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { awardQuizWinner } from "@/lib/quiz-actions";
+import { getAvatarMap } from "@/lib/avatars";
+import { Avatar } from "@/components/Avatar";
 import {
   QUIZ_WINNER_POINTS,
   formatTotalTime,
@@ -49,6 +51,7 @@ export default async function QuizPage({
     started_at: r.started_at,
     finished_at: r.finished_at,
   }));
+  const avatars = await getAvatarMap(supabase, runs.map((r) => r.user_id));
 
   const { data: winnerRows } = await supabase
     .from("quiz_winners")
@@ -162,12 +165,13 @@ export default async function QuizPage({
                   key={r.user_id}
                   className={`flex items-center justify-between px-5 py-3 ${i > 0 ? "border-t border-slate-100" : ""} ${r.user_id === user.id ? "bg-slate-50" : ""}`}
                 >
-                  <p className="flex items-baseline gap-2.5">
+                  <p className="flex items-center gap-2.5">
                     {rankedRow && (
                       <span className="font-display text-lg font-semibold tabular-nums text-slate-400">
                         {ranked.indexOf(r) + 1}
                       </span>
                     )}
+                    <Avatar name={r.display_name} animal={avatars.get(r.user_id)} size={28} />
                     <span className="text-sm font-medium">
                       {r.display_name}
                       {r.user_id === user.id && <span className="ml-1 text-xs text-slate-400">(you)</span>}
