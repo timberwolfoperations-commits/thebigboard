@@ -6,6 +6,8 @@ import { Card } from "@/components/ui";
 import ExpandableCard from "@/components/expandable-card";
 import NewGroupMenu from "@/components/new-group-menu";
 import NewMenu from "@/components/new-menu";
+import { getAvatarMap } from "@/lib/avatars";
+import { Avatar } from "@/components/Avatar";
 
 // Groups tab: every group the user belongs to, expandable in place —
 // lifetime board top 3 and what's running, without leaving the list.
@@ -92,6 +94,11 @@ export default async function GroupsPage() {
   }
 
   // ---- pools per group, with status ------------------------------------------
+  const avatars = await getAvatarMap(
+    supabase,
+    [...membersByGroup.values()].flatMap((arr) => arr.map((m) => m.user_id))
+  );
+
   type PoolLine = { label: string; status: string; bucket: number; href: string; sortTime: number };
   const linesByGroup = new Map<string, PoolLine[]>();
   const pushLine = (gid: string, line: PoolLine) => {
@@ -201,11 +208,14 @@ export default async function GroupsPage() {
                   {board.slice(0, 3).map((r, i) => (
                     <div
                       key={r.user_id}
-                      className={`flex items-baseline py-1 text-sm ${
+                      className={`flex items-center py-1 text-sm ${
                         r.user_id === userId ? "font-semibold text-orange-700" : ""
                       }`}
                     >
                       <span className="w-6 shrink-0 text-xs text-slate-400">{i + 1}</span>
+                      <span className="mr-2 shrink-0">
+                        <Avatar name={r.name} animal={avatars.get(r.user_id)} size={22} />
+                      </span>
                       <span className="min-w-0 truncate">
                         {r.name}
                         {r.user_id === userId && (

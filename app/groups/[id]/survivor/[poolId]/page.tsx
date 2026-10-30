@@ -3,6 +3,8 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { joinSurvivorPool, saveSurvivorPick } from "@/lib/survivor-actions";
 import { computeSurvivorState, type SurvivorGame } from "@/lib/survivor";
+import { getAvatarMap } from "@/lib/avatars";
+import { Avatar } from "@/components/Avatar";
 import { Card, SectionTitle, SubmitButton } from "@/components/ui";
 
 function fmtKickoff(iso: string | null): string {
@@ -90,6 +92,7 @@ export default async function SurvivorPoolPage({
       return (b.eliminated_week ?? 0) - (a.eliminated_week ?? 0);
     return a.display_name.localeCompare(b.display_name);
   });
+  const avatars = await getAvatarMap(supabase, sortedEntries.map((e) => e.user_id));
 
   return (
     <div className="space-y-6">
@@ -300,19 +303,24 @@ export default async function SurvivorPoolPage({
                       } ${e.alive ? "" : "text-slate-400"}`}
                     >
                       <td className="px-4 py-2.5">
-                        <span className={`font-medium ${e.alive ? "text-slate-900" : ""}`}>
-                          {e.display_name}
-                        </span>
-                        {e.user_id === user.id && (
-                          <span className="ml-1 text-xs text-slate-400">(you)</span>
-                        )}
-                        {isChamp ? (
-                          <span className="ml-2 rounded-full bg-orange-100 px-2 py-0.5 text-xs font-semibold text-orange-900">
-                            champion
+                        <span className="flex items-center gap-2">
+                          <Avatar name={e.display_name} animal={avatars.get(e.user_id)} size={24} />
+                          <span>
+                            <span className={`font-medium ${e.alive ? "text-slate-900" : ""}`}>
+                              {e.display_name}
+                            </span>
+                            {e.user_id === user.id && (
+                              <span className="ml-1 text-xs text-slate-400">(you)</span>
+                            )}
+                            {isChamp ? (
+                              <span className="ml-2 rounded-full bg-orange-100 px-2 py-0.5 text-xs font-semibold text-orange-900">
+                                champion
+                              </span>
+                            ) : !e.alive ? (
+                              <span className="ml-2 text-xs">out W{e.eliminated_week}</span>
+                            ) : null}
                           </span>
-                        ) : !e.alive ? (
-                          <span className="ml-2 text-xs">out W{e.eliminated_week}</span>
-                        ) : null}
+                        </span>
                       </td>
                       {gridWeeks.map((w) => {
                         const cell = e.picks.get(w);
