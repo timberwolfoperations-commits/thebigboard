@@ -16,7 +16,7 @@ import { computeSurvivorState } from "@/lib/survivor";
 // doesn't count as a settled competition entered.
 
 export interface PlayerRating {
-  rating: number | null; // null = NR (fewer than 25 total calls)
+  rating: number | null; // null = NR (fewer than 15 total calls)
   pickAcc: number | null; // pick'em + survivor combined
   quizAcc: number | null;
   titles: number;
@@ -50,7 +50,11 @@ const PARTICIPATION_ANCHORS: [number, number][] = [
   [300, 85],
   [600, 95],
 ];
-const MIN_CALLS = 25;
+// 15, lowered from the spec's 25 on Michael's call (2026-10-30) after
+// the real Test of Manhood board showed 5 of 9 members NR at ~24 calls
+// — two full rounds shouldn't leave a board dark. Participation
+// anchors are unchanged, so 15–25 calls all score the 55 floor there.
+const MIN_CALLS = 15;
 
 function anchor(x: number, pts: [number, number][]): number {
   if (x <= pts[0][0]) return pts[0][1];
