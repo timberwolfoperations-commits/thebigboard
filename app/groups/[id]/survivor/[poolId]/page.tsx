@@ -6,6 +6,16 @@ import { computeSurvivorState, type SurvivorGame } from "@/lib/survivor";
 import { getAvatarMap } from "@/lib/avatars";
 import { Avatar } from "@/components/Avatar";
 import { Card, SectionTitle, SubmitButton } from "@/components/ui";
+import PoolSwitcher from "@/components/pool-switcher";
+import RememberContext from "@/components/remember-context";
+import { loadMyGroups, loadMyPools } from "@/lib/my-pools";
+import { getGroupLifetime } from "@/lib/lifetime";
+
+function ordinal(n: number) {
+  const s = ["th", "st", "nd", "rd"];
+  const v = n % 100;
+  return n + (s[(v - 20) % 10] || s[v] || s[0]);
+}
 
 function fmtKickoff(iso: string | null): string {
   if (!iso) return "";
@@ -94,22 +104,43 @@ export default async function SurvivorPoolPage({
   });
   const avatars = await getAvatarMap(supabase, sortedEntries.map((e) => e.user_id));
 
+  // Detail-first header (2026-10-30): switcher replaces back links and
+  // title, same as the pick'em page; members also get the quiet
+  // all-time line for the pool's group.
+  const myPools = await loadMyPools(supabase, user.id);
+  const myGroups = await loadMyGroups(supabase, user.id);
+  let allTime: { rank: number; total: number; points: number; groupName: string } | null = null;
+  if (isMember) {
+    const lifetime = await getGroupLifetime(supabase, id);
+    const { data: memberRows } = await supabase
+      .from("group_members")
+      .select("user_id")
+      .eq("group_id", id);
+    const standings = ((memberRows ?? []) as any[])
+      .map((m) => ({ user_id: m.user_id as string, points: lifetime.get(m.user_id)?.points ?? 0 }))
+      .sort((a, b) => b.points - a.points);
+    const idx = standings.findIndex((s) => s.user_id === user.id);
+    if (idx >= 0) {
+      allTime = {
+        rank: idx + 1,
+        total: standings.length,
+        points: standings[idx].points,
+        groupName: myGroups.find((g) => g.id === id)?.name ?? "the group",
+      };
+    }
+  }
+
   return (
     <div className="space-y-6">
-      {isMember ? (
-        <Link href={`/groups/${id}`} className="text-sm text-slate-500 underline-offset-4 hover:underline">
-          ← Back to group
-        </Link>
-      ) : (
-        <Link href="/pools" className="text-sm text-slate-500 underline-offset-4 hover:underline">
-          ← Back to pools
-        </Link>
-      )}
-
+      <RememberContext poolHref={`/groups/${id}/survivor/${poolId}`} groupId={id} />
       <div>
-        <h1 className="font-display text-4xl font-bold uppercase leading-none tracking-wide">
-          {pool.name}
-        </h1>
+        <PoolSwitcher
+          pools={myPools}
+          groups={myGroups}
+          currentKey={`survivor:${poolId}`}
+          currentName={pool.name}
+          currentGroupName={myGroups.find((g) => g.id === id)?.name}
+        />
         <p className="mt-2 text-sm text-slate-500">
           Survivor · starts Week {pool.start_week} ·{" "}
           {state.decided
@@ -118,6 +149,18 @@ export default async function SurvivorPoolPage({
                 currentWeek !== null ? ` · Week ${currentWeek}` : ""
               }`}
         </p>
+        {allTime && (
+          <p className="mt-2 text-sm text-slate-500">
+            All-time in {allTime.groupName} —{" "}
+            <span className="font-semibold text-slate-700">
+              {ordinal(allTime.rank)} of {allTime.total}
+            </span>{" "}
+            · {allTime.points} pts ·{" "}
+            <Link href={`/groups/${id}`} className="underline underline-offset-4 hover:text-slate-700">
+              Full board
+            </Link>
+          </p>
+        )}
       </div>
 
       {state.decided && state.champions.length > 0 && (

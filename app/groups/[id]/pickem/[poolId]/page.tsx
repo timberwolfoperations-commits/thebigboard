@@ -11,6 +11,16 @@ import { Card, SectionTitle, SubmitButton } from "@/components/ui";
 import PickemGameCard from "@/components/pickem-game-card";
 import PropCard from "@/components/prop-card";
 import PropLinesEditor, { type PropLineDraft } from "@/components/prop-lines-editor";
+import PoolSwitcher from "@/components/pool-switcher";
+import RememberContext from "@/components/remember-context";
+import { loadMyGroups, loadMyPools } from "@/lib/my-pools";
+import { getGroupLifetime } from "@/lib/lifetime";
+
+function ordinal(n: number) {
+  const s = ["th", "st", "nd", "rd"];
+  const v = n % 100;
+  return n + (s[(v - 20) % 10] || s[v] || s[0]);
+}
 
 function fmtLock(iso: string): string {
   return new Date(iso).toLocaleString("en-US", {
@@ -225,20 +235,44 @@ export default async function PickemPoolPage({
     return pool.description;
   })();
 
+  // Detail-first header (2026-10-30): the switcher replaces the back
+  // links and the title — the pool's name is the header, the rest of
+  // your pools are one tap away, and the group shows up as one quiet
+  // all-time line instead of a hallway you walk back through.
+  const myPools = await loadMyPools(supabase, user.id);
+  const myGroups = await loadMyGroups(supabase, user.id);
+  let allTime: { rank: number; total: number; points: number; groupName: string } | null = null;
+  if (isMember) {
+    const lifetime = await getGroupLifetime(supabase, id);
+    const { data: memberRows } = await supabase
+      .from("group_members")
+      .select("user_id")
+      .eq("group_id", id);
+    const standings = ((memberRows ?? []) as any[])
+      .map((m) => ({ user_id: m.user_id as string, points: lifetime.get(m.user_id)?.points ?? 0 }))
+      .sort((a, b) => b.points - a.points);
+    const idx = standings.findIndex((s) => s.user_id === user.id);
+    if (idx >= 0) {
+      allTime = {
+        rank: idx + 1,
+        total: standings.length,
+        points: standings[idx].points,
+        groupName: myGroups.find((g) => g.id === id)?.name ?? "the group",
+      };
+    }
+  }
+
   return (
     <div className="space-y-6">
-      {isMember ? (
-        <Link href={`/groups/${id}`} className="text-sm text-slate-500 underline-offset-4 hover:underline">
-          ← Back to group
-        </Link>
-      ) : (
-        <Link href="/pools" className="text-sm text-slate-500 underline-offset-4 hover:underline">
-          ← Back to pools
-        </Link>
-      )}
-
-      <div className="text-center">
-        <h1 className="font-display text-4xl font-bold uppercase leading-none tracking-wide">{pool.name}</h1>
+      <RememberContext poolHref={`/groups/${id}/pickem/${poolId}`} groupId={id} />
+      <div>
+        <PoolSwitcher
+          pools={myPools}
+          groups={myGroups}
+          currentKey={`pickem:${poolId}`}
+          currentName={pool.name}
+          currentGroupName={myGroups.find((g) => g.id === id)?.name}
+        />
         <p className="mt-1 text-sm text-slate-500">
           {pool.week ? `Week ${pool.week} · ` : ""}
           {useSpread
@@ -255,6 +289,18 @@ export default async function PickemPoolPage({
             </span>
           )}
         </p>
+        {allTime && (
+          <p className="mt-2 text-sm text-slate-500">
+            All-time in {allTime.groupName} —{" "}
+            <span className="font-semibold text-slate-700">
+              {ordinal(allTime.rank)} of {allTime.total}
+            </span>{" "}
+            · {allTime.points} pts ·{" "}
+            <Link href={`/groups/${id}`} className="underline underline-offset-4 hover:text-slate-700">
+              Full board
+            </Link>
+          </p>
+        )}
       </div>
 
       <div>

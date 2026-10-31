@@ -35,7 +35,10 @@ const TABS = [
   {
     href: "/pools",
     label: "Pools",
-    match: (p: string) => p.startsWith("/pools"),
+    // Detail-first tabs (2026-10-30): pool pages ARE the Pools tab now,
+    // even though their URLs still live under /groups/[id]/…
+    match: (p: string) =>
+      p.startsWith("/pools") || /^\/groups\/[^/]+\/(pickem|survivor|pools|quiz)\//.test(p),
     icon: (
       <svg {...iconProps}>
         <path d="M12 3l9 5-9 5-9-5 9-5Z" />
@@ -47,7 +50,8 @@ const TABS = [
   {
     href: "/groups",
     label: "Groups",
-    match: (p: string) => p.startsWith("/groups"),
+    match: (p: string) =>
+      p.startsWith("/groups") && !/^\/groups\/[^/]+\/(pickem|survivor|pools|quiz)\//.test(p),
     icon: (
       <svg {...iconProps}>
         <circle cx="9" cy="8" r="3.5" />

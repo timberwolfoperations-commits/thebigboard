@@ -9,6 +9,9 @@ import CopyButton from "@/components/copy-button";
 import NewMenu from "@/components/new-menu";
 import { getAvatarMap } from "@/lib/avatars";
 import { Avatar } from "@/components/Avatar";
+import GroupSwitcher from "@/components/group-switcher";
+import RememberContext from "@/components/remember-context";
+import { loadMyGroups } from "@/lib/my-pools";
 
 function daysOverdue(settleDate: string) {
   const ms = Date.now() - new Date(settleDate + "T23:59:59").getTime();
@@ -241,19 +244,21 @@ export default async function GroupPage({ params }: { params: Promise<{ id: stri
   const proto = host.startsWith("localhost") ? "http" : "https";
   const inviteUrl = `${proto}://${host}/join/${group.invite_token}`;
 
+  const myGroups = await loadMyGroups(supabase, user.id);
+
   return (
     <div className="space-y-8">
+      <RememberContext groupId={id} />
       <div className="space-y-4">
+        <div>
+          <GroupSwitcher groups={myGroups} currentId={id} memberCount={memberList.length} />
+          {myRole === "admin" && (
+            <p className="mt-1 text-sm text-slate-500">You&apos;re an admin</p>
+          )}
+        </div>
         <div className="flex justify-center gap-2">
           <CopyButton text={inviteUrl} label="Copy invite link" />
           <NewMenu groupId={id} />
-        </div>
-        <div className="text-center">
-          <h1 className="font-display text-4xl font-bold uppercase leading-none tracking-wide">{group.name}</h1>
-          <p className="mt-1 text-sm text-slate-500">
-            {memberList.length} {memberList.length === 1 ? "member" : "members"}
-            {myRole === "admin" ? " · you're an admin" : ""}
-          </p>
         </div>
       </div>
 
