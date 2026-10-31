@@ -4,6 +4,7 @@ import { Barlow_Condensed } from "next/font/google";
 import { createClient } from "@/lib/supabase/server";
 import HeaderMenu from "@/components/header-menu";
 import BottomBar from "@/components/bottom-bar";
+import { Analytics } from "@vercel/analytics/next";
 import "./globals.css";
 
 const barlow = Barlow_Condensed({
@@ -99,6 +100,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           {children}
         </main>
         {user && <BottomBar />}
+        <Analytics />
       </body>
     </html>
   );
