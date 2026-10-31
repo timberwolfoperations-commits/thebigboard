@@ -6,6 +6,7 @@ import { Card, SectionTitle, SubmitButton } from "@/components/ui";
 import { SignOutButton } from "@/components/AuthButtons";
 import { Avatar } from "@/components/Avatar";
 import { ANIMAL_LIST } from "@/lib/avatar-keys";
+import { getRatings } from "@/lib/rating";
 
 export default async function ProfilePage() {
   const supabase = await createClient();
@@ -43,9 +44,33 @@ export default async function ProfilePage() {
     .maybeSingle();
   const isAdmin = Boolean(adminRow);
 
+  // Player rating (RATING-SPEC.md): big number + the raw stat line.
+  // The blend itself is never shown — "the formula's the formula."
+  const myRating = (await getRatings(supabase, [user.id])).get(user.id);
+  const pct = (x: number | null | undefined) =>
+    x == null ? "—" : `${Math.round(x * 100)}%`;
+
   return (
     <div className="space-y-6">
       <SectionTitle>Your profile</SectionTitle>
+      <Card>
+        <div className="flex items-center gap-4">
+          <Avatar name={profile?.display_name ?? "You"} animal={currentAnimal} size={56} />
+          <div>
+            <p className="font-display text-6xl font-bold leading-none tabular-nums">
+              {myRating?.rating ?? "NR"}
+            </p>
+            <p className="mt-1 text-xs font-semibold uppercase tracking-wider text-slate-400">
+              Player rating
+            </p>
+          </div>
+        </div>
+        <p className="mt-3 text-sm text-slate-500">
+          Picks {pct(myRating?.pickAcc)} · Quiz {pct(myRating?.quizAcc)} ·{" "}
+          {myRating?.titles ?? 0} {myRating?.titles === 1 ? "title" : "titles"} ·{" "}
+          {myRating?.calls ?? 0} calls
+        </p>
+      </Card>
       <Card>
         <form action={updateDisplayName} className="space-y-4">
           <div>

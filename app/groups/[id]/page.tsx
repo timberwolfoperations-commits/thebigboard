@@ -12,6 +12,7 @@ import { Avatar } from "@/components/Avatar";
 import GroupSwitcher from "@/components/group-switcher";
 import RememberContext from "@/components/remember-context";
 import { loadMyGroups } from "@/lib/my-pools";
+import { getRatings } from "@/lib/rating";
 
 function daysOverdue(settleDate: string) {
   const ms = Date.now() - new Date(settleDate + "T23:59:59").getTime();
@@ -149,6 +150,7 @@ export default async function GroupPage({ params }: { params: Promise<{ id: stri
     .map((m) => ({ ...m, ...(pointsByUser.get(m.user_id) ?? { points: 0, wins: 0 }) }))
     .sort((a, b) => b.points - a.points);
   const avatars = await getAvatarMap(supabase, memberList.map((m) => m.user_id));
+  const ratings = await getRatings(supabase, memberList.map((m) => m.user_id));
 
   // ---- survivor pools -----------------------------------------------------
   const { data: survivorPools } = await supabase
@@ -477,14 +479,28 @@ export default async function GroupPage({ params }: { params: Promise<{ id: stri
                   {m.user_id === user.id && <span className="ml-1 text-xs text-slate-400">(you)</span>}
                 </span>
               </p>
-              <p className="flex items-baseline gap-1.5">
-                <span className={`font-display text-3xl font-bold tabular-nums leading-none ${i === 0 ? "text-accent" : ""}`}>
-                  {m.points}
-                </span>
-                <span className="text-xs text-slate-400">
-                  pts · {m.wins} {m.wins === 1 ? "win" : "wins"}
-                </span>
-              </p>
+              <div className="flex items-center gap-5">
+                <p className="text-right">
+                  <span
+                    className={`block font-display text-xl font-semibold tabular-nums leading-none ${
+                      ratings.get(m.user_id)?.rating != null ? "text-slate-700" : "text-slate-400"
+                    }`}
+                  >
+                    {ratings.get(m.user_id)?.rating ?? "NR"}
+                  </span>
+                  <span className="mt-0.5 block text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                    RTG
+                  </span>
+                </p>
+                <p className="flex items-baseline gap-1.5">
+                  <span className={`font-display text-3xl font-bold tabular-nums leading-none ${i === 0 ? "text-accent" : ""}`}>
+                    {m.points}
+                  </span>
+                  <span className="text-xs text-slate-400">
+                    pts · {m.wins} {m.wins === 1 ? "win" : "wins"}
+                  </span>
+                </p>
+              </div>
             </div>
           ))}
         </Card>
