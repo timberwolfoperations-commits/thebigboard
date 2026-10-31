@@ -104,16 +104,27 @@ export async function getRatings(
   };
 
   // ---- pick'em: calls/hits via the board's own grading --------------
-  const { data: memberships } = await supabase
-    .from("pickem_pool_players")
-    .select("pool_id, user_id")
+  // Pick'em has NO entrant table — a pool's players are whoever picked
+  // (any group member can play), so pools are discovered from the
+  // picks themselves: pickem_picks for standard pools,
+  // pickem_prop_picks for over/under pools. The first version walked a
+  // "pickem_pool_players" table that does not exist; the query failed
+  // silently and pick'em calls never counted at all (caught by the
+  // acceptance check on real data, 2026-10-30).
+  const { data: pickRows } = await supabase
+    .from("pickem_picks")
+    .select("pool_id")
     .in("user_id", ids);
-  const membersByPool = new Map<string, string[]>();
-  for (const m of (memberships ?? []) as any[]) {
-    if (!membersByPool.has(m.pool_id)) membersByPool.set(m.pool_id, []);
-    membersByPool.get(m.pool_id)!.push(m.user_id);
-  }
-  const pickemPoolIds = [...membersByPool.keys()];
+  const { data: propRows } = await supabase
+    .from("pickem_prop_picks")
+    .select("pool_id")
+    .in("user_id", ids);
+  const pickemPoolIds = [
+    ...new Set([
+      ...((pickRows ?? []) as any[]).map((r) => r.pool_id as string),
+      ...((propRows ?? []) as any[]).map((r) => r.pool_id as string),
+    ]),
+  ];
   if (pickemPoolIds.length > 0) {
     const { data: pools } = await supabase
       .from("pickem_pools")
@@ -121,10 +132,12 @@ export async function getRatings(
       .in("id", pickemPoolIds);
     const poolById = new Map(((pools ?? []) as any[]).map((p) => [p.id, p]));
     for (const poolId of pickemPoolIds) {
+      let participants: string[] = [];
       try {
         const rows = await computePickemLeaderboard(supabase, poolId);
         for (const r of rows) {
           if (!wanted.has(r.user_id)) continue;
+          participants.push(r.user_id);
           const a = forUser(r.user_id);
           a.pickCalls += r.total_decided;
           a.pickHits += r.correct;
@@ -135,7 +148,7 @@ export async function getRatings(
       }
       const pool = poolById.get(poolId);
       if (pool && pool.winner_user_id != null && !pool.scratched) {
-        for (const uid of membersByPool.get(poolId) ?? []) forUser(uid).settledEntered += 1;
+        for (const uid of participants) forUser(uid).settledEntered += 1;
       }
     }
     const { data: winnerRows } = await supabase
