@@ -98,8 +98,11 @@ export async function syncCfb(): Promise<CfbSyncResult> {
       clock,
       starts_at: ev.date ?? null,
       status,
-      home_score: num(home.score) || null,
-      away_score: num(away.score) || null,
+      // A scoreless game that has started is a real 0, not "no score" —
+      // only a scheduled game has no score yet. (The old `|| null` turned
+      // shutouts into winner-less games at grading time.)
+      home_score: status === "scheduled" ? null : num(home.score),
+      away_score: status === "scheduled" ? null : num(away.score),
       spread: odds.spread,
       over_under: odds.over_under,
       week,
