@@ -1,3 +1,5 @@
+import { cache } from "react";
+
 // Open (public) pools: discovery data shared by the Home feed and the
 // Pools tab. A public pool is readable by any signed-in user; joining is
 // a pool_guests row (lib/open-pool-actions). Guests play the one pool —
@@ -36,23 +38,27 @@ export function survivorStartLabel(startWeek: number, firstKickoff: string | nul
   return `Starts Week ${startWeek} · ${d}`;
 }
 
-// The viewer's guest rows, split by pool type.
-export async function loadMyGuestPoolIds(
-  supabase: any,
-  userId: string
-): Promise<{ pickem: Set<string>; survivor: Set<string> }> {
-  const { data } = await supabase
-    .from("pool_guests")
-    .select("pool_type, pool_id")
-    .eq("user_id", userId);
-  const pickem = new Set<string>();
-  const survivor = new Set<string>();
-  for (const g of (data ?? []) as any[]) {
-    if (g.pool_type === "pickem") pickem.add(g.pool_id);
-    else if (g.pool_type === "survivor") survivor.add(g.pool_id);
+// The viewer's guest rows, split by pool type. Request-memoized:
+// loadOpenPoolDiscovery calls this internally and the dashboard calls
+// it again in the same render with the same client + user.
+export const loadMyGuestPoolIds = cache(
+  async (
+    supabase: any,
+    userId: string
+  ): Promise<{ pickem: Set<string>; survivor: Set<string> }> => {
+    const { data } = await supabase
+      .from("pool_guests")
+      .select("pool_type, pool_id")
+      .eq("user_id", userId);
+    const pickem = new Set<string>();
+    const survivor = new Set<string>();
+    for (const g of (data ?? []) as any[]) {
+      if (g.pool_type === "pickem") pickem.add(g.pool_id);
+      else if (g.pool_type === "survivor") survivor.add(g.pool_id);
+    }
+    return { pickem, survivor };
   }
-  return { pickem, survivor };
-}
+);
 
 // Host group names for pools whose group the viewer isn't a member of.
 // Reads the open_pool_hosts view (migration 022) — the groups row itself
@@ -110,18 +116,21 @@ export async function loadOpenPoolDiscovery(
 ): Promise<OpenPoolCardData[]> {
   const now = Date.now();
   const memberGroups = new Set(memberGroupIds);
-  const guests = await loadMyGuestPoolIds(supabase, userId);
-
-  const { data: pickemPools } = await supabase
-    .from("pickem_pools")
-    .select("id, name, variant, group_id, lock_at, winner_user_id, scratched")
-    .eq("is_public", true)
-    .order("lock_at", { ascending: true });
-  const { data: survivorPools } = await supabase
-    .from("survivor_pools")
-    .select("id, name, group_id, season, start_week")
-    .eq("is_public", true)
-    .order("created_at", { ascending: false });
+  // Guest rows and the two public-pool lists are independent queries —
+  // the guest sets are only applied as in-memory filters below.
+  const [guests, { data: pickemPools }, { data: survivorPools }] = await Promise.all([
+    loadMyGuestPoolIds(supabase, userId),
+    supabase
+      .from("pickem_pools")
+      .select("id, name, variant, group_id, lock_at, winner_user_id, scratched")
+      .eq("is_public", true)
+      .order("lock_at", { ascending: true }),
+    supabase
+      .from("survivor_pools")
+      .select("id, name, group_id, season, start_week")
+      .eq("is_public", true)
+      .order("created_at", { ascending: false }),
+  ]);
 
   const pickemCandidates = ((pickemPools ?? []) as any[]).filter(
     (p) =>
@@ -164,10 +173,19 @@ export async function loadOpenPoolDiscovery(
       href: `/groups/${p.group_id}/pickem/${p.id}`,
     });
   }
-  for (const p of survivorCandidates) {
-    if (enteredSurvivor.has(p.id)) continue;
-    const firstKickoff = await survivorFirstKickoff(supabase, p.season, p.start_week);
-    if (firstKickoff && new Date(firstKickoff).getTime() <= now) continue; // entries closed
+  // First kickoffs are independent per candidate pool — fetch in
+  // parallel, then apply the same joinable filter in list order.
+  const firstKickoffs = await Promise.all(
+    survivorCandidates.map((p) =>
+      enteredSurvivor.has(p.id)
+        ? Promise.resolve(null)
+        : survivorFirstKickoff(supabase, p.season, p.start_week)
+    )
+  );
+  survivorCandidates.forEach((p, i) => {
+    if (enteredSurvivor.has(p.id)) return;
+    const firstKickoff = firstKickoffs[i];
+    if (firstKickoff && new Date(firstKickoff).getTime() <= now) return; // entries closed
     cards.push({
       type: "survivor",
       id: p.id,
@@ -178,6 +196,6 @@ export async function loadOpenPoolDiscovery(
       info: survivorStartLabel(p.start_week, firstKickoff),
       href: `/groups/${p.group_id}/survivor/${p.id}`,
     });
-  }
+  });
   return cards;
 }

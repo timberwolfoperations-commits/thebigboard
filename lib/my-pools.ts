@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { computeSurvivorState } from "@/lib/survivor";
 import { loadHostNames, loadMyGuestPoolIds } from "@/lib/open-pools";
 
@@ -30,23 +31,31 @@ export interface MyPool {
   sortTs: number;
 }
 
-export async function loadMyGroups(supabase: any, userId: string): Promise<MyGroup[]> {
-  const { data: memberships } = await supabase
-    .from("group_members")
-    .select("groups(id, name)")
-    .eq("user_id", userId)
-    .order("joined_at", { ascending: false });
-  return ((memberships ?? []) as any[])
-    .map((m) => m.groups)
-    .filter((g: any) => g?.id)
-    .map((g: any) => ({ id: g.id as string, name: g.name as string }));
-}
+// Request-memoized: loadMyPools calls this internally and several
+// pages call it again with the same client + user in the same render —
+// cache() makes the second call free instead of a duplicate round trip.
+export const loadMyGroups = cache(
+  async (supabase: any, userId: string): Promise<MyGroup[]> => {
+    const { data: memberships } = await supabase
+      .from("group_members")
+      .select("groups(id, name)")
+      .eq("user_id", userId)
+      .order("joined_at", { ascending: false });
+    return ((memberships ?? []) as any[])
+      .map((m) => m.groups)
+      .filter((g: any) => g?.id)
+      .map((g: any) => ({ id: g.id as string, name: g.name as string }));
+  }
+);
 
 export async function loadMyPools(supabase: any, userId: string): Promise<MyPool[]> {
-  const groups = await loadMyGroups(supabase, userId);
+  // Groups and guest rows are independent — one batch.
+  const [groups, myGuests] = await Promise.all([
+    loadMyGroups(supabase, userId),
+    loadMyGuestPoolIds(supabase, userId),
+  ]);
   const groupIds = groups.map((g) => g.id);
   const groupName = new Map(groups.map((g) => [g.id, g.name]));
-  const myGuests = await loadMyGuestPoolIds(supabase, userId);
   const now = Date.now();
   const pools: MyPool[] = [];
 
@@ -177,8 +186,14 @@ export async function loadMyPools(supabase: any, userId: string): Promise<MyPool
     }
   }
 
-  for (const p of survivorList) {
-    const state = await computeSurvivorState(supabase, p);
+  // Survivor states are independent per pool — compute in parallel,
+  // then build the rows in list order as before.
+  const survivorStates = await Promise.all(
+    survivorList.map((p) => computeSurvivorState(supabase, p))
+  );
+  for (let i = 0; i < survivorList.length; i++) {
+    const p = survivorList[i];
+    const state = survivorStates[i];
     const entry = state.entries.find((e) => e.user_id === userId);
     const settled = state.decided;
     let needsAction = false;
