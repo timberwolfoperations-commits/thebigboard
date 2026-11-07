@@ -146,20 +146,28 @@ export default async function Dashboard({
     : await loadMyGuestPoolIds(supabase, user.id);
 
   // ---- pools across visible groups -----------------------------------------
-  const { data: rosterPools } = groupIds.length
-    ? await supabase
-        .from("pools")
-        .select("id, name, group_id, lock_at, winner_user_id, winner_points")
-        .in("group_id", visibleGroupIds)
-        .order("lock_at", { ascending: false })
-    : { data: [] as any[] };
-  const { data: pickemPools } = groupIds.length
-    ? await supabase
-        .from("pickem_pools")
-        .select("id, name, variant, group_id, lock_at, winner_user_id, winner_points, scratched")
-        .in("group_id", visibleGroupIds)
-        .order("lock_at", { ascending: false })
-    : { data: [] as any[] };
+  // The three pool lists are independent (all keyed on the visible
+  // groups) — one parallel batch instead of three serial round trips.
+  const [{ data: rosterPools }, { data: pickemPools }, { data: survivorPools }] =
+    groupIds.length
+      ? await Promise.all([
+          supabase
+            .from("pools")
+            .select("id, name, group_id, lock_at, winner_user_id, winner_points")
+            .in("group_id", visibleGroupIds)
+            .order("lock_at", { ascending: false }),
+          supabase
+            .from("pickem_pools")
+            .select("id, name, variant, group_id, lock_at, winner_user_id, winner_points, scratched")
+            .in("group_id", visibleGroupIds)
+            .order("lock_at", { ascending: false }),
+          supabase
+            .from("survivor_pools")
+            .select("id, name, group_id, season, start_week, created_by")
+            .in("group_id", visibleGroupIds)
+            .order("created_at", { ascending: false }),
+        ])
+      : [{ data: [] as any[] }, { data: [] as any[] }, { data: [] as any[] }];
 
   const rosterList = (rosterPools ?? []) as any[];
   const pickemList = (pickemPools ?? []) as any[];
@@ -178,13 +186,6 @@ export default async function Dashboard({
   const now = Date.now();
 
   // ---- survivor pools -------------------------------------------------------
-  const { data: survivorPools } = groupIds.length
-    ? await supabase
-        .from("survivor_pools")
-        .select("id, name, group_id, season, start_week, created_by")
-        .in("group_id", visibleGroupIds)
-        .order("created_at", { ascending: false })
-    : { data: [] as any[] };
   const survivorList = (survivorPools ?? []) as any[];
   const guestSurvivorIds = [...myGuests.survivor].filter(
     (pid) => !survivorList.some((p) => p.id === pid)
@@ -207,77 +208,87 @@ export default async function Dashboard({
       if (host && !groupName.has(p.group_id)) groupName.set(p.group_id, host);
     }
   }
+  // Survivor states are independent per pool — compute them in parallel
+  // instead of one full state build at a time.
   const survivorStates = new Map<string, Awaited<ReturnType<typeof computeSurvivorState>>>();
-  for (const p of survivorList) {
-    survivorStates.set(p.id, await computeSurvivorState(supabase, p));
-  }
+  const computedStates = await Promise.all(
+    survivorList.map((p) => computeSurvivorState(supabase, p))
+  );
+  survivorList.forEach((p, i) => survivorStates.set(p.id, computedStates[i]));
 
   const settledRoster = rosterList.filter((p) => p.winner_user_id);
   const liveRoster = rosterList.filter((p) => !p.winner_user_id);
   const settledPickem = pickemList.filter((p) => p.winner_user_id || p.scratched);
   const livePickem = pickemList.filter((p) => !p.winner_user_id && !p.scratched);
 
-  // ---- my entries / picks ----------------------------------------------------
-  const { data: myEntries } = rosterIds.length
-    ? await supabase.from("pool_entries").select("pool_id").eq("user_id", user.id).in("pool_id", rosterIds)
-    : { data: [] as any[] };
+  // ---- my entries / picks, bets, poker turns --------------------------------
+  // Everything in this batch is independent once the pool lists are
+  // known (each keys off the user id, the visible groups, or the pool
+  // id lists), so it runs as one parallel stage instead of eight serial
+  // round trips. The participant lookups that need the bet lists follow
+  // in a second batch.
+  const openOverUnderIds = livePickem
+    .filter((p) => p.variant === "over_under" && new Date(p.lock_at).getTime() > now)
+    .map((p) => p.id);
+  const [
+    { data: myEntries },
+    { data: myPicks },
+    { data: myPropPicks },
+    { data: propLines },
+    { data: bets },
+    { data: openBets },
+    pokerTurnsRaw,
+  ] = await Promise.all([
+    rosterIds.length
+      ? supabase.from("pool_entries").select("pool_id").eq("user_id", user.id).in("pool_id", rosterIds)
+      : Promise.resolve({ data: [] as any[] }),
+    pickemIds.length
+      ? supabase.from("pickem_picks").select("pool_id").eq("user_id", user.id).in("pool_id", pickemIds)
+      : Promise.resolve({ data: [] as any[] }),
+    pickemIds.length
+      ? supabase.from("pickem_prop_picks").select("pool_id, line_id").eq("user_id", user.id).in("pool_id", pickemIds)
+      : Promise.resolve({ data: [] as any[] }),
+    openOverUnderIds.length
+      ? supabase.from("pickem_lines").select("id, pool_id").in("pool_id", openOverUnderIds)
+      : Promise.resolve({ data: [] as any[] }),
+    groupIds.length
+      ? supabase
+          .from("bets")
+          .select("id, title, group_id, status, points")
+          .in("group_id", visibleGroupIds)
+          .eq("status", "pending")
+      : Promise.resolve({ data: [] as any[] }),
+    groupIds.length
+      ? supabase
+          .from("bets")
+          .select("id, title, group_id, status, points, lock_at")
+          .in("group_id", visibleGroupIds)
+          .in("status", ["pending", "open", "awaiting"])
+          .order("created_at", { ascending: false })
+      : Promise.resolve({ data: [] as any[] }),
+    // Poker tables where I'm on the clock — determined server-side
+    // through the poker server module (service client reads the engine
+    // state; all that reaches this page is table, hand number, and
+    // deadline — never a card).
+    groupIds.length
+      ? listMyPokerTurns(createServiceClient(), user.id)
+      : Promise.resolve([] as Awaited<ReturnType<typeof listMyPokerTurns>>),
+  ]);
   const enteredRoster = new Set(((myEntries ?? []) as any[]).map((e) => e.pool_id));
-
-  const { data: myPicks } = pickemIds.length
-    ? await supabase.from("pickem_picks").select("pool_id").eq("user_id", user.id).in("pool_id", pickemIds)
-    : { data: [] as any[] };
   const pickedStandard = new Set(((myPicks ?? []) as any[]).map((p) => p.pool_id));
-
-  const { data: myPropPicks } = pickemIds.length
-    ? await supabase.from("pickem_prop_picks").select("pool_id, line_id").eq("user_id", user.id).in("pool_id", pickemIds)
-    : { data: [] as any[] };
   const propPickCount = new Map<string, number>();
   for (const p of (myPropPicks ?? []) as any[]) {
     propPickCount.set(p.pool_id, (propPickCount.get(p.pool_id) ?? 0) + 1);
   }
-
-  const openOverUnderIds = livePickem
-    .filter((p) => p.variant === "over_under" && new Date(p.lock_at).getTime() > now)
-    .map((p) => p.id);
-  const { data: propLines } = openOverUnderIds.length
-    ? await supabase.from("pickem_lines").select("id, pool_id").in("pool_id", openOverUnderIds)
-    : { data: [] as any[] };
   const lineCount = new Map<string, number>();
   for (const l of (propLines ?? []) as any[]) {
     lineCount.set(l.pool_id, (lineCount.get(l.pool_id) ?? 0) + 1);
   }
 
   // ---- pending bets waiting on me --------------------------------------------
-  const { data: bets } = groupIds.length
-    ? await supabase
-        .from("bets")
-        .select("id, title, group_id, status, points")
-        .in("group_id", visibleGroupIds)
-        .eq("status", "pending")
-    : { data: [] as any[] };
   const pendingBets = (bets ?? []) as any[];
-  const { data: betParts } = pendingBets.length
-    ? await supabase
-        .from("bet_participants")
-        .select("bet_id, accepted")
-        .eq("user_id", user.id)
-        .in("bet_id", pendingBets.map((b) => b.id))
-    : { data: [] as any[] };
-  const waitingBetIds = new Set(
-    ((betParts ?? []) as any[]).filter((p) => !p.accepted).map((p) => p.bet_id)
-  );
-  const myPendingBets = pendingBets.filter((b) => waitingBetIds.has(b.id));
-
   // ---- open side bets (visible on the dashboard, not just the group page) --
   // Includes pending bets (invites still out) so nothing live is invisible.
-  const { data: openBets } = groupIds.length
-    ? await supabase
-        .from("bets")
-        .select("id, title, group_id, status, points, lock_at")
-        .in("group_id", visibleGroupIds)
-        .in("status", ["pending", "open", "awaiting"])
-        .order("created_at", { ascending: false })
-    : { data: [] as any[] };
   const openBetList = ((openBets ?? []) as any[]).sort((a, b) =>
     a.status === "pending" && b.status !== "pending"
       ? -1
@@ -285,31 +296,36 @@ export default async function Dashboard({
         ? 1
         : 0
   );
+  const [{ data: betParts }, { data: openParts }] = await Promise.all([
+    pendingBets.length
+      ? supabase
+          .from("bet_participants")
+          .select("bet_id, accepted")
+          .eq("user_id", user.id)
+          .in("bet_id", pendingBets.map((b) => b.id))
+      : Promise.resolve({ data: [] as any[] }),
+    openBetList.length
+      ? supabase
+          .from("bet_participants")
+          .select("bet_id, accepted")
+          .in(
+            "bet_id",
+            openBetList.map((b: any) => b.id)
+          )
+      : Promise.resolve({ data: [] as any[] }),
+  ]);
+  const waitingBetIds = new Set(
+    ((betParts ?? []) as any[]).filter((p) => !p.accepted).map((p) => p.bet_id)
+  );
+  const myPendingBets = pendingBets.filter((b) => waitingBetIds.has(b.id));
   const betWaitingCount = new Map<string, number>();
-  if (openBetList.length) {
-    const { data: openParts } = await supabase
-      .from("bet_participants")
-      .select("bet_id, accepted")
-      .in(
-        "bet_id",
-        openBetList.map((b: any) => b.id)
-      );
-    for (const p of (openParts ?? []) as any[]) {
-      if (!p.accepted) betWaitingCount.set(p.bet_id, (betWaitingCount.get(p.bet_id) ?? 0) + 1);
-    }
+  for (const p of (openParts ?? []) as any[]) {
+    if (!p.accepted) betWaitingCount.set(p.bet_id, (betWaitingCount.get(p.bet_id) ?? 0) + 1);
   }
 
-  // ---- poker tables where I'm on the clock ----------------------------------
-  // Determined server-side through the poker server module (service
-  // client reads the engine state; all that reaches this page is
-  // table, hand number, and deadline — never a card). A live 8h/4h
-  // clock is the most urgent thing on the board, so these lead the
-  // action list in the panel below.
-  const pokerTurns = groupIds.length
-    ? (await listMyPokerTurns(createServiceClient(), user.id)).filter((t) =>
-        visibleGroupIds.includes(t.groupId),
-      )
-    : [];
+  // A live 8h/4h poker clock is the most urgent thing on the board, so
+  // these lead the action list in the panel below.
+  const pokerTurns = pokerTurnsRaw.filter((t) => visibleGroupIds.includes(t.groupId));
 
   // ---- action items ------------------------------------------------------------
   type Action = { href: string; title: string; group: string; cta: string; detail: string };
@@ -399,11 +415,14 @@ export default async function Dashboard({
       .eq("pool_id", poolId);
     const entryList = (entries ?? []) as any[];
     if (entryList.length === 0) return null;
-    const { data: picks } = await supabase
-      .from("pool_entry_picks")
-      .select("entry_id, player_id")
-      .in("entry_id", entryList.map((e: any) => e.id));
-    const { points } = await computePoolPoints(supabase, poolId);
+    // Entry picks and the pool's points are independent — one batch.
+    const [{ data: picks }, { points }] = await Promise.all([
+      supabase
+        .from("pool_entry_picks")
+        .select("entry_id, player_id")
+        .in("entry_id", entryList.map((e: any) => e.id)),
+      computePoolPoints(supabase, poolId),
+    ]);
     const picksByEntry = new Map<string, number>();
     for (const pk of (picks ?? []) as any[]) {
       picksByEntry.set(pk.entry_id, (picksByEntry.get(pk.entry_id) ?? 0) + (points.get(pk.player_id) ?? 0));
@@ -441,29 +460,30 @@ export default async function Dashboard({
       .eq("pool_id", poolId);
     const gameIds = ((links ?? []) as any[]).map((l: any) => l.game_id);
     if (gameIds.length === 0) return null;
-    const { data: games } = await supabase
-      .from("games")
-      .select(
-        "id, label, home_team, away_team, starts_at, status, home_score, away_score, period, clock, sport"
-      )
-      .in("id", gameIds);
+    // Games, my picks, and everyone's picks all key off the link ids /
+    // pool id — one batch instead of three serial fetches.
+    const [{ data: games }, { data: picks }, { data: allPicks }] = await Promise.all([
+      supabase
+        .from("games")
+        .select(
+          "id, label, home_team, away_team, starts_at, status, home_score, away_score, period, clock, sport"
+        )
+        .in("id", gameIds),
+      supabase
+        .from("pickem_picks")
+        .select("game_id, picked_team")
+        .eq("pool_id", poolId)
+        .eq("user_id", userId),
+      supabase.from("pickem_picks").select("game_id, picked_team").eq("pool_id", poolId),
+    ]);
     const gameList = ((games ?? []) as any[]) as LiveGame[];
     if (gameList.length === 0) return null;
-    const { data: picks } = await supabase
-      .from("pickem_picks")
-      .select("game_id, picked_team")
-      .eq("pool_id", poolId)
-      .eq("user_id", userId);
     const pickByGame = new Map(
       ((picks ?? []) as any[]).map((p: any) => [p.game_id, String(p.picked_team ?? "").toUpperCase()])
     );
     // Everyone's picks per game — powers the swing-game tag. A game is a
     // swing for the viewer when their pick disagrees with at least one
     // other entrant.
-    const { data: allPicks } = await supabase
-      .from("pickem_picks")
-      .select("game_id, picked_team")
-      .eq("pool_id", poolId);
     const splitByGame = new Map<string, Map<string, number>>();
     for (const p of (allPicks ?? []) as any[]) {
       const team = String(p.picked_team ?? "").toUpperCase();
