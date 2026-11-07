@@ -561,18 +561,40 @@ export async function sweepTable(
   }
   if (new Date(table.next_deal_at).getTime() > now.getTime()) return stats;
 
-  const latest = await loadLatestHand(service, table.id);
+  await dealNextHandNow(service, table, now, stats);
+  return stats;
+}
+
+// Deal the next hand right now for a running table with no live hand —
+// the shared core of the sweep's slot deal (above) and the creator's
+// deal-next-hand button (lib/poker-actions.ts), so an early hand is
+// identical to a scheduled one: same button math off the latest hand,
+// same 8h first-decision clock, same dealt notifications. dealHand
+// points next_deal_at at the following Mon/Wed/Fri slot, so pulling a
+// hand forward never disturbs the schedule behind it. Returns false
+// when there's nothing to deal — fewer than two stacks left, a state
+// the hand-end flow normally crowns a winner out of before it can
+// persist. Callers must have already confirmed no hand is live; the
+// (table_id, hand_no) unique constraint is the backstop if two deals
+// race anyway.
+export async function dealNextHandNow(
+  service: ServiceClient,
+  table: TableRow,
+  now: Date,
+  stats: FlowStats = newStats(),
+): Promise<boolean> {
+  const seats = await loadSeats(service, table.id);
   const stacks = seats.map((s) => s.stack);
-  let button = 0;
+  if (stacks.filter((s) => s > 0).length < 2) return false;
+  const latest = await loadLatestHand(service, table.id);
+  let button: number;
   if (latest) {
-    const prev = deserializeState(latest.state);
-    button = nextButton(stacks, prev.button);
+    button = nextButton(stacks, deserializeState(latest.state).button);
   } else {
     button = stacks.findIndex((s) => s > 0);
-    if (button < 0) return stats; // nobody has chips — nothing to deal
   }
   await dealHand(service, table, seats, table.hand_no + 1, button, now, stats);
-  return stats;
+  return true;
 }
 
 // The whole sweep, for the tick route: every running table, one pass.

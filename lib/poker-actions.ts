@@ -11,6 +11,7 @@ import {
   STARTING_STACK,
   applyPlayerAction,
   dealHand,
+  dealNextHandNow,
   loadActiveHand,
   loadHand,
   loadLatestHand,
@@ -89,6 +90,7 @@ export interface PokerTableView {
   handId: string | null; // the latest hand's row id — act() needs it
   hand: PublicHandView | null; // the latest hand, public-viewed for the caller
   handStatus: "active" | "complete" | null;
+  isTableCreator: boolean; // gates the deal-next-hand button
   actionDeadlineAt: string | null;
   timeouts: Record<string, number>;
   actionLog: PokerActionLogRow[]; // decisions in the latest hand, in order
@@ -229,6 +231,41 @@ export async function act(handId: string, input: PokerActionInput): Promise<Poke
   return buildView(service, table, user.id);
 }
 
+// ------------------------------------------------------------- deal now
+
+// Pull the next hand forward — the table creator's button on the
+// between-hands view. Creator-only by design: dealing starts an 8h
+// first-decision clock for every seat, so the call belongs to whoever
+// started the table. Only between hands; the deal itself is the
+// sweep's own path (dealNextHandNow), so an early hand is dealt, timed
+// and announced exactly like a scheduled one, and the Mon/Wed/Fri slot
+// stays lined up behind it.
+export async function dealNextHand(tableId: string): Promise<PokerTableView> {
+  const { supabase, user } = await getUser();
+  const service = createServiceClient();
+  const table = await loadTable(service, tableId);
+  await memberRole(supabase, table.group_id, user.id);
+  if (table.created_by !== user.id) {
+    throw new Error("Only the player who started this table can deal a hand early.");
+  }
+  if (table.status !== "running") throw new Error("This table has finished.");
+  if (await loadActiveHand(service, table.id)) {
+    throw new Error("A hand is already live at this table.");
+  }
+  try {
+    await dealNextHandNow(service, table, new Date());
+  } catch (e) {
+    // The sweep (or a double-tap) dealt first: the (table_id, hand_no)
+    // unique constraint turns the losing insert away, and the table
+    // simply shows the fresh hand — not an error worth surfacing.
+    if (!String(e instanceof Error ? e.message : e).includes("duplicate key")) throw e;
+  }
+
+  revalidatePath(`/groups/${table.group_id}`);
+  revalidatePath(`/groups/${table.group_id}/poker/${table.id}`);
+  return buildView(service, table, user.id);
+}
+
 // ------------------------------------------------------------------- view
 
 async function buildView(
@@ -292,6 +329,7 @@ async function buildView(
     handId: latest?.id ?? null,
     hand,
     handStatus: latest?.status ?? null,
+    isTableCreator: table.created_by === viewerId,
     actionDeadlineAt: latest?.status === "active" ? latest.action_deadline_at : null,
     timeouts: latest?.timeouts ?? {},
     actionLog,

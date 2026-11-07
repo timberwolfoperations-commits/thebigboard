@@ -12,6 +12,7 @@ import { Avatar } from "@/components/Avatar";
 import { Card, SectionTitle } from "@/components/ui";
 import { CardBack, PokerCard, cardText } from "@/components/poker-card";
 import PokerActions, { type PokerActionModel } from "@/components/poker-actions";
+import PokerDealNext from "@/components/poker-deal-next";
 import PushNudge from "@/components/push-nudge";
 import { blindsForHand, type PublicHandView } from "@/lib/poker/engine";
 import { evaluateHand } from "@/lib/poker/evaluate";
@@ -625,6 +626,9 @@ export default async function PokerTablePage({
               </span>
               .
             </p>
+            {view.isTableCreator && view.handStatus === "complete" && hand && (
+              <PokerDealNext tableId={table.id} nextHandNo={hand.handNumber + 1} />
+            )}
           </Card>
         </div>
       )}
