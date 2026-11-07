@@ -85,7 +85,9 @@ export function shuffle<T>(arr: readonly T[], rng: () => number = Math.random): 
 }
 
 // ------------------------------------------------------- question supply
-// How createQuiz buys questions from the Open Trivia DB.
+// How createQuiz buys questions. Live sources are tried in order —
+// The Trivia API, then Open Trivia DB — through the one puller
+// interface below, and the built-in bank stands behind both.
 //
 // ONE pull does the buying: amount=50, the chosen category, and NO
 // difficulty param. The bank answers with a natural spread of levels
@@ -160,6 +162,106 @@ export function createOpenTdbPuller(args: {
         return { kind: "unavailable" };
       }
       return { kind: "ok", results: json.results };
+    } catch {
+      return { kind: "unavailable" };
+    }
+  };
+}
+
+// ------------------------------------------------------- The Trivia API
+// The primary live source since 2026-11-06 (Michael's call after an
+// OpenTDB set came in "whack — so many random things"): the-trivia-
+// api.com is curated rather than community-submitted, so the questions
+// read like a quiz show instead of a firehose. Rows arrive in its own
+// shape and are mapped onto the shared OpenTDB-style row, so
+// assembleTriviaSet's selection works on them unchanged. region=US
+// keeps the overly parochial imports out. Two data warts get cleaned
+// at this border: stray spaces before punctuation ("Parts , The") are
+// collapsed, and rows the source flags as niche — plus any non
+// multiple-choice rows — are dropped (unless dropping them would
+// empty the page entirely; a thin page still beats a false outage).
+//
+// Which Trivia API category serves a quiz category. Movies and
+// Television share film_and_tv; Video Games has no equivalent there,
+// so it draws on the whole catalogue (null = omit the param), with
+// OpenTDB and the built-in bank behind it in the createQuiz chain.
+export function triviaApiCategoryFor(categoryLabel: string): string | null {
+  switch (categoryLabel) {
+    case "General Knowledge":
+      return "general_knowledge";
+    case "Sports":
+      return "sport_and_leisure";
+    case "Movies":
+    case "Television":
+      return "film_and_tv";
+    case "Music":
+      return "music";
+    case "History":
+      return "history";
+    case "Geography":
+      return "geography";
+    case "Science & Nature":
+      return "science";
+    default:
+      return null;
+  }
+}
+
+// Collapse whitespace and pull stray spaces off punctuation.
+export function cleanTriviaText(s: string): string {
+  return s
+    .replace(/\s+/g, " ")
+    .replace(/\s+([,.?!;:])/g, "$1")
+    .trim();
+}
+
+export function createTriviaApiPuller(args: {
+  fetchImpl: typeof fetch;
+  category: string | null; // The Trivia API slug; null = all categories
+}): TriviaPuller {
+  return async ({ amount, difficulty }) => {
+    const url = new URL("https://the-trivia-api.com/v2/questions");
+    url.searchParams.set("limit", String(Math.min(amount, 50)));
+    url.searchParams.set("region", "US");
+    if (args.category != null) url.searchParams.set("categories", args.category);
+    if (difficulty) url.searchParams.set("difficulties", difficulty);
+    try {
+      const res = await args.fetchImpl(url, { cache: "no-store" });
+      if (res.status === 429) return { kind: "rate_limited" };
+      if (!res.ok) return { kind: "unavailable" };
+      const json: any = await res.json();
+      if (!Array.isArray(json)) return { kind: "unavailable" };
+      const mapped = json
+        .map((q: any) => ({
+          type: "multiple",
+          category: String(q?.category ?? ""),
+          difficulty: String(q?.difficulty ?? ""),
+          question: cleanTriviaText(String(q?.question?.text ?? "")),
+          correct_answer: cleanTriviaText(String(q?.correctAnswer ?? "")),
+          incorrect_answers: (Array.isArray(q?.incorrectAnswers)
+            ? q.incorrectAnswers
+            : []
+          ).map((a: unknown) => cleanTriviaText(String(a ?? ""))),
+          // carried only so the niche/type filter below can see them
+          _niche: q?.isNiche === true,
+          _type: String(q?.type ?? ""),
+        }))
+        // createQuiz rejects any row that isn't a clean 4-choice
+        // question; filter to that shape here instead of letting one
+        // odd row kill a whole create downstream.
+        .filter(
+          (r: any) =>
+            r.question &&
+            r.correct_answer &&
+            r.incorrect_answers.length === 3 &&
+            r.incorrect_answers.every((a: string) => a)
+        );
+      const mainstream = mapped.filter((r: any) => !r._niche && r._type === "text_choice");
+      const usable = mainstream.length > 0 ? mainstream : mapped;
+      return {
+        kind: "ok",
+        results: usable.map(({ _niche, _type, ...row }: any) => row),
+      };
     } catch {
       return { kind: "unavailable" };
     }

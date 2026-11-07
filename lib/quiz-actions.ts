@@ -16,20 +16,25 @@ import {
   bankCategoryFor,
   createBankPuller,
   createOpenTdbPuller,
+  createTriviaApiPuller,
   decodeEntities,
   gradeAnswer,
   pickQuizWinners,
   shuffle,
   toServedQuestion,
+  triviaApiCategoryFor,
   triviaShortMessage,
   type QuizQuestionRow,
   type ServedQuestion,
+  type TriviaPuller,
+  type TriviaSetFailure,
 } from "@/lib/quiz";
 
 // ------------------------------------------------------------- the Hot Seat
 // Millionaire-style quiz: the commish freezes a question set at creation
-// (Open Trivia DB), every member plays ONE solo run against it before the
-// quiz closes, 15 seconds a question. The server is the referee: it
+// (The Trivia API, with Open Trivia DB and a built-in bank behind it),
+// every member plays ONE solo run against it before the quiz closes,
+// 15 seconds a question. The server is the referee: it
 // serves questions one at a time, stamps served_at in the DB, and grades
 // against the frozen answer. quiz_questions is deny-all under RLS (see
 // migration 025), so the only reads of it happen here, through the
@@ -139,9 +144,41 @@ export async function createQuiz(groupId: string, formData: FormData) {
   // param, selection by each row's own difficulty label, a single
   // difficulty-specific fallback, one rate-limit retry — and why the
   // old burst of small fetches starved live) lives in assembleTriviaSet
-  // in lib/quiz.ts; this just hands it the real puller.
-  const pull = createOpenTdbPuller({ fetchImpl: fetch, categoryId: category.id });
-  let { results, failure } = await assembleTriviaSet({ count, difficulty, pull });
+  // in lib/quiz.ts; this just hands it the real pullers.
+  //
+  // Live sources run in order: The Trivia API first (primary since
+  // 2026-11-06 — curated questions, after OpenTDB's community supply
+  // kept surfacing random obscurities), then OpenTDB. The first source
+  // that assembles the full set wins; if neither can, the built-in
+  // bank gets its turn below, and the most informative live failure is
+  // the one that surfaces ("short" — the services answered but ran
+  // thin — beats a generic outage or rate-limit). One exception:
+  // Video Games is the one quiz category The Trivia API doesn't carry
+  // (its pull would silently serve mixed questions), so OpenTDB leads
+  // there — a games quiz should be about games.
+  const triviaApiPull = createTriviaApiPuller({
+    fetchImpl: fetch,
+    category: triviaApiCategoryFor(category.label),
+  });
+  const openTdbPull = createOpenTdbPuller({ fetchImpl: fetch, categoryId: category.id });
+  const livePullers: TriviaPuller[] =
+    category.label === "Video Games"
+      ? [openTdbPull, triviaApiPull]
+      : [triviaApiPull, openTdbPull];
+  let results: any[] = [];
+  let failure: TriviaSetFailure | null = null;
+  for (const pull of livePullers) {
+    const attempt = await assembleTriviaSet({ count, difficulty, pull });
+    if (!attempt.failure && attempt.results.length === count) {
+      results = attempt.results;
+      failure = null;
+      break;
+    }
+    if (failure == null || (failure !== "short" && attempt.failure === "short")) {
+      failure = attempt.failure;
+      results = attempt.results;
+    }
+  }
   if (failure) {
     // Built-in bank fallback: whenever the live supply can't build the
     // set — bank down (2026-10-29: OpenTDB stopped answering entirely
