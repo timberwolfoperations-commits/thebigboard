@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { updateDisplayName, updateAvatar } from "@/lib/actions";
 import { Card, SectionTitle, SubmitButton } from "@/components/ui";
 import { SignOutButton } from "@/components/AuthButtons";
+import PushToggle from "@/components/push-toggle";
 import { Avatar } from "@/components/Avatar";
 import { ANIMAL_LIST } from "@/lib/avatar-keys";
 import { getRatings } from "@/lib/rating";
@@ -132,6 +133,10 @@ export default async function ProfilePage() {
             ))}
           </div>
         </form>
+      </Card>
+      <Card>
+        <p className="text-sm font-semibold text-slate-700">Notifications</p>
+        <PushToggle />
       </Card>
       {isAdmin && (
         <Card>

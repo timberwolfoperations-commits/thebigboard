@@ -13,8 +13,10 @@
 // timeout immediately instead of handing them another deadline.
 
 import { createServiceClient } from "@/lib/supabase/service";
+import { sendPushToUser, sendPushToUsers } from "@/lib/notify";
 import {
   applyAction,
+  blindsForHand,
   nextButton,
   startHand,
   timeoutAction,
@@ -74,6 +76,93 @@ export interface FlowStats {
 
 function newStats(): FlowStats {
   return { timeoutsApplied: 0, handsCompleted: 0, handsDealt: 0 };
+}
+
+// --------------------------------------------------------- notifications
+// Push taps on the shoulder, fired from the settle points below so a
+// player's tap and the timeout sweep notify identically — there is no
+// second path to forget. lib/notify swallows its own errors and these
+// wrappers swallow the rest: a notification can never break a hand.
+
+function tableUrl(table: TableRow): string {
+  return `/groups/${table.group_id}/poker/${table.id}`;
+}
+
+function fmtDeadlineET(iso: string): string {
+  const d = new Date(iso);
+  const day = d.toLocaleDateString("en-US", {
+    timeZone: "America/New_York",
+    weekday: "short",
+  });
+  const time = d.toLocaleTimeString("en-US", {
+    timeZone: "America/New_York",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+  return `${day} ${time} ET`;
+}
+
+// The clock just landed on someone who isn't the player who acted.
+async function notifyTurn(
+  table: TableRow,
+  userId: string,
+  handNo: number,
+  deadlineIso: string,
+): Promise<void> {
+  try {
+    await sendPushToUser(userId, {
+      title: `Your move — ${table.name}`,
+      body: `Hand ${handNo} · move by ${fmtDeadlineET(deadlineIso)}`,
+      url: tableUrl(table),
+    });
+  } catch {
+    // A missed tap is a shame; a broken hand is a bug. Stay silent.
+  }
+}
+
+// A fresh hand, to everyone dealt into it (a seat with no chips sits
+// the hand out and hears about it at the rail instead).
+async function notifyDealt(table: TableRow, seats: SeatRow[], handNo: number): Promise<void> {
+  try {
+    const { smallBlind, bigBlind } = blindsForHand(handNo);
+    const dealtIn = seats.filter((s) => s.stack > 0).map((s) => s.user_id);
+    if (dealtIn.length === 0) return;
+    await sendPushToUsers(dealtIn, {
+      title: `Hand ${handNo} dealt — ${table.name}`,
+      body: `Blinds ${smallBlind}/${bigBlind}. First decision window: 8 hours.`,
+      url: tableUrl(table),
+    });
+  } catch {
+    // Same rule as notifyTurn: never let a tap break the deal.
+  }
+}
+
+// The tournament just ended — the whole table hears it, rail included.
+async function notifyChampion(
+  service: ServiceClient,
+  table: TableRow,
+  seats: SeatRow[],
+  winnerUserId: string,
+): Promise<void> {
+  try {
+    const { data } = await service
+      .from("profiles")
+      .select("display_name")
+      .eq("id", winnerUserId)
+      .maybeSingle();
+    const name =
+      (data as { display_name: string | null } | null)?.display_name ?? "Someone";
+    await sendPushToUsers(
+      seats.map((s) => s.user_id),
+      {
+        title: `${name} takes ${table.name}`,
+        body: `Last one standing — ${POKER_WINNER_POINTS} lifetime points banked.`,
+        url: tableUrl(table),
+      },
+    );
+  } catch {
+    // Same rule: the award is already written; the tap is a courtesy.
+  }
 }
 
 // ------------------------------------------------------------- loading
@@ -198,6 +287,8 @@ export async function dealHand(
   table.hand_no = handNo;
   table.next_deal_at = nextDeal.toISOString();
 
+  await notifyDealt(table, seats, handNo);
+
   if (state.street === "complete") {
     await processHandEnd(service, table, hand, state, seats, now, stats);
   }
@@ -264,6 +355,7 @@ export async function processHandEnd(
         { onConflict: "table_id", ignoreDuplicates: true },
       );
     if (wErr) throw new Error(wErr.message);
+    await notifyChampion(service, table, seats, winner.user_id);
     return;
   }
 
@@ -384,6 +476,12 @@ async function applyAndSettle(
       .eq("id", hand.id);
     if (dErr) throw new Error(dErr.message);
     hand.action_deadline_at = deadline.toISOString();
+    // The clock settled on a new player — tap them, unless the hand
+    // came back around to the player who just acted (heads-up street
+    // changes can do that; they're already looking at the table).
+    if (nextUser !== seat.user_id) {
+      await notifyTurn(table, nextUser, hand.hand_no, deadline.toISOString());
+    }
     return;
   }
   throw new Error("Poker clock failed to settle — too many chained actions.");

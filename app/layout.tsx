@@ -16,6 +16,10 @@ const barlow = Barlow_Condensed({
 export const metadata: Metadata = {
   title: "The Big Board",
   description: "Friendly bets, settled properly. The unbreakable contract for friend groups.",
+  icons: {
+    icon: "/icons/icon-192.png",
+    apple: "/icons/apple-touch-icon.png",
+  },
   openGraph: {
     title: "The Big Board",
     description:
