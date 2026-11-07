@@ -111,14 +111,20 @@ export async function getRatings(
   // "pickem_pool_players" table that does not exist; the query failed
   // silently and pick'em calls never counted at all (caught by the
   // acceptance check on real data, 2026-10-30).
-  const { data: pickRows } = await supabase
-    .from("pickem_picks")
-    .select("pool_id")
-    .in("user_id", ids);
-  const { data: propRows } = await supabase
-    .from("pickem_prop_picks")
-    .select("pool_id")
-    .in("user_id", ids);
+  // Every fetch keyed only on the user ids runs in one batch up front
+  // (pick rows, survivor entries, quiz titles); the sections below
+  // consume them in the original order.
+  const [
+    { data: pickRows },
+    { data: propRows },
+    { data: survEntries },
+    { data: quizWinnerRows },
+  ] = await Promise.all([
+    supabase.from("pickem_picks").select("pool_id").in("user_id", ids),
+    supabase.from("pickem_prop_picks").select("pool_id").in("user_id", ids),
+    supabase.from("survivor_entries").select("pool_id, user_id").in("user_id", ids),
+    supabase.from("quiz_winners").select("user_id").in("user_id", ids),
+  ]);
   const pickemPoolIds = [
     ...new Set([
       ...((pickRows ?? []) as any[]).map((r) => r.pool_id as string),
@@ -131,26 +137,31 @@ export async function getRatings(
       .select("id, winner_user_id, scratched")
       .in("id", pickemPoolIds);
     const poolById = new Map(((pools ?? []) as any[]).map((p) => [p.id, p]));
-    for (const poolId of pickemPoolIds) {
-      let participants: string[] = [];
-      try {
-        const rows = await computePickemLeaderboard(supabase, poolId);
-        for (const r of rows) {
-          if (!wanted.has(r.user_id)) continue;
-          participants.push(r.user_id);
-          const a = forUser(r.user_id);
-          a.pickCalls += r.total_decided;
-          a.pickHits += r.correct;
+    // Grading is independent per pool — run the boards in parallel.
+    // Aggregation into the shared map happens in synchronous blocks
+    // after each board resolves, so totals are identical.
+    await Promise.all(
+      pickemPoolIds.map(async (poolId) => {
+        let participants: string[] = [];
+        try {
+          const rows = await computePickemLeaderboard(supabase, poolId);
+          for (const r of rows) {
+            if (!wanted.has(r.user_id)) continue;
+            participants.push(r.user_id);
+            const a = forUser(r.user_id);
+            a.pickCalls += r.total_decided;
+            a.pickHits += r.correct;
+          }
+        } catch {
+          // A pool whose variant can't grade yet contributes nothing
+          // rather than breaking every board that shows a rating.
         }
-      } catch {
-        // A pool whose variant can't grade yet contributes nothing
-        // rather than breaking every board that shows a rating.
-      }
-      const pool = poolById.get(poolId);
-      if (pool && pool.winner_user_id != null && !pool.scratched) {
-        for (const uid of participants) forUser(uid).settledEntered += 1;
-      }
-    }
+        const pool = poolById.get(poolId);
+        if (pool && pool.winner_user_id != null && !pool.scratched) {
+          for (const uid of participants) forUser(uid).settledEntered += 1;
+        }
+      })
+    );
     const { data: winnerRows } = await supabase
       .from("pickem_pool_winners")
       .select("user_id")
@@ -159,34 +170,33 @@ export async function getRatings(
   }
 
   // ---- survivor: graded picks + championships, derived at read ------
-  const { data: survEntries } = await supabase
-    .from("survivor_entries")
-    .select("pool_id, user_id")
-    .in("user_id", ids);
   const survPoolIds = [...new Set(((survEntries ?? []) as any[]).map((e) => e.pool_id))];
-  for (const poolId of survPoolIds) {
-    try {
-      const state = await computeSurvivorState(supabase, poolId);
-      for (const entry of state.entries) {
-        if (!wanted.has(entry.user_id)) continue;
-        const a = forUser(entry.user_id);
-        for (const pick of entry.picks.values()) {
-          if (pick.result === "win") {
-            a.pickCalls += 1;
-            a.pickHits += 1;
-          } else if (pick.result === "loss") {
-            a.pickCalls += 1;
+  // Independent per pool — grade in parallel, same tolerance as pick'em.
+  await Promise.all(
+    survPoolIds.map(async (poolId) => {
+      try {
+        const state = await computeSurvivorState(supabase, poolId);
+        for (const entry of state.entries) {
+          if (!wanted.has(entry.user_id)) continue;
+          const a = forUser(entry.user_id);
+          for (const pick of entry.picks.values()) {
+            if (pick.result === "win") {
+              a.pickCalls += 1;
+              a.pickHits += 1;
+            } else if (pick.result === "loss") {
+              a.pickCalls += 1;
+            }
           }
+          if (state.decided) a.settledEntered += 1;
         }
-        if (state.decided) a.settledEntered += 1;
+        for (const champ of state.champions) {
+          if (wanted.has(champ.user_id)) forUser(champ.user_id).titles += 1;
+        }
+      } catch {
+        // Same tolerance as pick'em above.
       }
-      for (const champ of state.champions) {
-        if (wanted.has(champ.user_id)) forUser(champ.user_id).titles += 1;
-      }
-    } catch {
-      // Same tolerance as pick'em above.
-    }
-  }
+    })
+  );
 
   // ---- quiz: answers from finished runs ------------------------------
   const { data: runs } = await supabase
@@ -229,10 +239,6 @@ export async function getRatings(
       }
     }
   }
-  const { data: quizWinnerRows } = await supabase
-    .from("quiz_winners")
-    .select("user_id")
-    .in("user_id", ids);
   for (const w of (quizWinnerRows ?? []) as any[]) forUser(w.user_id).titles += 1;
 
   // ---- blend ----------------------------------------------------------
