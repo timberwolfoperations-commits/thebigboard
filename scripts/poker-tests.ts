@@ -422,6 +422,93 @@ console.log("\nPublic view secrecy");
   );
 }
 
+// --------------------------------------- public view raise state
+// minRaiseTo / mayRaise on the public view (step 4): the raise panel
+// reads them instead of reconstructing the ladder from the action
+// log, which can't tell a short all-in from a full raise.
+
+console.log("\nPublic view raise state — normal raise line");
+{
+  const state = startHand({
+    stacks: [100, 100, 100],
+    button: 0,
+    handNumber: 1,
+    deck: buildShoe("2c 3c 4c", "5c 6c 7c", "8c 9c Tc Jc Qc"),
+  });
+  let view = publicView(state, 0);
+  eq("opening: min raise is twice the big blind", view.minRaiseTo, 4);
+  eq("opening: the first actor may raise", view.mayRaise, true);
+  applyAction(state, 0, { type: "raise", to: 10 }); // raise size 8
+  view = publicView(state, 1);
+  eq("after a raise to 10, min re-raise is to 18", view.minRaiseTo, 18);
+  eq("after a raise, the next player may raise", view.mayRaise, true);
+  applyAction(state, 1, { type: "call" });
+  view = publicView(state, 2);
+  eq("after a call, min re-raise is still 18", view.minRaiseTo, 18);
+  eq("after a call, the big blind may still raise", view.mayRaise, true);
+}
+
+console.log("\nPublic view raise state — short all-in does not reopen");
+{
+  // Seat 3 is short: in for the 2 call pre-flop with 11 behind.
+  const state = startHand({
+    stacks: [100, 100, 100, 13],
+    button: 0,
+    handNumber: 1,
+    deck: buildShoe("2c 3c 4c 5c", "6c 7c 8c 9c", "Tc Jc Qc Kc Ac"),
+  });
+  applyAction(state, 3, { type: "call" });
+  applyAction(state, 0, { type: "raise", to: 10 }); // full raise, size 8
+  applyAction(state, 1, { type: "call" });
+  applyAction(state, 2, { type: "call" });
+  let view = publicView(state, 3);
+  eq("short stack is on the clock", view.toAct, 3);
+  eq("short stack may still raise before the shove", view.mayRaise, true);
+  eq("min raise facing the 10 is 18", view.minRaiseTo, 18);
+  applyAction(state, 3, { type: "allin" }); // all-in to 13 — only +3, a short raise
+  view = publicView(state, 0);
+  eq("the shove moved the bet to 13", view.currentBet, 13);
+  eq("min raise yardstick survives the shove", view.minRaiseTo, 21);
+  eq("the raiser may NOT re-raise over the short all-in", view.mayRaise, false);
+  applyAction(state, 0, { type: "call" });
+  view = publicView(state, 1);
+  eq("a caller may NOT raise over the short all-in either", view.mayRaise, false);
+  applyAction(state, 1, { type: "call" });
+  view = publicView(state, 2);
+  eq("the big blind caller is call-or-fold too", view.mayRaise, false);
+}
+
+console.log("\nPublic view raise state — players yet to act keep their options");
+{
+  // On the flop: seat 1 checks, seat 2 bets 20, seat 3 shoves short
+  // to 30. Seat 0 hasn't acted on the street at all, and seat 1 only
+  // checked BEFORE the bet existed — the bet itself was a full raise,
+  // so both keep the right to raise; only the +10 shove was short.
+  const state = startHand({
+    stacks: [100, 100, 100, 32],
+    button: 0,
+    handNumber: 1,
+    deck: buildShoe("2c 3c 4c 5c", "6c 7c 8c 9c", "Tc Jc Qc Kc Ac"),
+  });
+  applyAction(state, 3, { type: "call" }); // UTG calls, 30 behind
+  applyAction(state, 0, { type: "call" });
+  applyAction(state, 1, { type: "call" }); // small blind completes
+  applyAction(state, 2, { type: "check" }); // big blind checks — flop
+  eq("the hand reached the flop", state.street, "flop");
+  applyAction(state, 1, { type: "check" });
+  applyAction(state, 2, { type: "raise", to: 20 }); // opening bet, a full raise
+  let view = publicView(state, 3);
+  eq("facing the bet, min raise is to 40", view.minRaiseTo, 40);
+  applyAction(state, 3, { type: "allin" }); // short shove to 30 (+10 < 20)
+  view = publicView(state, 0);
+  eq("action lands on the player who hasn't acted", view.toAct, 0);
+  eq("a player yet to act MAY raise over the short all-in", view.mayRaise, true);
+  eq("min raise over the shove is to 50", view.minRaiseTo, 50);
+  applyAction(state, 0, { type: "call" });
+  view = publicView(state, 1);
+  eq("the pre-bet checker may raise too — the bet reopened it for them", view.mayRaise, true);
+}
+
 // ------------------------------------------------------------ fuzz round
 
 console.log("\nFuzz: 200 random hands must finish with chips conserved");

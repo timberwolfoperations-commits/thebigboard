@@ -502,6 +502,15 @@ export interface PublicHandView {
   pot: number;
   currentBet: number;
   toAct: number | null;
+  // The raise math for the player on the clock, computed from the
+  // live state. minRaiseTo is the cheapest legal full raise (current
+  // bet + the last full raise size); mayRaise is false when a short
+  // all-in didn't reopen betting for that player — they may only call
+  // or fold. Exposed here because the action log alone can't
+  // reconstruct either one (a short all-in looks like any other
+  // all-in in the log). True when nobody is on the clock.
+  minRaiseTo: number;
+  mayRaise: boolean;
   seats: PublicSeatView[];
   result: HandResult | null;
 }
@@ -511,6 +520,7 @@ export interface PublicHandView {
 // so nothing downstream can leak them. (Showdown reveals ride along
 // in result.revealed; those cards are public by the rules.)
 export function publicView(state: HandState, viewerSeat: number): PublicHandView {
+  const actor = state.toAct !== null ? state.seats[state.toAct] : null;
   return {
     handNumber: state.handNumber,
     street: state.street,
@@ -521,6 +531,8 @@ export function publicView(state: HandState, viewerSeat: number): PublicHandView
     pot: totalPot(state),
     currentBet: state.currentBet,
     toAct: state.toAct,
+    minRaiseTo: state.currentBet + state.lastRaiseSize,
+    mayRaise: actor ? actor.mayRaise : true,
     seats: state.seats.map((s) => ({
       seat: s.seat,
       stack: s.stack,

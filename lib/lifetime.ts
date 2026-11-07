@@ -1,7 +1,8 @@
-// Lifetime points for one group, from the same four sources the group
+// Lifetime points for one group, from the same five sources the group
 // page's board uses: settled bets, roster-pool champs, pick'em
-// co-winners, quiz winners. Returns a Map keyed by user_id; members
-// with no wins simply aren't in the map (callers default to 0).
+// co-winners, quiz winners, poker winners. Returns a Map keyed by
+// user_id; members with no wins simply aren't in the map (callers
+// default to 0).
 export async function getGroupLifetime(
   supabase: any,
   groupId: string
@@ -40,6 +41,12 @@ export async function getGroupLifetime(
     .select("user_id, points, quizzes!inner(group_id)")
     .eq("quizzes.group_id", groupId);
   for (const w of (quizWinners ?? []) as any[]) add(w.user_id, w.points);
+
+  const { data: pokerWinners } = await supabase
+    .from("poker_winners")
+    .select("user_id, points, poker_tables!inner(group_id)")
+    .eq("poker_tables.group_id", groupId);
+  for (const w of (pokerWinners ?? []) as any[]) add(w.user_id, w.points);
 
   return pointsByUser;
 }

@@ -65,29 +65,14 @@ function nextBlindStep(handNumber: number): { hand: number; sb: number; bb: numb
 }
 
 // ------------------------------------------------------- the story of a hand
-// The public view doesn't carry the engine's lastRaiseSize, so the
-// street's bet ladder is reconstructed from the action log — the same
-// walk tells the story AND sizes the min-raise preset. Log semantics
-// (migration 027): a call's amount is the chips put in; a raise's or
-// all-in's amount is the raise-TO total for the street.
-
-interface Ladder {
-  level: number;
-  lastRaiseSize: number;
-}
-
-function walkLadder(rows: PokerActionLogRow[], street: string, bigBlind: number): Ladder {
-  let level = street === "preflop" ? bigBlind : 0;
-  let lastRaiseSize = bigBlind;
-  for (const r of rows) {
-    if (r.street !== street) continue;
-    if ((r.action === "raise" || r.action === "allin") && r.amount != null && r.amount > level) {
-      if (r.amount - level >= lastRaiseSize) lastRaiseSize = r.amount - level;
-      level = r.amount;
-    }
-  }
-  return { level, lastRaiseSize };
-}
+// The action log tells the story (streetSentences below walks it for
+// the narrative). The raise MATH — min-raise size and whether betting
+// was reopened — comes straight off the public view (minRaiseTo /
+// mayRaise), which the engine computes from the live state; the log
+// alone can't reconstruct it, because a short all-in that didn't
+// reopen betting looks like any other all-in in the log. Log
+// semantics (migration 027): a call's amount is the chips put in; a
+// raise's or all-in's amount is the raise-TO total for the street.
 
 const STREET_ORDER = ["preflop", "flop", "turn", "river"] as const;
 
@@ -205,16 +190,19 @@ export default async function PokerTablePage({
   if (isMyTurn && hand && myHandSeat && view.handId) {
     const owed = Math.min(hand.currentBet - myHandSeat.committedStreet, myHandSeat.stack);
     const maxTo = myHandSeat.committedStreet + myHandSeat.stack;
-    const { lastRaiseSize } = walkLadder(view.actionLog, hand.street, hand.bigBlind);
     const potRaiseRaw = hand.currentBet + hand.pot + owed;
     actionModel = {
       handId: view.handId,
       owed,
       stack: myHandSeat.stack,
       maxTo,
-      minRaiseTo: hand.currentBet + lastRaiseSize,
+      minRaiseTo: hand.minRaiseTo,
       potRaiseTo: potRaiseRaw < maxTo ? potRaiseRaw : null,
-      canRaise: maxTo > hand.currentBet,
+      // mayRaise is the engine's word on whether betting was reopened
+      // for me — after a short all-in it can be false even with chips
+      // to spare, in which case only call/fold (or the all-in call)
+      // remain and the panel hides Raise entirely.
+      canRaise: hand.mayRaise && maxTo > hand.currentBet,
       deadlineAt: view.actionDeadlineAt,
       facingBet: owed > 0,
     };

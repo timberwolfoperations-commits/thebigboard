@@ -5,6 +5,8 @@ import { computePickemLeaderboard } from "@/lib/pickem-scoring";
 import { computeSurvivorState } from "@/lib/survivor";
 import { computePoolPoints } from "@/lib/pool-scoring";
 import { loadHostNames, loadMyGuestPoolIds, loadOpenPoolDiscovery } from "@/lib/open-pools";
+import { createServiceClient } from "@/lib/supabase/service";
+import { listMyPokerTurns } from "@/lib/poker/server";
 import { Card, SectionTitle } from "@/components/ui";
 import HappeningPoolCard from "@/components/happening-pool-card";
 import OpenPoolCard from "@/components/open-pool-card";
@@ -297,9 +299,32 @@ export default async function Dashboard({
     }
   }
 
+  // ---- poker tables where I'm on the clock ----------------------------------
+  // Determined server-side through the poker server module (service
+  // client reads the engine state; all that reaches this page is
+  // table, hand number, and deadline — never a card). A live 8h/4h
+  // clock is the most urgent thing on the board, so these lead the
+  // action list in the panel below.
+  const pokerTurns = groupIds.length
+    ? (await listMyPokerTurns(createServiceClient(), user.id)).filter((t) =>
+        visibleGroupIds.includes(t.groupId),
+      )
+    : [];
+
   // ---- action items ------------------------------------------------------------
   type Action = { href: string; title: string; group: string; cta: string; detail: string };
   const actions: Action[] = [];
+  for (const t of pokerTurns.slice(0, 3)) {
+    actions.push({
+      href: `/groups/${t.groupId}/poker/${t.tableId}`,
+      title: t.tableName,
+      group: groupName.get(t.groupId) ?? "",
+      cta: "Your move",
+      detail: t.deadlineAt
+        ? `Hand ${t.handNo} · move by ${kickoffLabel(t.deadlineAt)}`
+        : `Hand ${t.handNo} · you're on the clock`,
+    });
+  }
   for (const p of liveRoster) {
     if (new Date(p.lock_at).getTime() > now && !enteredRoster.has(p.id)) {
       actions.push({

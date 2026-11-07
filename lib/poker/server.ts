@@ -498,3 +498,62 @@ export async function sweepAllTables(
   }
   return { ...totals, tablesSwept };
 }
+
+// ---------------------------------------------------------- my turns
+
+export interface MyPokerTurn {
+  tableId: string;
+  tableName: string;
+  groupId: string;
+  handId: string;
+  handNo: number;
+  deadlineAt: string | null;
+}
+
+// Every table where it's this user's move right now — the dashboard's
+// needs-you poker cards. The engine state is read here, on the
+// service client, only to learn whose clock is running; the returned
+// shape carries NO state beyond that (no cards, no pot, no stacks) —
+// table name, hand number, deadline, and the link ids, nothing else.
+// Sorted by deadline, soonest first (a hand with no deadline — dealt
+// all-in — sorts last).
+export async function listMyPokerTurns(
+  service: ServiceClient,
+  userId: string,
+): Promise<MyPokerTurn[]> {
+  const { data: mySeats, error } = await service
+    .from("poker_seats")
+    .select("table_id")
+    .eq("user_id", userId);
+  if (error) throw new Error(error.message);
+  const tableIds = [...new Set(((mySeats ?? []) as { table_id: string }[]).map((s) => s.table_id))];
+
+  const turns: MyPokerTurn[] = [];
+  for (const tableId of tableIds) {
+    // A table deleted between the seat read and here shouldn't take
+    // the whole dashboard down with it — skip and move on.
+    const table = await loadTable(service, tableId).catch(() => null);
+    if (!table || table.status !== "running") continue;
+    const seats = await loadSeats(service, tableId);
+    const mySeat = seats.findIndex((s) => s.user_id === userId);
+    if (mySeat < 0) continue;
+    const hand = await loadActiveHand(service, tableId);
+    if (!hand) continue;
+    const state = deserializeState(hand.state);
+    if (state.toAct !== mySeat) continue;
+    turns.push({
+      tableId: table.id,
+      tableName: table.name,
+      groupId: table.group_id,
+      handId: hand.id,
+      handNo: hand.hand_no,
+      deadlineAt: hand.action_deadline_at,
+    });
+  }
+  turns.sort((a, b) => {
+    if (a.deadlineAt === null) return 1;
+    if (b.deadlineAt === null) return -1;
+    return a.deadlineAt.localeCompare(b.deadlineAt);
+  });
+  return turns;
+}
