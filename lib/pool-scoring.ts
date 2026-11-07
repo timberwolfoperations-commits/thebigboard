@@ -30,23 +30,16 @@ export interface PoolPoints {
 const norm = (s: unknown) => String(s ?? "").trim().toUpperCase();
 
 export async function computePoolPoints(supabase: any, poolId: string): Promise<PoolPoints> {
-  const { data: pool } = await supabase
-    .from("pools")
-    .select("id, scoring_formula")
-    .eq("id", poolId)
-    .single();
+  // Pool, players, and game links all key off the pool id alone —
+  // one parallel batch instead of three serial round trips.
+  const [{ data: pool }, { data: players }, { data: links }] = await Promise.all([
+    supabase.from("pools").select("id, scoring_formula").eq("id", poolId).single(),
+    supabase.from("pool_players").select("id, name, team").eq("pool_id", poolId),
+    supabase.from("pool_games").select("game_id").eq("pool_id", poolId),
+  ]);
   const formula = ((pool?.scoring_formula ?? {}) as ScoringFormula);
 
-  const { data: players } = await supabase
-    .from("pool_players")
-    .select("id, name, team")
-    .eq("pool_id", poolId);
   const playerList = (players ?? []) as any[];
-
-  const { data: links } = await supabase
-    .from("pool_games")
-    .select("game_id")
-    .eq("pool_id", poolId);
   const gameIds = ((links ?? []) as any[]).map((l) => l.game_id);
 
   const points = new Map<string, number>();

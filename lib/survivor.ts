@@ -74,13 +74,22 @@ export async function computeSurvivorState(
   supabase: any,
   pool: SurvivorPoolRow
 ): Promise<SurvivorState> {
-  const { data: gameRows } = await supabase
-    .from("games")
-    .select("id, week, label, home_team, away_team, home_score, away_score, status, starts_at")
-    .eq("sport", "NFL")
-    .eq("season", pool.season)
-    .gte("week", pool.start_week)
-    .order("starts_at", { ascending: true });
+  // Games and entries both derive from the pool row alone — fetch them
+  // in parallel; picks still wait on the entry ids.
+  const [{ data: gameRows }, { data: entryRows }] = await Promise.all([
+    supabase
+      .from("games")
+      .select("id, week, label, home_team, away_team, home_score, away_score, status, starts_at")
+      .eq("sport", "NFL")
+      .eq("season", pool.season)
+      .gte("week", pool.start_week)
+      .order("starts_at", { ascending: true }),
+    supabase
+      .from("survivor_entries")
+      .select("id, user_id, created_at, profiles(display_name)")
+      .eq("pool_id", pool.id)
+      .order("created_at", { ascending: true }),
+  ]);
 
   const games = (gameRows ?? []) as SurvivorGame[];
   const gamesByWeek = new Map<number, SurvivorGame[]>();
@@ -103,11 +112,6 @@ export async function computeSurvivorState(
   const firstKickoff = startGames.length > 0 ? startGames[0].starts_at : null;
   const now = Date.now();
 
-  const { data: entryRows } = await supabase
-    .from("survivor_entries")
-    .select("id, user_id, created_at, profiles(display_name)")
-    .eq("pool_id", pool.id)
-    .order("created_at", { ascending: true });
   const entryList = (entryRows ?? []) as any[];
   const entryIds = entryList.map((e) => e.id);
 

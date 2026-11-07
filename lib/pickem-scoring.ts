@@ -59,17 +59,17 @@ export async function computePickemLeaderboard(
   supabase: any,
   poolId: string
 ): Promise<PickemRow[]> {
-  const { data: pool } = await supabase
-    .from("pickem_pools")
-    .select("id, variant, use_spread")
-    .eq("id", poolId)
-    .single();
+  // Pool row, game links, and picks all key off the pool id alone —
+  // one parallel batch; games still wait on the link ids.
+  const [{ data: pool }, { data: links }, { data: picks }] = await Promise.all([
+    supabase.from("pickem_pools").select("id, variant, use_spread").eq("id", poolId).single(),
+    supabase.from("pickem_pool_games").select("game_id, spread").eq("pool_id", poolId),
+    supabase
+      .from("pickem_picks")
+      .select("user_id, game_id, picked_team, created_at, profiles(display_name)")
+      .eq("pool_id", poolId),
+  ]);
   if (!pool) throw new Error("Pool not found.");
-
-  const { data: links } = await supabase
-    .from("pickem_pool_games")
-    .select("game_id, spread")
-    .eq("pool_id", poolId);
   const gameIds = ((links ?? []) as any[]).map((l) => l.game_id);
   // Frozen per-pool lines, snapshotted at creation (migration 023). The
   // API hands numeric columns back as strings sometimes, so coerce.
@@ -89,11 +89,6 @@ export async function computePickemLeaderboard(
         .select("id, home_team, away_team, home_score, away_score, status, starts_at")
         .in("id", gameIds)
     : { data: [] };
-
-  const { data: picks } = await supabase
-    .from("pickem_picks")
-    .select("user_id, game_id, picked_team, created_at, profiles(display_name)")
-    .eq("pool_id", poolId);
 
   const gameList = (games ?? []) as PickemGame[];
   const pickList = (picks ?? []) as any[];
@@ -180,17 +175,20 @@ async function scoreOverUnder(
 ): Promise<PickemRow[]> {
   const norm = (s: unknown) => String(s ?? "").trim().toUpperCase();
 
-  const { data: lines } = await supabase
-    .from("pickem_lines")
-    .select("id, player_name, team, stat_key, line")
-    .eq("pool_id", poolId);
+  // Lines and prop picks both key off the pool id alone — one batch.
+  const [{ data: lines }, { data: propPicks }] = await Promise.all([
+    supabase
+      .from("pickem_lines")
+      .select("id, player_name, team, stat_key, line")
+      .eq("pool_id", poolId),
+    supabase
+      .from("pickem_prop_picks")
+      .select("user_id, line_id, side, created_at, profiles(display_name)")
+      .eq("pool_id", poolId),
+  ]);
   const lineList = (lines ?? []) as any[];
   const lineById = new Map<string, any>(lineList.map((l) => [l.id, l]));
 
-  const { data: propPicks } = await supabase
-    .from("pickem_prop_picks")
-    .select("user_id, line_id, side, created_at, profiles(display_name)")
-    .eq("pool_id", poolId);
   const pickList = (propPicks ?? []) as any[];
 
   const gameIds = games.map((g) => g.id);
