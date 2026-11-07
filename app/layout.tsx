@@ -38,27 +38,26 @@ export default async function RootLayout({ children }: { children: React.ReactNo
 
   // The Scoring page is a commish tool (stat grids, refresh) — only show the
   // tab to group admins so regular members never see a dead-end link.
-  const { data: adminRow } = user
-    ? await supabase
-        .from("group_members")
-        .select("group_id")
-        .eq("user_id", user.id)
-        .eq("role", "admin")
-        .limit(1)
-        .maybeSingle()
-    : { data: null };
-
-  const { data: profile } = user
-    ? await supabase.from("profiles").select("display_name").eq("id", user.id).maybeSingle()
-    : { data: null };
-
-  const { data: memberships } = user
-    ? await supabase
-        .from("group_members")
-        .select("groups(id, name)")
-        .eq("user_id", user.id)
-        .order("joined_at", { ascending: false })
-    : { data: null };
+  // The three lookups below are independent (all keyed on the user id),
+  // so they run as one parallel batch instead of three serial round trips
+  // on every page render.
+  const [{ data: adminRow }, { data: profile }, { data: memberships }] = user
+    ? await Promise.all([
+        supabase
+          .from("group_members")
+          .select("group_id")
+          .eq("user_id", user.id)
+          .eq("role", "admin")
+          .limit(1)
+          .maybeSingle(),
+        supabase.from("profiles").select("display_name").eq("id", user.id).maybeSingle(),
+        supabase
+          .from("group_members")
+          .select("groups(id, name)")
+          .eq("user_id", user.id)
+          .order("joined_at", { ascending: false }),
+      ])
+    : [{ data: null }, { data: null }, { data: null }];
   const menuGroups = ((memberships ?? []) as any[])
     .map((m) => m.groups)
     .filter((g) => g?.id)
