@@ -13,6 +13,7 @@ import GroupSwitcher from "@/components/group-switcher";
 import RememberContext from "@/components/remember-context";
 import { loadMyGroups } from "@/lib/my-pools";
 import { getRatings } from "@/lib/rating";
+import { getGroupLifetime } from "@/lib/lifetime";
 
 function daysOverdue(settleDate: string) {
   const ms = Date.now() - new Date(settleDate + "T23:59:59").getTime();
@@ -98,84 +99,107 @@ export default async function GroupPage({ params }: { params: Promise<{ id: stri
     .filter((b) => b.holdingUp.length > 0);
 
   // ---- leaderboard: lifetime points per member in this group ---------------
-  const { data: settled } = await supabase
-    .from("bets")
-    .select("points, proposed_winner_id")
-    .eq("group_id", id)
-    .eq("status", "settled");
-
-  const pointsByUser = new Map<string, { points: number; wins: number }>();
-  for (const s of (settled ?? []) as any[]) {
-    if (!s.proposed_winner_id) continue;
-    const cur = pointsByUser.get(s.proposed_winner_id) ?? { points: 0, wins: 0 };
-    cur.points += s.points;
-    cur.wins += 1;
-    pointsByUser.set(s.proposed_winner_id, cur);
-  }
-  // Pool champs land here too, same as a bet win.
-  const { data: poolWinners } = await supabase
-    .from("pools")
-    .select("winner_user_id, winner_points")
-    .eq("group_id", id)
-    .not("winner_user_id", "is", null);
-  for (const w of (poolWinners ?? []) as any[]) {
-    const cur = pointsByUser.get(w.winner_user_id) ?? { points: 0, wins: 0 };
-    cur.points += w.winner_points;
-    cur.wins += 1;
-    pointsByUser.set(w.winner_user_id, cur);
-  }
-  // Pick'em champs too — co-winners each land here with their own 10 pts.
-  const { data: pickemWinners } = await supabase
-    .from("pickem_pool_winners")
-    .select("user_id, points, pickem_pools!inner(group_id)")
-    .eq("pickem_pools.group_id", id);
-  for (const w of (pickemWinners ?? []) as any[]) {
-    const cur = pointsByUser.get(w.user_id) ?? { points: 0, wins: 0 };
-    cur.points += w.points;
-    cur.wins += 1;
-    pointsByUser.set(w.user_id, cur);
-  }
-  // Quiz champs too — same deal, from quiz_winners.
-  const { data: quizWinners } = await supabase
-    .from("quiz_winners")
-    .select("user_id, points, quizzes!inner(group_id)")
-    .eq("quizzes.group_id", id);
-  for (const w of (quizWinners ?? []) as any[]) {
-    const cur = pointsByUser.get(w.user_id) ?? { points: 0, wins: 0 };
-    cur.points += w.points;
-    cur.wins += 1;
-    pointsByUser.set(w.user_id, cur);
-  }
-  // Poker champs too — last stack standing, from poker_winners.
-  const { data: pokerWinners } = await supabase
-    .from("poker_winners")
-    .select("user_id, points, poker_tables!inner(group_id)")
-    .eq("poker_tables.group_id", id);
-  for (const w of (pokerWinners ?? []) as any[]) {
-    const cur = pointsByUser.get(w.user_id) ?? { points: 0, wins: 0 };
-    cur.points += w.points;
-    cur.wins += 1;
-    pointsByUser.set(w.user_id, cur);
-  }
+  // Same five sources as lib/lifetime.ts — this page used to carry its own
+  // inline copy of that sum (five more serial queries, including a second
+  // fetch of the settled bets this page already loaded above). One shared
+  // implementation now, fetched as a single parallel batch.
+  const pointsByUser = await getGroupLifetime(supabase, id);
   const leaderboard = memberList
     .map((m) => ({ ...m, ...(pointsByUser.get(m.user_id) ?? { points: 0, wins: 0 }) }))
     .sort((a, b) => b.points - a.points);
-  const avatars = await getAvatarMap(supabase, memberList.map((m) => m.user_id));
-  const ratings = await getRatings(supabase, memberList.map((m) => m.user_id));
+  const memberIds = memberList.map((m) => m.user_id);
+  // Avatars and ratings are independent reads over the same member list.
+  const [avatars, ratings] = await Promise.all([
+    getAvatarMap(supabase, memberIds),
+    getRatings(supabase, memberIds),
+  ]);
+
+  // ---- section lists --------------------------------------------------------
+  // Survivor, roster pools, pick'em, quizzes, poker: the five list
+  // queries are independent (all keyed on the group id), and each
+  // section's count query only needs its own list — so the page fetches
+  // all lists in one batch, then all counts in a second batch, instead
+  // of ten serial round trips.
+  const [
+    { data: survivorPools },
+    { data: pools },
+    { data: pickemPools },
+    { data: quizzes },
+    { data: pokerTables },
+  ] = await Promise.all([
+    supabase
+      .from("survivor_pools")
+      .select("id, name, season, start_week")
+      .eq("group_id", id)
+      .order("created_at", { ascending: false }),
+    supabase
+      .from("pools")
+      .select("id, name, budget, roster_size, lock_at, winner_user_id, winner_points")
+      .eq("group_id", id)
+      .order("created_at", { ascending: false }),
+    supabase
+      .from("pickem_pools")
+      .select("id, name, week, season, lock_at, winner_user_id, winner_points, scratched")
+      .eq("group_id", id)
+      .order("created_at", { ascending: false }),
+    supabase
+      .from("quizzes")
+      .select("id, title, category_label, question_count, close_at, created_at")
+      .eq("group_id", id)
+      .order("created_at", { ascending: false }),
+    supabase
+      .from("poker_tables")
+      .select("id, name, status, hand_no, winner_user_id, created_at")
+      .eq("group_id", id)
+      .order("created_at", { ascending: false }),
+  ]);
+  const survivorList = (survivorPools ?? []) as any[];
+  const quizList = ((quizzes ?? []) as any[]).slice(0, 8);
+  const pokerList = ((pokerTables ?? []) as any[]).slice(0, 8);
+
+  const [
+    { data: survivorEntries },
+    { data: poolEntries },
+    { data: pickemPicks },
+    { data: quizRuns },
+    { data: quizWinnerRows },
+    { data: pokerSeatRows },
+  ] = await Promise.all([
+    survivorList.length
+      ? supabase
+          .from("survivor_entries")
+          .select("pool_id")
+          .in("pool_id", survivorList.map((p) => p.id))
+      : Promise.resolve({ data: [] as any[] }),
+    supabase
+      .from("pool_entries")
+      .select("pool_id")
+      .in("pool_id", (pools ?? []).map((p: any) => p.id)),
+    supabase
+      .from("pickem_picks")
+      .select("pool_id, user_id")
+      .in("pool_id", (pickemPools ?? []).map((p: any) => p.id)),
+    quizList.length
+      ? supabase
+          .from("quiz_runs")
+          .select("quiz_id, finished_at")
+          .in("quiz_id", quizList.map((q) => q.id))
+      : Promise.resolve({ data: [] as any[] }),
+    quizList.length
+      ? supabase
+          .from("quiz_winners")
+          .select("quiz_id, user_id")
+          .in("quiz_id", quizList.map((q) => q.id))
+      : Promise.resolve({ data: [] as any[] }),
+    pokerList.length
+      ? supabase
+          .from("poker_seats")
+          .select("table_id")
+          .in("table_id", pokerList.map((t) => t.id))
+      : Promise.resolve({ data: [] as any[] }),
+  ]);
 
   // ---- survivor pools -----------------------------------------------------
-  const { data: survivorPools } = await supabase
-    .from("survivor_pools")
-    .select("id, name, season, start_week")
-    .eq("group_id", id)
-    .order("created_at", { ascending: false });
-  const survivorList = (survivorPools ?? []) as any[];
-  const { data: survivorEntries } = survivorList.length
-    ? await supabase
-        .from("survivor_entries")
-        .select("pool_id")
-        .in("pool_id", survivorList.map((p) => p.id))
-    : { data: [] as any[] };
   const survivorCountByPool = new Map<string, number>();
   for (const e of (survivorEntries ?? []) as any[]) {
     survivorCountByPool.set(e.pool_id, (survivorCountByPool.get(e.pool_id) ?? 0) + 1);
@@ -187,35 +211,17 @@ export default async function GroupPage({ params }: { params: Promise<{ id: stri
   const disputed = betList.filter((b) => b.status === "disputed");
   const recentSettled = betList.filter((b) => b.status === "settled").slice(0, 8);
 
-  // ---- roster pools -------------------------------------------------------
-  const { data: pools } = await supabase
-    .from("pools")
-    .select("id, name, budget, roster_size, lock_at, winner_user_id, winner_points")
-    .eq("group_id", id)
-    .order("created_at", { ascending: false });
+  // ---- roster pools (lists + counts fetched in the batches above) --------
   const openPools = ((pools ?? []) as any[]).filter((p) => !p.winner_user_id);
   const settledPools = ((pools ?? []) as any[]).filter((p) => p.winner_user_id);
-  const { data: poolEntries } = await supabase
-    .from("pool_entries")
-    .select("pool_id")
-    .in("pool_id", (pools ?? []).map((p: any) => p.id));
   const entriesByPool = new Map<string, number>();
   for (const e of (poolEntries ?? []) as any[]) {
     entriesByPool.set(e.pool_id, (entriesByPool.get(e.pool_id) ?? 0) + 1);
   }
 
   // ---- pick'em pools ------------------------------------------------------
-  const { data: pickemPools } = await supabase
-    .from("pickem_pools")
-    .select("id, name, week, season, lock_at, winner_user_id, winner_points, scratched")
-    .eq("group_id", id)
-    .order("created_at", { ascending: false });
   const openPickem = ((pickemPools ?? []) as any[]).filter((p) => !p.winner_user_id && !p.scratched);
   const settledPickem = ((pickemPools ?? []) as any[]).filter((p) => p.winner_user_id || p.scratched);
-  const { data: pickemPicks } = await supabase
-    .from("pickem_picks")
-    .select("pool_id, user_id")
-    .in("pool_id", (pickemPools ?? []).map((p: any) => p.id));
   const pickersByPool = new Map<string, Set<string>>();
   for (const pk of (pickemPicks ?? []) as any[]) {
     if (!pickersByPool.has(pk.pool_id)) pickersByPool.set(pk.pool_id, new Set());
@@ -223,29 +229,11 @@ export default async function GroupPage({ params }: { params: Promise<{ id: stri
   }
 
   // ---- quizzes -------------------------------------------------------------
-  const { data: quizzes } = await supabase
-    .from("quizzes")
-    .select("id, title, category_label, question_count, close_at, created_at")
-    .eq("group_id", id)
-    .order("created_at", { ascending: false });
-  const quizList = ((quizzes ?? []) as any[]).slice(0, 8);
-  const { data: quizRuns } = quizList.length
-    ? await supabase
-        .from("quiz_runs")
-        .select("quiz_id, finished_at")
-        .in("quiz_id", quizList.map((q) => q.id))
-    : { data: [] as any[] };
   const playedByQuiz = new Map<string, number>();
   for (const r of (quizRuns ?? []) as any[]) {
     if (!r.finished_at) continue;
     playedByQuiz.set(r.quiz_id, (playedByQuiz.get(r.quiz_id) ?? 0) + 1);
   }
-  const { data: quizWinnerRows } = quizList.length
-    ? await supabase
-        .from("quiz_winners")
-        .select("quiz_id, user_id")
-        .in("quiz_id", quizList.map((q) => q.id))
-    : { data: [] as any[] };
   const quizWinnersByQuiz = new Map<string, string[]>();
   for (const w of (quizWinnerRows ?? []) as any[]) {
     const arr = quizWinnersByQuiz.get(w.quiz_id) ?? [];
@@ -254,18 +242,6 @@ export default async function GroupPage({ params }: { params: Promise<{ id: stri
   }
 
   // ---- poker tables ---------------------------------------------------------
-  const { data: pokerTables } = await supabase
-    .from("poker_tables")
-    .select("id, name, status, hand_no, winner_user_id, created_at")
-    .eq("group_id", id)
-    .order("created_at", { ascending: false });
-  const pokerList = ((pokerTables ?? []) as any[]).slice(0, 8);
-  const { data: pokerSeatRows } = pokerList.length
-    ? await supabase
-        .from("poker_seats")
-        .select("table_id")
-        .in("table_id", pokerList.map((t) => t.id))
-    : { data: [] as any[] };
   const seatedByTable = new Map<string, number>();
   for (const s of (pokerSeatRows ?? []) as any[]) {
     seatedByTable.set(s.table_id, (seatedByTable.get(s.table_id) ?? 0) + 1);

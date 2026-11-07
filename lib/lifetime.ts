@@ -16,36 +16,43 @@ export async function getGroupLifetime(
     pointsByUser.set(uid, cur);
   };
 
-  const { data: settled } = await supabase
-    .from("bets")
-    .select("points, proposed_winner_id")
-    .eq("group_id", groupId)
-    .eq("status", "settled");
+  // The five sources are independent — one parallel batch instead of
+  // five serial round trips. Results are still merged in the same
+  // source order below, so totals are unchanged.
+  const [
+    { data: settled },
+    { data: poolWinners },
+    { data: pickemWinners },
+    { data: quizWinners },
+    { data: pokerWinners },
+  ] = await Promise.all([
+    supabase
+      .from("bets")
+      .select("points, proposed_winner_id")
+      .eq("group_id", groupId)
+      .eq("status", "settled"),
+    supabase
+      .from("pools")
+      .select("winner_user_id, winner_points")
+      .eq("group_id", groupId)
+      .not("winner_user_id", "is", null),
+    supabase
+      .from("pickem_pool_winners")
+      .select("user_id, points, pickem_pools!inner(group_id)")
+      .eq("pickem_pools.group_id", groupId),
+    supabase
+      .from("quiz_winners")
+      .select("user_id, points, quizzes!inner(group_id)")
+      .eq("quizzes.group_id", groupId),
+    supabase
+      .from("poker_winners")
+      .select("user_id, points, poker_tables!inner(group_id)")
+      .eq("poker_tables.group_id", groupId),
+  ]);
   for (const s of (settled ?? []) as any[]) add(s.proposed_winner_id, s.points);
-
-  const { data: poolWinners } = await supabase
-    .from("pools")
-    .select("winner_user_id, winner_points")
-    .eq("group_id", groupId)
-    .not("winner_user_id", "is", null);
   for (const w of (poolWinners ?? []) as any[]) add(w.winner_user_id, w.winner_points);
-
-  const { data: pickemWinners } = await supabase
-    .from("pickem_pool_winners")
-    .select("user_id, points, pickem_pools!inner(group_id)")
-    .eq("pickem_pools.group_id", groupId);
   for (const w of (pickemWinners ?? []) as any[]) add(w.user_id, w.points);
-
-  const { data: quizWinners } = await supabase
-    .from("quiz_winners")
-    .select("user_id, points, quizzes!inner(group_id)")
-    .eq("quizzes.group_id", groupId);
   for (const w of (quizWinners ?? []) as any[]) add(w.user_id, w.points);
-
-  const { data: pokerWinners } = await supabase
-    .from("poker_winners")
-    .select("user_id, points, poker_tables!inner(group_id)")
-    .eq("poker_tables.group_id", groupId);
   for (const w of (pokerWinners ?? []) as any[]) add(w.user_id, w.points);
 
   return pointsByUser;
