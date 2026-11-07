@@ -12,6 +12,7 @@ import { Avatar } from "@/components/Avatar";
 import { Card, SectionTitle } from "@/components/ui";
 import { CardBack, PokerCard, cardText } from "@/components/poker-card";
 import PokerActions, { type PokerActionModel } from "@/components/poker-actions";
+import PushNudge from "@/components/push-nudge";
 import { blindsForHand, type PublicHandView } from "@/lib/poker/engine";
 import { evaluateHand } from "@/lib/poker/evaluate";
 import { handRead } from "@/lib/poker/hand-read";
@@ -415,6 +416,10 @@ export default async function PokerTablePage({
           )}
         </Card>
       )}
+
+      {/* One slim line, only for a viewer with no push subscription
+          on this device — renders nothing otherwise. */}
+      {handActive && <PushNudge />}
 
       {/* ------------------------------------------------ hand result */}
       {hand?.result && (
