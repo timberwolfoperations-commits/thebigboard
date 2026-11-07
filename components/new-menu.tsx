@@ -37,6 +37,11 @@ export default function NewMenu({ groupId }: { groupId: string }) {
       title: "Quiz",
       desc: "The Hot Seat — 15 seconds a question",
     },
+    {
+      href: `/groups/${groupId}/poker/new`,
+      title: "Poker table",
+      desc: "Slow-play hold'em — a hand every couple of days",
+    },
   ];
 
   return (

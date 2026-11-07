@@ -242,6 +242,24 @@ export default async function GroupPage({ params }: { params: Promise<{ id: stri
     quizWinnersByQuiz.set(w.quiz_id, arr);
   }
 
+  // ---- poker tables ---------------------------------------------------------
+  const { data: pokerTables } = await supabase
+    .from("poker_tables")
+    .select("id, name, status, hand_no, winner_user_id, created_at")
+    .eq("group_id", id)
+    .order("created_at", { ascending: false });
+  const pokerList = ((pokerTables ?? []) as any[]).slice(0, 8);
+  const { data: pokerSeatRows } = pokerList.length
+    ? await supabase
+        .from("poker_seats")
+        .select("table_id")
+        .in("table_id", pokerList.map((t) => t.id))
+    : { data: [] as any[] };
+  const seatedByTable = new Map<string, number>();
+  for (const s of (pokerSeatRows ?? []) as any[]) {
+    seatedByTable.set(s.table_id, (seatedByTable.get(s.table_id) ?? 0) + 1);
+  }
+
   const host = (await headers()).get("host") ?? "";
   const proto = host.startsWith("localhost") ? "http" : "https";
   const inviteUrl = `${proto}://${host}/join/${group.invite_token}`;
@@ -443,6 +461,50 @@ export default async function GroupPage({ params }: { params: Promise<{ id: stri
                             day: "numeric",
                           })}{" "}
                           · {played} played
+                        </>
+                      )}
+                    </p>
+                  </Card>
+                </Link>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {pokerList.length > 0 && (
+        <div>
+          <SectionTitle>Poker</SectionTitle>
+          <div className="space-y-2">
+            {pokerList.map((t: any) => {
+              const n = seatedByTable.get(t.id) ?? 0;
+              const done = t.status === "complete";
+              return (
+                <Link key={t.id} href={`/groups/${id}/poker/${t.id}`}>
+                  <Card className="transition hover:border-slate-400">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="font-display text-lg font-semibold uppercase tracking-wide">{t.name}</p>
+                      <span className="flex shrink-0 gap-1">
+                        <span className="inline-block rounded-full bg-slate-900 px-2.5 py-0.5 text-xs font-semibold text-white">
+                          poker
+                        </span>
+                        <span
+                          className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+                            done ? "bg-slate-100 text-slate-500" : "bg-blue-100 text-blue-800"
+                          }`}
+                        >
+                          {done ? "finished" : "running"}
+                        </span>
+                      </span>
+                    </div>
+                    <p className="mt-1 text-sm text-slate-600">
+                      {done ? (
+                        <>
+                          {nameOf(t.winner_user_id)} took it down · +10 pts · {n} seated
+                        </>
+                      ) : (
+                        <>
+                          Hand {t.hand_no} · {n} at the table · blinds climbing
                         </>
                       )}
                     </p>

@@ -86,6 +86,7 @@ export interface PokerTableView {
   seats: PokerSeatView[];
   standings: PokerSeatView[]; // seats sorted by stack, biggest first
   mySeatNo: number | null; // null when the viewer isn't seated
+  handId: string | null; // the latest hand's row id — act() needs it
   hand: PublicHandView | null; // the latest hand, public-viewed for the caller
   handStatus: "active" | "complete" | null;
   actionDeadlineAt: string | null;
@@ -288,6 +289,7 @@ async function buildView(
     seats: seatViews,
     standings,
     mySeatNo: mySeatNo >= 0 ? mySeatNo : null,
+    handId: latest?.id ?? null,
     hand,
     handStatus: latest?.status ?? null,
     actionDeadlineAt: latest?.status === "active" ? latest.action_deadline_at : null,
