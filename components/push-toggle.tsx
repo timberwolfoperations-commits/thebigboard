@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { saveSubscription, removeSubscription, sendTestPush } from "@/lib/push-actions";
 import { countDelivered, type TestPushResult } from "@/lib/push-payload";
+import { isIosBrowserTab, pushSupported } from "@/lib/push-detect";
 
 // The notifications switch on /profile. Web push is a per-device,
 // per-browser thing, so this component's whole job is figuring out
@@ -96,21 +97,6 @@ function testResultMessage(result: TestPushResult): { ok: boolean; text: string 
       };
     }
   }
-}
-
-function pushSupported(): boolean {
-  return (
-    "serviceWorker" in navigator && "PushManager" in window && "Notification" in window
-  );
-}
-
-function isIosBrowserTab(): boolean {
-  const ua = navigator.userAgent;
-  if (!/iphone|ipad|ipod/i.test(ua)) return false;
-  const standalone =
-    window.matchMedia("(display-mode: standalone)").matches ||
-    (window.navigator as unknown as { standalone?: boolean }).standalone === true;
-  return !standalone;
 }
 
 export default function PushToggle() {

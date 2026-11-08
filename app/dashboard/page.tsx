@@ -9,6 +9,7 @@ import { createServiceClient } from "@/lib/supabase/service";
 import { listMyPokerTurns } from "@/lib/poker/server";
 import { Card, SectionTitle } from "@/components/ui";
 import HappeningPoolCard from "@/components/happening-pool-card";
+import SetupBanner from "@/components/setup-banner";
 import OpenPoolCard from "@/components/open-pool-card";
 
 function ordinal(n: number) {
@@ -588,6 +589,8 @@ export default async function Dashboard({
 
   return (
     <div className="space-y-8">
+      <SetupBanner />
+
       {actions.length > 0 && (
         <div className="rounded-2xl bg-slate-900 p-4 text-white">
           <p className="font-display text-xl font-bold uppercase tracking-wide">
