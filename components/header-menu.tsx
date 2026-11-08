@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { createGroup, joinGroup } from "@/lib/actions";
+import { useCanCreate } from "@/components/use-commissioner";
 import { Field, inputClass, SubmitButton } from "@/components/ui";
 
 // The header's hamburger: one menu holding everything that used to crowd the
@@ -21,6 +22,7 @@ export default function HeaderMenu({
 }) {
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState<"none" | "new" | "join">("none");
+  const canCreate = useCanCreate();
   const router = useRouter();
 
   function close() {
@@ -100,9 +102,11 @@ export default function HeaderMenu({
 
             {mode === "none" && (
               <>
-                <button type="button" onClick={() => setMode("new")} className={itemClass}>
-                  + New group
-                </button>
+                {canCreate && (
+                  <button type="button" onClick={() => setMode("new")} className={itemClass}>
+                    + New group
+                  </button>
+                )}
                 <button type="button" onClick={() => setMode("join")} className={itemClass}>
                   Join with invite link
                 </button>

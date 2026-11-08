@@ -6,6 +6,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { GRACE_DAYS, AUTO_SETTLE_DAYS } from "@/lib/config";
 import { ANIMAL_KEYS } from "@/lib/avatar-keys";
+import { assertCanAdminister, assertCanCreate } from "@/lib/commissioner";
 
 // ------------------------------------------------------------------ helpers
 
@@ -91,7 +92,8 @@ function daysAgo(n: number) {
 // ------------------------------------------------------------------- groups
 
 export async function createGroup(formData: FormData) {
-  const { supabase } = await getUser();
+  const { supabase, user } = await getUser();
+  assertCanCreate(user);
   const name = String(formData.get("name") ?? "").trim();
   if (!name) throw new Error("Give your group a name.");
 
@@ -333,6 +335,7 @@ async function requireAdmin(groupId: string) {
   const { supabase, user } = await getUser();
   const role = await memberRole(supabase, groupId, user.id);
   if (role !== "admin") throw new Error("Admins only.");
+  assertCanAdminister(user);
   return { supabase, user };
 }
 
@@ -419,6 +422,7 @@ async function loadPool(poolId: string) {
 export async function createPool(groupId: string, formData: FormData) {
   const { supabase, user } = await getUser();
   await memberRole(supabase, groupId, user.id);
+  assertCanCreate(user);
 
   const name = String(formData.get("name") ?? "").trim();
   const description = String(formData.get("description") ?? "").trim() || null;
@@ -464,7 +468,8 @@ export async function createPool(groupId: string, formData: FormData) {
 // Commish pulls fresh scores on demand (mid-game). Runs the ESPN sync
 // server-side with the service key — the CRON_SECRET never leaves the server.
 export async function refreshScores() {
-  await getUser();
+  const { user } = await getUser();
+  assertCanAdminister(user);
   const { syncNfl } = await import("./nfl-sync");
   const { syncMlb } = await import("./mlb-sync");
   const { syncCfb } = await import("./cfb-sync");
@@ -483,6 +488,7 @@ export async function addPoolPlayers(poolId: string, formData: FormData) {
   const { supabase, user } = await getUser();
   const { pool } = await loadPool(poolId);
   await memberRole(supabase, pool.group_id, user.id);
+  assertCanAdminister(user);
   if (new Date(pool.lock_at).getTime() <= Date.now()) {
     throw new Error("This pool is locked.");
   }
@@ -512,6 +518,7 @@ export async function addOnePoolPlayer(poolId: string, formData: FormData) {
   const { supabase, user } = await getUser();
   const { pool } = await loadPool(poolId);
   await memberRole(supabase, pool.group_id, user.id);
+  assertCanAdminister(user);
   if (pool.created_by !== user.id) throw new Error("Only the commish manages players.");
   if (new Date(pool.lock_at).getTime() <= Date.now()) {
     throw new Error("This pool is locked.");
@@ -538,6 +545,7 @@ export async function removePoolPlayer(poolId: string, formData: FormData) {
   const { supabase, user } = await getUser();
   const { pool } = await loadPool(poolId);
   await memberRole(supabase, pool.group_id, user.id);
+  assertCanAdminister(user);
   if (pool.created_by !== user.id) throw new Error("Only the commish manages players.");
   if (new Date(pool.lock_at).getTime() <= Date.now()) {
     throw new Error("This pool is locked.");
@@ -569,6 +577,7 @@ export async function removePoolPlayer(poolId: string, formData: FormData) {
 export async function awardPoolWinner(poolId: string) {
   const { supabase, user } = await getUser();
   const { pool } = await loadPool(poolId);
+  assertCanAdminister(user);
   if (pool.created_by !== user.id) throw new Error("Only the commish awards the winner.");
   if (new Date(pool.lock_at).getTime() > Date.now()) throw new Error("The pool isn't locked yet.");
   if (pool.winner_user_id) throw new Error("This pool already has a winner.");
@@ -693,6 +702,7 @@ export async function deleteEntry(poolId: string) {
 export async function updatePool(poolId: string, formData: FormData) {
   const { supabase, user } = await getUser();
   const { pool } = await loadPool(poolId);
+  assertCanAdminister(user);
   if (pool.created_by !== user.id) throw new Error("Only the commish can edit this.");
   if (new Date(pool.lock_at).getTime() <= Date.now()) {
     throw new Error("Picks are locked — no more changes.");
@@ -738,6 +748,7 @@ export async function updatePool(poolId: string, formData: FormData) {
 export async function enterStatLines(poolId: string, formData: FormData) {
   const { supabase, user } = await getUser();
   const { pool } = await loadPool(poolId);
+  assertCanAdminister(user);
   if (pool.created_by !== user.id) throw new Error("Only the commish enters stats.");
   if (new Date(pool.lock_at).getTime() > Date.now()) {
     throw new Error("Picks aren't locked yet.");

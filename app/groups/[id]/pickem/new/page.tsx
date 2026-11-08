@@ -4,6 +4,8 @@ import { createClient } from "@/lib/supabase/server";
 import { createPickemPool } from "@/lib/pickem-actions";
 import { loadSlateGames, loadMlbSlateGames, loadCfbSlateGames } from "@/lib/slate";
 import PickemForm from "./pickem-form";
+import LockdownNotice from "@/components/lockdown-notice";
+import { creationLockedFor } from "@/lib/commissioner";
 
 export default async function NewPickemPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -20,6 +22,7 @@ export default async function NewPickemPage({ params }: { params: Promise<{ id: 
     .eq("user_id", user.id)
     .maybeSingle();
   if (!member) redirect("/dashboard");
+  if (creationLockedFor(user)) return <LockdownNotice groupId={id} />;
 
   const create = createPickemPool.bind(null, id);
   const [nflGames, mlbGames, cfbGames] = await Promise.all([

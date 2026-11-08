@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { assertCanAdminister, assertCanCreate } from "@/lib/commissioner";
 import { createServiceClient } from "@/lib/supabase/service";
 import {
   ANSWER_LIMIT_MS,
@@ -120,6 +121,7 @@ async function serve(
 export async function createQuiz(groupId: string, formData: FormData) {
   const { supabase, user } = await getUser();
   await memberRole(supabase, groupId, user.id);
+  assertCanCreate(user);
 
   const title = String(formData.get("title") ?? "").trim() || "Quiz Night";
   const category = QUIZ_CATEGORIES.find(
@@ -451,6 +453,7 @@ export async function answerQuizQuestion(
 export async function awardQuizWinner(quizId: string) {
   const { supabase, user } = await getUser();
   const quiz = await loadQuiz(supabase, quizId);
+  assertCanAdminister(user);
   if (quiz.created_by !== user.id) throw new Error("Only the commish awards the winner.");
   if (new Date(quiz.close_at).getTime() > Date.now()) {
     throw new Error("The quiz hasn't closed yet.");

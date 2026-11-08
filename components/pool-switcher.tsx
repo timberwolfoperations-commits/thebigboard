@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import type { MyGroup, MyPool } from "@/lib/my-pools";
+import { useCanCreate } from "@/components/use-commissioner";
 
 // The pool switcher: on detail-first pool pages, the pool's name IS the
 // header — tap it and the rest of your pools are a sheet away, not a
@@ -36,6 +37,7 @@ export default function PoolSwitcher({
   const [open, setOpen] = useState(false);
   const [view, setView] = useState<"pools" | "groups" | "types">("pools");
   const [newGroupId, setNewGroupId] = useState<string | null>(null);
+  const canCreate = useCanCreate();
   const current = pools.find((p) => p.key === currentKey);
 
   function close() {
@@ -117,11 +119,13 @@ export default function PoolSwitcher({
                     )}
                   </Link>
                 ))}
-                <div className="mt-1 border-t border-slate-100 pt-1">
-                  <button type="button" className={rowClass} onClick={startNew}>
-                    <span className="font-semibold text-slate-500">+ New pool</span>
-                  </button>
-                </div>
+                {canCreate && (
+                  <div className="mt-1 border-t border-slate-100 pt-1">
+                    <button type="button" className={rowClass} onClick={startNew}>
+                      <span className="font-semibold text-slate-500">+ New pool</span>
+                    </button>
+                  </div>
+                )}
               </>
             )}
 

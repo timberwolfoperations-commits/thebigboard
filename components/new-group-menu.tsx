@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { createGroup, joinGroup } from "@/lib/actions";
+import { useCanCreate } from "@/components/use-commissioner";
 import { Field, inputClass, SubmitButton } from "@/components/ui";
 
 // "+ New" for the Groups tab: create a group or join with an invite
@@ -9,6 +10,7 @@ import { Field, inputClass, SubmitButton } from "@/components/ui";
 // new/join forms — this just gives them a home on mobile now that the
 // hamburger is desktop-only.
 export default function NewGroupMenu() {
+  const canCreate = useCanCreate();
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState<"none" | "new" | "join">("none");
 
@@ -45,9 +47,11 @@ export default function NewGroupMenu() {
           >
             {mode === "none" && (
               <>
-                <button type="button" onClick={() => setMode("new")} className={itemClass}>
-                  + New group
-                </button>
+                {canCreate && (
+                  <button type="button" onClick={() => setMode("new")} className={itemClass}>
+                    + New group
+                  </button>
+                )}
                 <button type="button" onClick={() => setMode("join")} className={itemClass}>
                   Join with invite link
                 </button>

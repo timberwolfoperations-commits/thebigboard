@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useCanCreate } from "@/components/use-commissioner";
 import Link from "next/link";
 
 // One "+ New" button replacing the old "+ New bet / + New pool / + Pick'em"
@@ -10,8 +11,12 @@ import Link from "next/link";
 // separate — sharing isn't creating.
 export default function NewMenu({ groupId }: { groupId: string }) {
   const [open, setOpen] = useState(false);
+  // Lockdown demotion: non-commissioners see only the Bet item —
+  // pools/quizzes/poker are created by the commissioner for now.
+  // Bets stay: proposing one is playing, not administering.
+  const canCreate = useCanCreate();
 
-  const items = [
+  const allItems = [
     {
       href: `/groups/${groupId}/bets/new`,
       title: "Bet",
@@ -43,6 +48,7 @@ export default function NewMenu({ groupId }: { groupId: string }) {
       desc: "Slow-play hold'em — a hand every couple of days",
     },
   ];
+  const items = canCreate ? allItems : allItems.filter((it) => it.title === "Bet");
 
   return (
     <div className="relative shrink-0">

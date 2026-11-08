@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { assertCanCreate } from "@/lib/commissioner";
 import { computeSurvivorState, type SurvivorPoolRow } from "./survivor";
 
 // ------------------------------------------------------------- survivor pools
@@ -77,6 +78,7 @@ async function loadSurvivorPool(
 export async function createSurvivorPool(groupId: string, formData: FormData) {
   const { supabase, user } = await getUser();
   await memberRole(supabase, groupId, user.id);
+  assertCanCreate(user);
 
   const name = String(formData.get("name") ?? "").trim() || "NFL Survivor";
   const isPublic = formData.get("is_public") != null;

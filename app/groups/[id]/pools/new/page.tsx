@@ -4,6 +4,8 @@ import { createClient } from "@/lib/supabase/server";
 import { createPool } from "@/lib/actions";
 import { loadSlateGames, loadMlbSlateGames } from "@/lib/slate";
 import PoolForm from "./pool-form";
+import LockdownNotice from "@/components/lockdown-notice";
+import { creationLockedFor } from "@/lib/commissioner";
 
 export default async function NewPoolPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -20,6 +22,7 @@ export default async function NewPoolPage({ params }: { params: Promise<{ id: st
     .eq("user_id", user.id)
     .maybeSingle();
   if (!member) redirect("/dashboard");
+  if (creationLockedFor(user)) return <LockdownNotice groupId={id} />;
 
   const create = createPool.bind(null, id);
   const slateGames = await loadSlateGames(supabase);

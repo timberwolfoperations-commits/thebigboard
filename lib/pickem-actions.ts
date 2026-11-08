@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { assertCanAdminister, assertCanCreate } from "@/lib/commissioner";
 
 // ------------------------------------------------------------- pick'em pools
 // Pick winners, not players. The slate of games comes from the games table
@@ -82,6 +83,7 @@ async function loadPickemPool(poolId: string) {
 export async function createPickemPool(groupId: string, formData: FormData) {
   const { supabase, user } = await getUser();
   await memberRole(supabase, groupId, user.id);
+  assertCanCreate(user);
 
   const name = String(formData.get("name") ?? "").trim();
   const description = String(formData.get("description") ?? "").trim();
@@ -221,6 +223,7 @@ export async function savePickemPick(poolId: string, formData: FormData) {
 export async function awardPickemWinner(poolId: string) {
   const { supabase, user } = await getUser();
   const { pool } = await loadPickemPool(poolId);
+  assertCanAdminister(user);
   if (pool.created_by !== user.id) throw new Error("Only the commish awards the winner.");
   if (new Date(pool.lock_at).getTime() > Date.now()) throw new Error("The pool isn't locked yet.");
 
@@ -272,6 +275,7 @@ export async function awardPickemWinner(poolId: string) {
 export async function scratchPickemPool(poolId: string) {
   const { supabase, user } = await getUser();
   const { pool } = await loadPickemPool(poolId);
+  assertCanAdminister(user);
   if (pool.created_by !== user.id) throw new Error("Only the commish scratches the pool.");
   if (new Date(pool.lock_at).getTime() > Date.now()) throw new Error("The pool isn't locked yet.");
   if (pool.winner_user_id) throw new Error("This pool already has a winner.");
@@ -306,6 +310,7 @@ export async function scratchPickemPool(poolId: string) {
 export async function setPickemLines(poolId: string, formData: FormData) {
   const { supabase, user } = await getUser();
   const { pool } = await loadPickemPool(poolId);
+  assertCanAdminister(user);
   if (pool.created_by !== user.id) throw new Error("Only the commish sets the lines.");
   if (pool.variant !== "over_under") throw new Error("This pool isn't over/under.");
   if (new Date(pool.lock_at).getTime() <= Date.now()) throw new Error("Picks are locked.");

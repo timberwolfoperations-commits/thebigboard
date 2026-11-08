@@ -5,6 +5,7 @@ import { loadMyGroups, loadMyPools, resolveLandingPool } from "@/lib/my-pools";
 import { loadOpenPoolDiscovery } from "@/lib/open-pools";
 import OpenPoolCard from "@/components/open-pool-card";
 import PoolsNewMenu from "@/components/pools-new-menu";
+import { creationLockedFor } from "@/lib/commissioner";
 
 // Pools tab, detail-first (2026-10-30): this route no longer renders a
 // list. It resolves the one pool you should be looking at — the one
@@ -67,7 +68,12 @@ export default async function PoolsPage() {
         <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-400">
           Start your own
         </h2>
-        {groups.length > 0 ? (
+        {creationLockedFor(user) ? (
+          <p className="text-sm text-slate-500">
+            Creating is locked while The Big Board is in testing — Michael&rsquo;s running
+            all the pools for now. Join one above, or open an invite link and you&rsquo;re in.
+          </p>
+        ) : groups.length > 0 ? (
           <PoolsNewMenu groups={groups} />
         ) : (
           <p className="text-sm text-slate-500">

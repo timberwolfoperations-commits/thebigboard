@@ -3,6 +3,8 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { createSurvivorPool } from "@/lib/survivor-actions";
 import { Card, Field, SectionTitle, SubmitButton, inputClass } from "@/components/ui";
+import LockdownNotice from "@/components/lockdown-notice";
+import { creationLockedFor } from "@/lib/commissioner";
 
 function fmtKickoff(iso: string): string {
   return new Date(iso).toLocaleString("en-US", {
@@ -26,6 +28,7 @@ export default async function NewSurvivorPage({
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) redirect("/");
+  if (creationLockedFor(user)) return <LockdownNotice groupId={id} />;
 
   // Start weeks on offer: any NFL week whose first game hasn't kicked off.
   const { data: games } = await supabase
