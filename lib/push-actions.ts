@@ -1,6 +1,6 @@
 "use server";
 
-import webpush from "web-push";
+import { sendNotification, setVapidDetails } from "web-push";
 import { createClient } from "@/lib/supabase/server";
 import {
   TEST_PUSH_INPUT,
@@ -88,7 +88,7 @@ export async function sendTestPush(): Promise<TestPushResult> {
   // so it gets its own outcome instead of a generic failure.
   if (!config) return { ...base, outcome: "vapid-missing" };
   try {
-    webpush.setVapidDetails(config.subject, config.publicKey, config.privateKey);
+    setVapidDetails(config.subject, config.publicKey, config.privateKey);
   } catch (e) {
     return { ...base, outcome: "vapid-invalid", vapidError: shortErrorMessage(e) };
   }
@@ -112,7 +112,7 @@ export async function sendTestPush(): Promise<TestPushResult> {
   for (const sub of subs) {
     const host = endpointHost(sub.endpoint);
     try {
-      const res = await webpush.sendNotification(
+      const res = await sendNotification(
         { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
         payload,
       );

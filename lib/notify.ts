@@ -9,7 +9,12 @@
 // service outage — and resolves quietly. Dead endpoints (404/410)
 // are pruned so the table stays honest.
 
-import webpush from "web-push";
+// web-push v4 is ESM-only with NAMED exports and no default export —
+// a default import silently binds undefined in the Next bundle and
+// every send dies on setVapidDetails (this bit us live, 2026-11-08;
+// the typecheck can't see it because @types/web-push still describes
+// the v3 shape). Named imports only, here and in push-actions.ts.
+import { sendNotification, setVapidDetails } from "web-push";
 import { createServiceClient } from "@/lib/supabase/service";
 import {
   isGoneSubscription,
@@ -34,14 +39,14 @@ function ensureVapid(): boolean {
   if (vapidReady) return true;
   const config = vapidConfigFrom(process.env);
   if (!config) return false;
-  webpush.setVapidDetails(config.subject, config.publicKey, config.privateKey);
+  setVapidDetails(config.subject, config.publicKey, config.privateKey);
   vapidReady = true;
   return true;
 }
 
 async function sendToSubscription(sub: SubscriptionRow, payload: string): Promise<boolean> {
   try {
-    await webpush.sendNotification(
+    await sendNotification(
       { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
       payload,
     );
