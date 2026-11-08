@@ -7,10 +7,15 @@
 
 import {
   PUSH_ICON_PATH,
+  TEST_PUSH_INPUT,
+  countDelivered,
+  endpointHost,
   isGoneSubscription,
   serializePushPayload,
   shapePushPayload,
+  shortErrorMessage,
   vapidConfigFrom,
+  type TestPushSubscriptionResult,
 } from "../lib/push-payload";
 
 // ------------------------------------------------------------ harness
@@ -96,6 +101,52 @@ check("400 -> keep (our bug, not a dead phone)", !isGoneSubscription(400));
 check("429 -> keep (rate limited, retry later)", !isGoneSubscription(429));
 check("500 -> keep (push service outage)", !isGoneSubscription(500));
 check("no status (network error) -> keep", !isGoneSubscription(undefined) && !isGoneSubscription(null));
+
+// ------------------------------------------------- test-push report
+
+const testWire = JSON.parse(serializePushPayload(TEST_PUSH_INPUT)) as Record<string, unknown>;
+check(
+  "test payload is the labelled test notification to /profile",
+  testWire.title === "Test notification — The Big Board" &&
+    testWire.body === "Push is working. This is the test you asked for." &&
+    testWire.url === "/profile" &&
+    testWire.icon === PUSH_ICON_PATH,
+);
+
+check(
+  "endpoint host is host only for Apple push",
+  endpointHost("https://web.push.apple.com/QABC123rest-of-the-endpoint") === "web.push.apple.com",
+);
+check(
+  "endpoint host works for FCM",
+  endpointHost("https://fcm.googleapis.com/fcm/send/abc:def") === "fcm.googleapis.com",
+);
+check("endpoint host of garbage -> null", endpointHost("not a url") === null);
+check("endpoint host of empty string -> null", endpointHost("") === null);
+
+check(
+  "short error keeps a normal message",
+  shortErrorMessage(new Error("Vapid subject is not a valid URL.")) ===
+    "Vapid subject is not a valid URL.",
+);
+check(
+  "short error collapses whitespace",
+  shortErrorMessage(new Error("line one\n\n  line   two")) === "line one line two",
+);
+check(
+  "short error caps a sprawling message at 160 chars",
+  shortErrorMessage(new Error("x".repeat(500))).length === 160,
+);
+check("short error of a non-error -> plain label", shortErrorMessage(42) === "Unknown error");
+check("short error of nothing -> plain label", shortErrorMessage(null) === "Unknown error");
+
+const mixedResults: TestPushSubscriptionResult[] = [
+  { host: "web.push.apple.com", delivered: true, statusCode: 201, error: null, pruned: false },
+  { host: "fcm.googleapis.com", delivered: false, statusCode: 410, error: "gone", pruned: true },
+  { host: "fcm.googleapis.com", delivered: true, statusCode: 201, error: null, pruned: false },
+];
+check("delivered count counts only the accepted sends", countDelivered(mixedResults) === 2);
+check("delivered count of no results is zero", countDelivered([]) === 0);
 
 // -------------------------------------------------------------- report
 

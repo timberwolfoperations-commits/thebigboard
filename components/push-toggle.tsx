@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { saveSubscription, removeSubscription } from "@/lib/push-actions";
+import { saveSubscription, removeSubscription, sendTestPush } from "@/lib/push-actions";
+import { countDelivered, type TestPushResult } from "@/lib/push-payload";
 
 // The notifications switch on /profile. Web push is a per-device,
 // per-browser thing, so this component's whole job is figuring out
@@ -37,6 +38,66 @@ function urlBase64ToUint8Array(base64String: string): Uint8Array {
   return out;
 }
 
+// The test send's report, in plain words. The server action returns
+// data, never a verdict — this turns each outcome into the specific
+// thing that's actually wrong (or the good news), so a silent push
+// pipeline stops being guesswork.
+function testResultMessage(result: TestPushResult): { ok: boolean; text: string } {
+  switch (result.outcome) {
+    case "not-signed-in":
+      return {
+        ok: false,
+        text: "Not sent — you're not signed in on this device, so there's nobody to send to.",
+      };
+    case "vapid-missing":
+      return {
+        ok: false,
+        text: "Not sent — push isn't configured on the server. One or more of the VAPID keys is missing in Vercel, so the server can't send anything at all.",
+      };
+    case "vapid-invalid":
+      return {
+        ok: false,
+        text: `Not sent — the server's VAPID setup is invalid: ${result.vapidError ?? "unknown error"}. That's the likely culprit — check the VAPID keys and subject in Vercel.`,
+      };
+    case "lookup-failed":
+      return {
+        ok: false,
+        text: "Couldn't read your subscriptions from the database. Try again — if it sticks, that's a database problem, not a phone problem.",
+      };
+    case "no-subscriptions":
+      return {
+        ok: false,
+        text: "Not sent — the server has no subscription saved for your account, even though this device says on. Turn notifications off and back on here to save a fresh one.",
+      };
+    case "done": {
+      const delivered = countDelivered(result.results);
+      const rejected = result.results.filter((r) => !r.delivered);
+      const detail = (r: TestPushResult["results"][number]) =>
+        `${r.host ?? "unknown push service"}: ${r.statusCode ?? "no status"}${r.error ? ` — ${r.error}` : ""}`;
+      const prunedNote = result.results.some((r) => r.pruned)
+        ? " That subscription was dead, so it's been removed — turn notifications off and back on to make a fresh one."
+        : "";
+      if (delivered === result.results.length) {
+        const statuses = result.results.map((r) => r.statusCode ?? "?").join(", ");
+        return {
+          ok: true,
+          text: `Sent — the push service accepted it (${statuses}). Check your lock screen.`,
+        };
+      }
+      if (delivered === 0) {
+        return {
+          ok: false,
+          text: `Not delivered — the push service rejected it: ${rejected.map(detail).join("; ")}.${prunedNote}`,
+        };
+      }
+      return {
+        ok: false,
+        text: `Partly sent — ${delivered} of ${result.results.length} subscriptions accepted it. Rejected: ${rejected.map(detail).join("; ")}.${prunedNote}`,
+      };
+    }
+  }
+}
+
 function pushSupported(): boolean {
   return (
     "serviceWorker" in navigator && "PushManager" in window && "Notification" in window
@@ -56,6 +117,8 @@ export default function PushToggle() {
   const [status, setStatus] = useState<Status>("loading");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [testBusy, setTestBusy] = useState(false);
+  const [testResult, setTestResult] = useState<TestPushResult | null>(null);
 
   const publicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
 
@@ -110,9 +173,22 @@ export default function PushToggle() {
     }
   }
 
+  async function sendTest() {
+    setTestBusy(true);
+    setTestResult(null);
+    try {
+      setTestResult(await sendTestPush());
+    } catch {
+      setError("That didn't go through — try again.");
+    } finally {
+      setTestBusy(false);
+    }
+  }
+
   async function turnOff() {
     setBusy(true);
     setError("");
+    setTestResult(null);
     try {
       const reg = await navigator.serviceWorker.getRegistration();
       const sub = await reg?.pushManager.getSubscription();
@@ -184,11 +260,32 @@ export default function PushToggle() {
             <span className="font-semibold text-slate-700">On for this device.</span> You&rsquo;ll
             get a push when the poker clock lands on you.
           </p>
-          <div className="mt-3">
+          <div className="mt-3 flex flex-wrap gap-2">
             <button type="button" onClick={turnOff} disabled={busy} className={offButton}>
               {busy ? "Working…" : "Turn off"}
             </button>
+            <button
+              type="button"
+              onClick={sendTest}
+              disabled={busy || testBusy}
+              className={offButton}
+            >
+              {testBusy ? "Sending…" : "Send test notification"}
+            </button>
           </div>
+          {testResult &&
+            (() => {
+              const message = testResultMessage(testResult);
+              return (
+                <p
+                  className={`mt-3 text-sm leading-relaxed ${
+                    message.ok ? "text-slate-700" : "text-red-600"
+                  }`}
+                >
+                  {message.text}
+                </p>
+              );
+            })()}
         </>
       )}
 

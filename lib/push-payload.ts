@@ -56,3 +56,70 @@ export function vapidConfigFrom(env: Record<string, string | undefined>): VapidC
 export function isGoneSubscription(statusCode: number | undefined | null): boolean {
   return statusCode === 404 || statusCode === 410;
 }
+
+// ------------------------------------------------------- test push
+//
+// The diagnostic pieces for the Profile "Send test notification"
+// button (sendTestPush in lib/push-actions.ts). Unlike the real
+// sender in lib/notify.ts — which swallows every error by design —
+// the test send REPORTS what happened, so these types and helpers
+// shape that report. Nothing here ever carries key material, a full
+// endpoint, or subscription keys: host only, status codes, and short
+// error messages.
+
+export const TEST_PUSH_INPUT: PushPayloadInput = {
+  title: "Test notification — The Big Board",
+  body: "Push is working. This is the test you asked for.",
+  url: "/profile",
+};
+
+export type TestPushOutcome =
+  | "not-signed-in"
+  | "vapid-missing"
+  | "vapid-invalid"
+  | "lookup-failed"
+  | "no-subscriptions"
+  | "done";
+
+export interface TestPushSubscriptionResult {
+  host: string | null; // endpoint host only — never the full endpoint
+  delivered: boolean;
+  statusCode: number | null; // push service HTTP status, when it answered
+  error: string | null; // short message from web-push, when it failed
+  pruned: boolean; // true when a 404/410 got the row deleted
+}
+
+export interface TestPushResult {
+  outcome: TestPushOutcome;
+  vapidConfigured: boolean; // all three VAPID env vars present and non-blank
+  vapidError: string | null; // setVapidDetails complaint, when outcome is "vapid-invalid"
+  subscriptionCount: number;
+  results: TestPushSubscriptionResult[];
+}
+
+// The push service a subscription talks to, by host only (e.g.
+// "web.push.apple.com"). The full endpoint is a per-device channel
+// credential and never leaves the server.
+export function endpointHost(endpoint: string): string | null {
+  try {
+    return new URL(endpoint).host || null;
+  } catch {
+    return null;
+  }
+}
+
+// A web-push / VAPID error reduced to a short, safe one-liner for the
+// page: the Error's message, whitespace collapsed, capped so a push
+// service's verbose response can never sprawl (or smuggle a long
+// blob) into the UI or a log. Non-Error throwables get a plain label.
+export function shortErrorMessage(error: unknown): string {
+  const raw =
+    error instanceof Error ? error.message : typeof error === "string" ? error : "";
+  const clean = raw.replace(/\s+/g, " ").trim();
+  if (!clean) return "Unknown error";
+  return clean.length > 160 ? `${clean.slice(0, 159)}…` : clean;
+}
+
+export function countDelivered(results: TestPushSubscriptionResult[]): number {
+  return results.filter((r) => r.delivered).length;
+}
