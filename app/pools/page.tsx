@@ -22,6 +22,28 @@ export default async function PoolsPage() {
   } = await supabase.auth.getUser();
   if (!user) redirect("/");
 
+  // Fast path (perceived-speed pass): the last-pool cookie stores a
+  // full pool href (/groups/<gid>/<kind>/<pid>). If it's there, go
+  // straight back without running the loadMy* chain — every pool
+  // detail page enforces access itself (signed-in check + the pool
+  // row only loads under RLS for members/guests, else it bounces to
+  // the group page, which blocks non-members), so the shortcut
+  // grants nothing. The full chain below only runs on a first visit
+  // (no cookie), where needs-you ranking lives.
+  const fastJar = await cookies();
+  const rawLast = fastJar.get("bb-last-pool")?.value;
+  if (rawLast) {
+    let href: string | null = null;
+    try {
+      href = decodeURIComponent(rawLast);
+    } catch {
+      href = null;
+    }
+    if (href && href.startsWith("/groups/") && !href.startsWith("//")) {
+      redirect(href);
+    }
+  }
+
   const pools = await loadMyPools(supabase, user.id);
   if (pools.length > 0) {
     const jar = await cookies();

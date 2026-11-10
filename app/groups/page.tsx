@@ -17,6 +17,19 @@ export default async function GroupsPage() {
   } = await supabase.auth.getUser();
   if (!user) redirect("/");
 
+  // Fast path (perceived-speed pass): if you were just in a group,
+  // go straight back — the group page itself enforces membership
+  // (its groups query runs under RLS "readable by members", and a
+  // non-member gets the "You're not in this group" card), so skipping
+  // the loadMy* chain here grants nothing. The full chain below only
+  // runs on a first visit (no cookie), where needs-you priority and
+  // the empty state live.
+  const fastJar = await cookies();
+  const lastGroup = fastJar.get("bb-last-group")?.value;
+  if (lastGroup && /^[A-Za-z0-9-]+$/.test(lastGroup)) {
+    redirect(`/groups/${lastGroup}`);
+  }
+
   const groups = await loadMyGroups(supabase, user.id);
   if (groups.length === 0) {
     return (
