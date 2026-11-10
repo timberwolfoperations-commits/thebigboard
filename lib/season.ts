@@ -8,7 +8,11 @@
 // decided counts and the round game states below) — never merely
 // because a winners row exists.
 
-import { computePickemLeaderboard, type PickemRow } from "@/lib/pickem-scoring";
+import {
+  computePickemLeaderboard,
+  computePickemPickOutcomes,
+  type PickemRow,
+} from "@/lib/pickem-scoring";
 
 export interface SeasonRow {
   id: string;
@@ -60,15 +64,32 @@ export interface SeasonStanding {
   weeklyWins: number;
   pointsBanked: number; // group points from THIS season's winners rows
   perRound: Map<number, RoundCell | null>; // key: round_no
+  // Display stats for the leaderboard table, derived from the player's
+  // decided picks in chronological order (see RoundPickOutcome):
+  streak: string; // current run from the latest decided pick back: "W3" / "L1" / "—"
+  last5: string; // record over the last 5 decided picks: "4-1" / "—"
+  gamesBack: number; // leader's correct total minus this player's (0 = leading)
 }
 
 // ---------------------------------------------------------- pure part
+
+// One decided pick (its game is final), the raw material for the
+// streak / last-5 display stats. A player's season sequence is these
+// in chronological order: round order first, then game starts_at
+// within the round. Optional on the input — a round fed without
+// outcomes simply contributes nothing to the sequences.
+export interface RoundPickOutcome {
+  userId: string;
+  startsAt: string | null;
+  correct: boolean;
+}
 
 export interface RoundBoardInput {
   roundNo: number;
   poolId: string;
   board: PickemRow[]; // one round's computePickemLeaderboard rows
   picksMade: Map<string, number>; // user_id -> picks made in this round
+  outcomes?: RoundPickOutcome[]; // this round's decided picks, any order
 }
 
 export interface SeasonWinnerInput {
@@ -93,6 +114,10 @@ export function aggregateSeasonRounds(
   members: SeasonMemberInput[] = []
 ): SeasonStanding[] {
   const byUser = new Map<string, SeasonStanding>();
+  // Per-player decided-pick results in chronological order — the
+  // sequences streak and last-5 are read off of. Built round by round
+  // in round order, kickoff order inside each round.
+  const sequences = new Map<string, boolean[]>();
   const ensure = (userId: string, displayName?: string): SeasonStanding => {
     let s = byUser.get(userId);
     if (!s) {
@@ -106,6 +131,9 @@ export function aggregateSeasonRounds(
         weeklyWins: 0,
         pointsBanked: 0,
         perRound: new Map(rounds.map((r) => [r.roundNo, null])),
+        streak: "—",
+        last5: "—",
+        gamesBack: 0,
       };
       byUser.set(userId, s);
     }
@@ -114,6 +142,22 @@ export function aggregateSeasonRounds(
   };
 
   for (const m of members) ensure(m.userId, m.displayName);
+
+  const orderedRounds = [...rounds].sort((a, b) => a.roundNo - b.roundNo);
+
+  for (const round of orderedRounds) {
+    if (round.outcomes) {
+      const byKickoff = [...round.outcomes].sort((a, b) =>
+        (a.startsAt ?? "").localeCompare(b.startsAt ?? "")
+      );
+      for (const o of byKickoff) {
+        ensure(o.userId);
+        const seq = sequences.get(o.userId) ?? [];
+        seq.push(o.correct);
+        sequences.set(o.userId, seq);
+      }
+    }
+  }
 
   for (const round of rounds) {
     const winnersHere = new Set(
@@ -156,7 +200,36 @@ export function aggregateSeasonRounds(
       b.weeklyWins - a.weeklyWins ||
       a.display_name.localeCompare(b.display_name)
   );
+
+  // Derived display stats, read after the sort: games back is measured
+  // off the leader's correct total (whoever tops the sorted board),
+  // streak and last-5 off each player's chronological sequence.
+  const leaderCorrect = standings.length > 0 ? standings[0].correct : 0;
+  for (const s of standings) {
+    s.gamesBack = leaderCorrect - s.correct;
+    const seq = sequences.get(s.user_id) ?? [];
+    s.streak = formatStreak(seq);
+    s.last5 = formatLast5(seq);
+  }
   return standings;
+}
+
+// "W3" / "L1": the run the player is on, counted back from their most
+// recent decided pick. "—" when nothing is decided yet.
+function formatStreak(seq: boolean[]): string {
+  if (seq.length === 0) return "—";
+  const latest = seq[seq.length - 1];
+  let n = 0;
+  for (let i = seq.length - 1; i >= 0 && seq[i] === latest; i--) n++;
+  return `${latest ? "W" : "L"}${n}`;
+}
+
+// Record over the last (up to) 5 decided picks: "4-1". "—" when none.
+function formatLast5(seq: boolean[]): string {
+  if (seq.length === 0) return "—";
+  const tail = seq.slice(-5);
+  const wins = tail.filter(Boolean).length;
+  return `${wins}-${tail.length - wins}`;
 }
 
 // Which round is "current": the first linked round whose games are
@@ -354,8 +427,21 @@ export async function computeSeasonStandings(
 
   const boards: RoundBoardInput[] = [];
   for (const r of rounds) {
-    const board = await computePickemLeaderboard(supabase, r.pool_id);
-    boards.push({ roundNo: r.round_no, poolId: r.pool_id, board, picksMade: new Map() });
+    const [board, rawOutcomes] = await Promise.all([
+      computePickemLeaderboard(supabase, r.pool_id),
+      computePickemPickOutcomes(supabase, r.pool_id),
+    ]);
+    boards.push({
+      roundNo: r.round_no,
+      poolId: r.pool_id,
+      board,
+      picksMade: new Map(),
+      outcomes: rawOutcomes.map((o) => ({
+        userId: o.user_id,
+        startsAt: o.starts_at,
+        correct: o.correct,
+      })),
+    });
   }
 
   const [{ data: pickRows }, { data: winnerRows }, { data: memberRows }] =
