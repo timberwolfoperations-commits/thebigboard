@@ -144,6 +144,39 @@ export async function sendTestPush(): Promise<TestPushResult> {
   return { ...base, subscriptionCount: subs.length, results };
 }
 
+// ------------------------------------------------- category prefs
+//
+// Phase 1 push categories (migration 030), toggled on the Profile:
+// "Needs me" (pool open, missing picks) and "Results" (your pool
+// result). Session client — the profiles self-update RLS policy means
+// a caller can only ever change their own row. Both default on; the
+// senders (lib/pool-push.ts) read these at send time, so flipping one
+// takes effect on the very next sweep. A pre-migration database makes
+// the update fail and this returns { ok: false } — the toggle shows
+// the save didn't stick instead of pretending.
+
+export interface PushPrefsInput {
+  needsYou: boolean;
+  results: boolean;
+}
+
+export async function updatePushPrefs(input: PushPrefsInput): Promise<{ ok: boolean }> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false };
+
+  const { error } = await supabase
+    .from("profiles")
+    .update({
+      push_needs_you: Boolean(input.needsYou),
+      push_results: Boolean(input.results),
+    })
+    .eq("id", user.id);
+  return { ok: !error };
+}
+
 export async function removeSubscription(endpoint: string): Promise<{ ok: boolean }> {
   const supabase = await createClient();
   const {

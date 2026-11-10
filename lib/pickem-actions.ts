@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { assertCanAdminister, assertCanCreate } from "@/lib/commissioner";
+import { notifyPickemPoolOpen } from "@/lib/pool-push";
 
 // ------------------------------------------------------------- pick'em pools
 // Pick winners, not players. The slate of games comes from the games table
@@ -158,6 +159,16 @@ export async function createPickemPool(groupId: string, formData: FormData) {
       }))
     );
   if (gErr) throw new Error(gErr.message);
+
+  // Pool-open push (phase 1): everyone entered except the creator
+  // hears picks are open. notifyPickemPoolOpen never throws — a
+  // failed tap must never fail creating the pool.
+  await notifyPickemPoolOpen({
+    id: pool.id,
+    group_id: groupId,
+    name,
+    created_by: user.id,
+  });
 
   revalidatePath(`/groups/${groupId}`);
   redirect(`/groups/${groupId}/pickem/${pool.id}`);

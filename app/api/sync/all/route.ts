@@ -4,6 +4,7 @@ import { syncMlb } from "@/lib/mlb-sync";
 import { syncCfb } from "@/lib/cfb-sync";
 import { createServiceClient } from "@/lib/supabase/service";
 import { sweepAllTables } from "@/lib/poker/server";
+import { sweepPoolPushes } from "@/lib/pool-push";
 
 // One cron job for every sport. Vercel Hobby allows a single daily cron,
 // so this runs NFL then MLB in one pass. Same CRON_SECRET auth as the
@@ -38,7 +39,17 @@ export async function GET(req: Request) {
     } catch (e: any) {
       poker = { error: e?.message ?? "poker sweep failed" };
     }
-    return NextResponse.json({ ok: true, nfl, mlb, cfb, poker });
+    // Pool push (phase 1) rides the same tick: missing-picks reminders
+    // and pool-final results for pick'em. Same fail-soft rule as poker,
+    // plus sweepPoolPushes itself swallows per-pool errors — and a
+    // not-yet-run migration 030 just makes it a quiet no-op.
+    let poolPush: unknown;
+    try {
+      poolPush = await sweepPoolPushes(createServiceClient(), new Date());
+    } catch (e: any) {
+      poolPush = { error: e?.message ?? "pool push sweep failed" };
+    }
+    return NextResponse.json({ ok: true, nfl, mlb, cfb, poker, poolPush });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e?.message ?? "sync failed" }, { status: 500 });
   }
