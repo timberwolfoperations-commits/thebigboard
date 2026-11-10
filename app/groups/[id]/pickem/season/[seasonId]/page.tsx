@@ -174,7 +174,10 @@ export default async function SeasonPage({
       </div>
 
       {/* ---- your season record ------------------------------------ */}
-      <Card className="bg-slate-900 text-white">
+      {/* Dark tile as a plain div, NOT Card: Card's base bg-white wins the
+          Tailwind cascade over a bg-slate-900 override, which left this
+          card white with white hero text on the first preview. */}
+      <div className="rounded-2xl border border-slate-900 bg-slate-900 p-5 text-white shadow-sm">
         <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
           Your season record
         </p>
@@ -205,7 +208,7 @@ export default async function SeasonPage({
             next round you play.
           </p>
         )}
-      </Card>
+      </div>
 
       {/* ---- your pick, focus round --------------------------------- */}
       <div>

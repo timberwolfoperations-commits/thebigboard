@@ -372,7 +372,7 @@ export default async function GroupPage({ params }: { params: Promise<{ id: stri
           <div className="space-y-2">
             {seasonCards.map((s) => (
               <Link key={s.id} href={`/groups/${id}/pickem/season/${s.id}`}>
-                <Card className="border-slate-900 bg-slate-900 text-white transition hover:border-slate-700">
+                <div className="rounded-2xl border border-slate-900 bg-slate-900 p-5 shadow-sm text-white transition hover:border-slate-700">
                   <div className="flex items-center justify-between gap-2">
                     <p className="font-display text-lg font-semibold uppercase tracking-wide">
                       {s.name}
@@ -388,7 +388,7 @@ export default async function GroupPage({ params }: { params: Promise<{ id: stri
                       ? `Your record: ${s.myRecord} — tap for the full race.`
                       : "The season race — standings, rounds, and your record in one place."}
                   </p>
-                </Card>
+                </div>
               </Link>
             ))}
           </div>
