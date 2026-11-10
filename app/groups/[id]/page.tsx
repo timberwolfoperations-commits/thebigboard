@@ -372,18 +372,18 @@ export default async function GroupPage({ params }: { params: Promise<{ id: stri
           <div className="space-y-2">
             {seasonCards.map((s) => (
               <Link key={s.id} href={`/groups/${id}/pickem/season/${s.id}`}>
-                <div className="rounded-2xl border border-slate-900 bg-slate-900 p-5 shadow-sm text-white transition hover:border-slate-700">
+                <div className="rounded-2xl border border-slate-900 bg-slate-900 px-4 py-3.5 shadow-sm text-white transition hover:border-slate-700">
                   <div className="flex items-center justify-between gap-2">
-                    <p className="font-display text-lg font-semibold uppercase tracking-wide">
+                    <p className="font-display text-base font-semibold uppercase tracking-wide">
                       {s.name}
                     </p>
-                    <span className="inline-block shrink-0 rounded-full bg-white px-2.5 py-0.5 text-xs font-bold uppercase tracking-wider text-slate-900">
+                    <span className="inline-block shrink-0 rounded-full bg-white px-2 py-0.5 text-[11px] font-bold uppercase tracking-wider text-slate-900">
                       {s.focusRoundNo
                         ? `Round ${s.focusRoundNo} of ${s.roundsTotal}`
                         : `${s.roundsTotal} rounds`}
                     </span>
                   </div>
-                  <p className="mt-1 text-sm text-slate-300">
+                  <p className="mt-0.5 text-[13px] text-slate-300">
                     {s.myRecord
                       ? `Your record: ${s.myRecord} — tap for the full race.`
                       : "The season race — standings, rounds, and your record in one place."}
