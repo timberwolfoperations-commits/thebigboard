@@ -25,6 +25,8 @@ export default function PoolSwitcher({
   currentKey,
   currentName,
   currentGroupName,
+  seasonHref,
+  seasonName,
 }: {
   pools: MyPool[];
   groups: MyGroup[];
@@ -33,6 +35,10 @@ export default function PoolSwitcher({
   // pool they're viewing in order to join) — it isn't in their list.
   currentName?: string;
   currentGroupName?: string;
+  // When the viewed pool is a round of a season, a row up to the
+  // season home (the race view above the weekly pool pages).
+  seasonHref?: string;
+  seasonName?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [view, setView] = useState<"pools" | "groups" | "types">("pools");
@@ -119,6 +125,23 @@ export default function PoolSwitcher({
                     )}
                   </Link>
                 ))}
+                {seasonHref && (
+                  <div className="mt-1 border-t border-slate-100 pt-1">
+                    <Link href={seasonHref} className={rowClass} onClick={close}>
+                      <span className="min-w-0">
+                        <span className="block truncate font-semibold text-slate-800">
+                          {seasonName ?? "Season"}
+                        </span>
+                        <span className="block text-xs text-slate-500">
+                          Season home — the whole race
+                        </span>
+                      </span>
+                      <span className="shrink-0 text-xs font-bold uppercase tracking-wider text-orange-700">
+                        Season
+                      </span>
+                    </Link>
+                  </div>
+                )}
                 {canCreate && (
                   <div className="mt-1 border-t border-slate-100 pt-1">
                     <button type="button" className={rowClass} onClick={startNew}>

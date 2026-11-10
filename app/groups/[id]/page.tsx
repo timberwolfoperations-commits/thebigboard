@@ -14,6 +14,13 @@ import RememberContext from "@/components/remember-context";
 import { loadMyGroups } from "@/lib/my-pools";
 import { getRatings } from "@/lib/rating";
 import { getGroupLifetime } from "@/lib/lifetime";
+import {
+  loadGroupSeasons,
+  loadSeason,
+  loadRoundGameStates,
+  computeSeasonStandings,
+  pickFocusRoundNo,
+} from "@/lib/season";
 
 function daysOverdue(settleDate: string) {
   const ms = Date.now() - new Date(settleDate + "T23:59:59").getTime();
@@ -253,6 +260,42 @@ export default async function GroupPage({ params }: { params: Promise<{ id: stri
 
   const myGroups = await loadMyGroups(supabase, user.id);
 
+  // ---- seasons ------------------------------------------------------------
+  // A season is the race view over this group's weekly pick'em pools.
+  // Tolerant by construction: no seasons (or migration 029 not run
+  // yet) -> empty list, no card, page unchanged.
+  const groupSeasons = await loadGroupSeasons(supabase, id);
+  const seasonCards: {
+    id: string;
+    name: string;
+    roundsTotal: number;
+    focusRoundNo: number | null;
+    myRecord: string | null;
+  }[] = [];
+  for (const s of groupSeasons) {
+    const loadedSeason = await loadSeason(supabase, s.id);
+    if (!loadedSeason) continue;
+    const [standings, states] = await Promise.all([
+      computeSeasonStandings(supabase, loadedSeason),
+      loadRoundGameStates(supabase, loadedSeason.rounds, user.id),
+    ]);
+    const mine = standings.find((x) => x.user_id === user.id);
+    seasonCards.push({
+      id: s.id,
+      name: s.name,
+      roundsTotal: s.rounds_total,
+      focusRoundNo: pickFocusRoundNo(
+        loadedSeason.rounds.map((r) => ({
+          roundNo: r.round_no,
+          allFinal: states.get(r.pool_id)?.allFinal ?? false,
+          unpickedUpcoming: states.get(r.pool_id)?.myUnpickedUpcoming ?? 0,
+        }))
+      ),
+      myRecord:
+        mine && mine.picksMade > 0 ? `${mine.correct}–${mine.missed}` : null,
+    });
+  }
+
   return (
     <div className="space-y-8">
       <RememberContext groupId={id} />
@@ -322,6 +365,35 @@ export default async function GroupPage({ params }: { params: Promise<{ id: stri
           <div className="space-y-2">{open.map((b) => <BetRow key={b.id} groupId={id} bet={b} nameOf={nameOf} />)}</div>
         )}
       </div>
+
+      {seasonCards.length > 0 && (
+        <div>
+          <SectionTitle>Season</SectionTitle>
+          <div className="space-y-2">
+            {seasonCards.map((s) => (
+              <Link key={s.id} href={`/groups/${id}/pickem/season/${s.id}`}>
+                <Card className="border-slate-900 bg-slate-900 text-white transition hover:border-slate-700">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="font-display text-lg font-semibold uppercase tracking-wide">
+                      {s.name}
+                    </p>
+                    <span className="inline-block shrink-0 rounded-full bg-white px-2.5 py-0.5 text-xs font-bold uppercase tracking-wider text-slate-900">
+                      {s.focusRoundNo
+                        ? `Round ${s.focusRoundNo} of ${s.roundsTotal}`
+                        : `${s.roundsTotal} rounds`}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-sm text-slate-300">
+                    {s.myRecord
+                      ? `Your record: ${s.myRecord} — tap for the full race.`
+                      : "The season race — standings, rounds, and your record in one place."}
+                  </p>
+                </Card>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
 
       {(openPools.length > 0 || openPickem.length > 0 || survivorList.length > 0) && (
         <div>

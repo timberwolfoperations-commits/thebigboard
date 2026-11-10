@@ -14,6 +14,7 @@ import PropLinesEditor, { type PropLineDraft } from "@/components/prop-lines-edi
 import PoolSwitcher from "@/components/pool-switcher";
 import RememberContext from "@/components/remember-context";
 import { loadMyGroups, loadMyPools } from "@/lib/my-pools";
+import { loadSeasonForPool } from "@/lib/season";
 import { getGroupLifetime } from "@/lib/lifetime";
 
 function ordinal(n: number) {
@@ -241,6 +242,9 @@ export default async function PickemPoolPage({
   // all-time line instead of a hallway you walk back through.
   const myPools = await loadMyPools(supabase, user.id);
   const myGroups = await loadMyGroups(supabase, user.id);
+  // If this pool is a round of a season, the switcher gets a row up to
+  // the season home. Null (and silent) until migration 029 lands.
+  const seasonLink = await loadSeasonForPool(supabase, poolId);
   let allTime: { rank: number; total: number; points: number; groupName: string } | null = null;
   if (isMember) {
     const lifetime = await getGroupLifetime(supabase, id);
@@ -272,6 +276,12 @@ export default async function PickemPoolPage({
           currentKey={`pickem:${poolId}`}
           currentName={pool.name}
           currentGroupName={myGroups.find((g) => g.id === id)?.name}
+          seasonHref={
+            seasonLink
+              ? `/groups/${seasonLink.season.group_id}/pickem/season/${seasonLink.season.id}`
+              : undefined
+          }
+          seasonName={seasonLink?.season.name}
         />
         <p className="mt-1 text-sm text-slate-500">
           {pool.week ? `Week ${pool.week} · ` : ""}
