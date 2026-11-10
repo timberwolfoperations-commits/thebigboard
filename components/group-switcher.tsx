@@ -44,10 +44,10 @@ export default function GroupSwitcher({
         >
           <path d="m6 9 6 6 6-6" />
         </svg>
-        <span className="ml-auto shrink-0 text-sm text-slate-500">
-          {memberCount} member{memberCount === 1 ? "" : "s"}
-        </span>
       </button>
+      <p className="mt-1.5 text-xs font-semibold uppercase tracking-wider text-slate-500">
+        {memberCount} member{memberCount === 1 ? "" : "s"}
+      </p>
 
       {open && (
         <>
