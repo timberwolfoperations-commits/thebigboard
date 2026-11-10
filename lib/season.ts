@@ -172,6 +172,29 @@ export function pickCurrentRoundNo(
   return open ? open.roundNo : sorted[sorted.length - 1].roundNo;
 }
 
+// The roll-forward rule (Michael, 2026-11-09): a round opens as soon
+// as its slate exists — it does NOT wait for the previous round to be
+// fully final, so two rounds can overlap (next round pickable while
+// this round's Monday game is still pending). The page's focus round
+// is therefore the ACTIONABLE round for this viewer:
+//   1. the earliest round where the viewer still has unpicked games
+//      that haven't kicked off;
+//   2. else the earliest not-fully-final round (they're done picking
+//      but a round is still live);
+//   3. else the latest linked round (season complete so far).
+// Round status stays per-round and independent — nothing about one
+// round's state ever gates another round's picks.
+export function pickFocusRoundNo(
+  rounds: { roundNo: number; allFinal: boolean; unpickedUpcoming: number }[]
+): number | null {
+  if (rounds.length === 0) return null;
+  const sorted = [...rounds].sort((a, b) => a.roundNo - b.roundNo);
+  const actionable = sorted.find((r) => r.unpickedUpcoming > 0);
+  if (actionable) return actionable.roundNo;
+  const open = sorted.find((r) => !r.allFinal);
+  return open ? open.roundNo : sorted[sorted.length - 1].roundNo;
+}
+
 // -------------------------------------------------------- server part
 
 // Load the season shell + its linked rounds. Returns null when the
@@ -245,14 +268,23 @@ export interface RoundGameState {
   finalCount: number;
   startedCount: number;
   allFinal: boolean;
+  // Viewer fields — only filled when a userId is passed in:
+  myPicksMade: number;
+  // Games the viewer hasn't picked that haven't kicked off yet —
+  // the count that makes a round "actionable" for them.
+  myUnpickedUpcoming: number;
 }
 
 // Game-state per linked round, derived from the games table: slate
 // size, how many are final, how many have kicked off. This — not the
-// winners table — decides whether a round is final / live / upcoming.
+// winners table — decides whether a round is final / live / open.
+// Each round's state is computed from its own games alone, so rounds
+// overlap freely (the roll-forward rule): a freshly attached round is
+// open for picks the moment its slate exists.
 export async function loadRoundGameStates(
   supabase: any,
-  rounds: SeasonRound[]
+  rounds: SeasonRound[],
+  userId?: string
 ): Promise<Map<string, RoundGameState>> {
   const states = new Map<string, RoundGameState>();
   for (const r of rounds) {
@@ -263,20 +295,32 @@ export async function loadRoundGameStates(
       finalCount: 0,
       startedCount: 0,
       allFinal: false,
+      myPicksMade: 0,
+      myUnpickedUpcoming: 0,
     });
   }
   if (rounds.length === 0) return states;
 
-  const { data: links } = await supabase
-    .from("pickem_pool_games")
-    .select("pool_id, game_id")
-    .in("pool_id", rounds.map((r) => r.pool_id));
+  const poolIds = rounds.map((r) => r.pool_id);
+  const [{ data: links }, myPicksResult] = await Promise.all([
+    supabase.from("pickem_pool_games").select("pool_id, game_id").in("pool_id", poolIds),
+    userId
+      ? supabase
+          .from("pickem_picks")
+          .select("pool_id, game_id")
+          .in("pool_id", poolIds)
+          .eq("user_id", userId)
+      : Promise.resolve({ data: [] as any[] }),
+  ]);
   const linkRows = (links ?? []) as any[];
   const gameIds = [...new Set(linkRows.map((l) => l.game_id))];
   const { data: games } = gameIds.length
     ? await supabase.from("games").select("id, status, starts_at").in("id", gameIds)
     : { data: [] };
   const gameById = new Map(((games ?? []) as any[]).map((g) => [g.id, g]));
+  const myPickSet = new Set(
+    ((myPicksResult.data ?? []) as any[]).map((p) => `${p.pool_id}:${p.game_id}`)
+  );
   const nowMs = Date.now();
 
   for (const l of linkRows) {
@@ -285,7 +329,12 @@ export async function loadRoundGameStates(
     if (!st || !g) continue;
     st.slateSize += 1;
     if (g.status === "final") st.finalCount += 1;
-    if (g.starts_at && new Date(g.starts_at).getTime() <= nowMs) st.startedCount += 1;
+    const kickedOff = g.starts_at != null && new Date(g.starts_at).getTime() <= nowMs;
+    if (kickedOff) st.startedCount += 1;
+    if (userId) {
+      if (myPickSet.has(`${l.pool_id}:${l.game_id}`)) st.myPicksMade += 1;
+      else if (!kickedOff) st.myUnpickedUpcoming += 1;
+    }
   }
   for (const st of states.values()) {
     st.allFinal = st.slateSize > 0 && st.finalCount === st.slateSize;

@@ -11,6 +11,7 @@
 import {
   aggregateSeasonRounds,
   pickCurrentRoundNo,
+  pickFocusRoundNo,
   type RoundBoardInput,
   type SeasonMemberInput,
   type SeasonWinnerInput,
@@ -250,6 +251,38 @@ check(
     { roundNo: 2, allFinal: true },
     { roundNo: 4, allFinal: true },
   ]) === 4
+);
+
+// ------------------------------------------- roll-forward focus round
+
+check("focus: no linked rounds -> null", pickFocusRoundNo([]) === null);
+check(
+  "focus: roll-forward — Round 5 open while Round 4 still pending beats Round 4 for a finished viewer",
+  pickFocusRoundNo([
+    { roundNo: 4, allFinal: false, unpickedUpcoming: 0 },
+    { roundNo: 5, allFinal: false, unpickedUpcoming: 13 },
+  ]) === 5
+);
+check(
+  "focus: earliest actionable round wins when two rounds are open at once",
+  pickFocusRoundNo([
+    { roundNo: 4, allFinal: false, unpickedUpcoming: 1 },
+    { roundNo: 5, allFinal: false, unpickedUpcoming: 13 },
+  ]) === 4
+);
+check(
+  "focus: nothing actionable falls back to the earliest unfinished round",
+  pickFocusRoundNo([
+    { roundNo: 4, allFinal: false, unpickedUpcoming: 0 },
+    { roundNo: 5, allFinal: false, unpickedUpcoming: 0 },
+  ]) === 4
+);
+check(
+  "focus: everything final lands on the latest round",
+  pickFocusRoundNo([
+    { roundNo: 4, allFinal: true, unpickedUpcoming: 0 },
+    { roundNo: 5, allFinal: true, unpickedUpcoming: 0 },
+  ]) === 5
 );
 
 // ------------------------------------------------------------ summary
