@@ -5,6 +5,8 @@ import { updateDisplayName, updateAvatar } from "@/lib/actions";
 import { Card, SectionTitle, SubmitButton } from "@/components/ui";
 import { SignOutButton } from "@/components/AuthButtons";
 import PushToggle from "@/components/push-toggle";
+import PushPrefsToggles from "@/components/push-prefs";
+import { prefsFromRow } from "@/lib/pool-push-logic";
 import { Avatar } from "@/components/Avatar";
 import { ANIMAL_LIST } from "@/lib/avatar-keys";
 import { getRatings } from "@/lib/rating";
@@ -32,6 +34,16 @@ export default async function ProfilePage() {
   const currentAnimal = ((avatarRow as any)?.avatar_animal ?? null) as
     | string
     | null;
+
+  // Push category prefs in their own query for the same reason: a
+  // not-yet-run migration 030 leaves the toggles at their defaults
+  // (both on) instead of breaking the page.
+  const { data: pushPrefsRow } = await supabase
+    .from("profiles")
+    .select("push_needs_you, push_results")
+    .eq("id", user.id)
+    .maybeSingle();
+  const pushPrefs = prefsFromRow(pushPrefsRow as any);
 
   // Scoring is a commish tool — only surface it to group admins (same rule
   // as the layout/header menu). It lives here now that the mobile header
@@ -137,6 +149,7 @@ export default async function ProfilePage() {
       <Card>
         <p className="text-sm font-semibold text-slate-700">Notifications</p>
         <PushToggle />
+        <PushPrefsToggles initial={pushPrefs} />
       </Card>
       {isAdmin && (
         <Card>
