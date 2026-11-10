@@ -33,12 +33,6 @@ function SeasonSectionTitle({ children }: { children: ReactNode }) {
 // Everything here is derived at read from the round pools; picking
 // itself happens on each round's existing pool page.
 
-function ordinal(n: number) {
-  const s = ["th", "st", "nd", "rd"];
-  const v = n % 100;
-  return n + (s[(v - 20) % 10] || s[v] || s[0]);
-}
-
 export default async function SeasonPage({
   params,
 }: {
@@ -169,51 +163,49 @@ export default async function SeasonPage({
         >
           ← {group?.name ?? "Group"}
         </Link>
-        <div className="mt-1.5 flex flex-wrap items-end justify-between gap-2">
-          <h1 className="font-display text-3xl font-bold uppercase leading-none tracking-wide">
-            {season.name}
-          </h1>
-          <span className="inline-block rounded-full bg-slate-900 px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wider text-white">
-            {focusRoundNo
-              ? `Round ${focusRoundNo} of ${season.rounds_total}`
-              : `${season.rounds_total} rounds`}
-          </span>
-        </div>
-        <p className="mt-1 text-[13px] leading-snug text-slate-500">
-          One season, {season.rounds_total} rounds. Weekly winners bank 10 points on the
-          group board — this page is the race.
+        <h1 className="mt-1.5 font-display text-4xl font-bold uppercase leading-none tracking-wide">
+          {season.name}
+        </h1>
+        <p className="mt-1.5 text-xs font-semibold uppercase tracking-wider text-slate-500">
+          {focusRoundNo
+            ? `Round ${focusRoundNo} of ${season.rounds_total}`
+            : `${season.rounds_total} rounds`}
         </p>
       </div>
 
-      {/* ---- your season record ------------------------------------ */}
+      {/* ---- season record hero ------------------------------------- */}
       {/* Dark tile as a plain div, NOT Card: Card's base bg-white wins the
           Tailwind cascade over a bg-slate-900 override, which left this
-          card white with white hero text on the first preview. */}
-      <div className="rounded-2xl border border-slate-900 bg-slate-900 px-4 py-3.5 text-white shadow-sm">
+          card white with white hero text on the first preview. The
+          record is the one billboard element on the page — everything
+          below it runs dense; this goes big like Poolr's season home. */}
+      <div className="rounded-2xl border border-slate-900 bg-slate-900 px-4 py-4 text-white shadow-sm">
         <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-          Your season record
+          Season record
         </p>
         {myStanding && myStanding.picksMade > 0 ? (
-          <div className="mt-1 flex flex-wrap items-end gap-x-6 gap-y-1.5">
-            <p className="font-display text-4xl font-bold tabular-nums leading-none">
-              {myStanding.correct}
-              <span className="text-slate-500">–</span>
-              {myStanding.missed}
-            </p>
-            <div className="pb-0.5 text-slate-300">
-              <p className="text-xs">
-                <span className="font-display text-lg font-semibold leading-none text-white">
-                  {myRank ? ordinal(myRank) : "—"}
-                </span>{" "}
-                of {standings.filter((s) => s.picksMade > 0).length} in the race
+          <>
+            <div className="mt-1.5 flex flex-wrap items-end gap-x-5 gap-y-1">
+              <p className="font-display text-7xl font-bold tabular-nums leading-none">
+                {myStanding.correct}
+                <span className="text-slate-500">–</span>
+                {myStanding.missed}
               </p>
-              <p className="mt-0.5 text-xs">
-                {myStanding.weeklyWins} {myStanding.weeklyWins === 1 ? "weekly win" : "weekly wins"}
-                {" · "}
-                {myStanding.pointsBanked} pts banked
-              </p>
+              <div className="pb-1">
+                <p className="font-display text-2xl font-semibold leading-none">
+                  Ranked #{myRank ?? "—"}
+                </p>
+                <p className="mt-1 text-xs text-slate-400">
+                  of {standings.filter((s) => s.picksMade > 0).length} in the race
+                </p>
+              </div>
             </div>
-          </div>
+            <p className="mt-2.5 text-xs text-slate-300">
+              {myStanding.weeklyWins} {myStanding.weeklyWins === 1 ? "weekly win" : "weekly wins"}
+              {" · "}
+              {myStanding.pointsBanked} pts banked
+            </p>
+          </>
         ) : (
           <p className="mt-1.5 text-sm text-slate-300">
             You haven&rsquo;t picked a game yet this season. Your record starts with the
@@ -296,56 +288,9 @@ export default async function SeasonPage({
         )}
       </div>
 
-      {/* ---- season standings --------------------------------------- */}
+      {/* ---- pick history (round by round) --------------------------- */}
       <div>
-        <SeasonSectionTitle>Season standings</SeasonSectionTitle>
-        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-          <div className="flex items-center justify-between border-b border-slate-100 px-4 py-2 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-            <span>Player</span>
-            <span className="flex items-baseline gap-3">
-              <span>Record</span>
-              <span className="w-[7.25rem] text-right">Pts · Wins</span>
-            </span>
-          </div>
-          <div className="divide-y divide-slate-100">
-            {standings.map((s, i) => (
-              <div
-                key={s.user_id}
-                className={`flex items-center justify-between px-4 py-2 ${s.user_id === user.id ? "bg-slate-50" : ""}`}
-              >
-                <p className="flex min-w-0 items-center gap-2">
-                  <span className="w-5 shrink-0 font-display text-base font-semibold tabular-nums text-slate-400">
-                    {i + 1}
-                  </span>
-                  <Avatar name={s.display_name} animal={avatars.get(s.user_id)} size={24} />
-                  <span className="truncate text-sm font-medium">
-                    {s.display_name}
-                    {s.user_id === user.id && (
-                      <span className="ml-1 text-[11px] text-slate-400">(you)</span>
-                    )}
-                  </span>
-                </p>
-                <div className="flex shrink-0 items-baseline gap-3">
-                  <span
-                    className={`font-display text-lg font-bold tabular-nums leading-none ${i === 0 && s.correct > 0 ? "text-accent" : ""}`}
-                  >
-                    {s.correct}–{s.missed}
-                  </span>
-                  <span className="w-[7.25rem] text-right text-xs tabular-nums text-slate-500">
-                    <span className="font-semibold text-slate-700">{s.pointsBanked} pts</span>
-                    {" · "}
-                    {s.weeklyWins} {s.weeklyWins === 1 ? "win" : "wins"}
-                  </span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* ---- round-by-round history grid ----------------------------- */}
-      <div>
-        <SeasonSectionTitle>Round by round</SeasonSectionTitle>
+        <SeasonSectionTitle>Pick history</SeasonSectionTitle>
         <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
           <table className="w-full border-collapse text-center">
             <thead>
@@ -370,7 +315,10 @@ export default async function SeasonPage({
             </thead>
             <tbody>
               {standings.map((s, i) => (
-                <tr key={s.user_id} className={i > 0 ? "border-t border-slate-100" : ""}>
+                <tr
+                  key={s.user_id}
+                  className={`${i > 0 ? "border-t border-slate-100" : ""} ${s.user_id === user.id ? "bg-slate-50" : ""}`}
+                >
                   <td className="max-w-[6.5rem] truncate px-3 py-1.5 text-left text-xs font-medium">
                     {s.display_name}
                   </td>
@@ -412,6 +360,60 @@ export default async function SeasonPage({
         <p className="mt-1 text-[11px] text-slate-400">
           Highlighted = won the round (10 pts on the group board). – = didn&rsquo;t pick
           that round.
+        </p>
+      </div>
+
+      {/* ---- season leaderboard -------------------------------------- */}
+      <div>
+        <SeasonSectionTitle>Season leaderboard</SeasonSectionTitle>
+        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <div className="flex items-center gap-1.5 border-b border-slate-100 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+            <span className="min-w-0 flex-1">Plr</span>
+            <span className="w-5 text-right">W</span>
+            <span className="w-5 text-right">L</span>
+            <span className="w-7 text-right">Pts</span>
+            <span className="w-5 text-right">GB</span>
+            <span className="w-8 text-right">Strk</span>
+            <span className="w-7 text-right">L5</span>
+          </div>
+          <div className="divide-y divide-slate-100">
+            {standings.map((s) => (
+              <div
+                key={s.user_id}
+                className={`flex items-center gap-1.5 px-3 py-1.5 ${s.user_id === user.id ? "bg-orange-50" : ""}`}
+              >
+                <p className="flex min-w-0 flex-1 items-center gap-1.5">
+                  <Avatar name={s.display_name} animal={avatars.get(s.user_id)} size={24} />
+                  <span className="min-w-0 truncate text-[13px] font-medium">
+                    {s.display_name}
+                  </span>
+                  {s.user_id === user.id && (
+                    <span className="shrink-0 rounded bg-orange-100 px-1 py-px text-[10px] font-bold uppercase tracking-wide text-accent">
+                      You
+                    </span>
+                  )}
+                </p>
+                <span className="w-5 text-right text-[13px] tabular-nums">{s.correct}</span>
+                <span className="w-5 text-right text-[13px] tabular-nums text-slate-500">
+                  {s.missed}
+                </span>
+                <span className="w-7 text-right text-[13px] font-semibold tabular-nums">
+                  {s.pointsBanked}
+                </span>
+                <span className="w-5 text-right text-[13px] tabular-nums text-slate-500">
+                  {s.gamesBack === 0 ? "—" : s.gamesBack}
+                </span>
+                <span className="w-8 text-right text-[13px] tabular-nums">{s.streak}</span>
+                <span className="w-7 text-right text-[13px] tabular-nums text-slate-500">
+                  {s.last5}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+        <p className="mt-1 text-[11px] text-slate-400">
+          Pts = banked points (10 per round won). GB = correct picks behind the leader.
+          Strk and L5 run off your decided picks.
         </p>
       </div>
 

@@ -13,6 +13,7 @@ import {
   pickCurrentRoundNo,
   pickFocusRoundNo,
   type RoundBoardInput,
+  type RoundPickOutcome,
   type SeasonMemberInput,
   type SeasonWinnerInput,
 } from "../lib/season";
@@ -215,6 +216,113 @@ check(
 const joe = byId.get("joe")!;
 check("never-picked member rides the bottom at 0-0", standings[standings.length - 1].user_id === "joe" && joe.correct === 0 && joe.decided === 0 && joe.weeklyWins === 0);
 check("never-picked member has all-null round cells", [...joe.perRound.values()].every((c) => c === null));
+
+// ------------------------------------------- derived display stats
+
+// Games back needs no per-pick data — it reads off the sorted totals.
+check("games back: leader Davis is 0 back", davis.gamesBack === 0, `${davis.gamesBack}`);
+check(
+  "games back: the 36-correct pair sit 1 back",
+  gaymez.gamesBack === 1 && happy.gamesBack === 1
+);
+check("games back: mid-pack Bill (29 correct) is 8 back", bill.gamesBack === 8, `${bill.gamesBack}`);
+check("games back: never-picked Joe is the full 37 back", joe.gamesBack === 37, `${joe.gamesBack}`);
+// The ToM fixture feeds no per-pick outcomes, so streak / last-5 have
+// nothing to read and must show the dash, never a fabricated run.
+check(
+  "no outcomes fed -> streak and last-5 are dashes",
+  davis.streak === "—" && davis.last5 === "—" && joe.streak === "—" && joe.last5 === "—"
+);
+
+// A small dedicated fixture with real per-pick sequences. Results are
+// written as W/L strings in kickoff order; the outcome arrays handed
+// to the aggregator are deliberately SHUFFLED so the checks prove the
+// chronological (starts_at) ordering is applied, not input order.
+function outcomeSeq(userId: string, results: string, day: string): RoundPickOutcome[] {
+  return [...results].map((r, i) => ({
+    userId,
+    startsAt: `${day}T${String(13 + i).padStart(2, "0")}:00:00Z`,
+    correct: r === "W",
+  }));
+}
+const shuffled = (arr: RoundPickOutcome[]) => [...arr].reverse();
+
+const streakRounds: RoundBoardInput[] = [
+  {
+    roundNo: 1,
+    poolId: "streak-r1",
+    board: [
+      row("hot", "Hot Hand", 2, 3),
+      row("even", "Even Steven", 1, 2),
+      row("cold", "Cold Snap", 1, 1),
+    ],
+    picksMade: picksMap([["hot", 3], ["even", 2], ["cold", 1]]),
+    outcomes: shuffled([
+      ...outcomeSeq("hot", "LWW", "2026-10-18"),
+      ...outcomeSeq("even", "WL", "2026-10-18"),
+      ...outcomeSeq("cold", "W", "2026-10-18"),
+    ]),
+  },
+  {
+    roundNo: 2,
+    poolId: "streak-r2",
+    board: [
+      row("hot", "Hot Hand", 2, 2),
+      row("even", "Even Steven", 1, 2),
+      row("cold", "Cold Snap", 0, 3),
+    ],
+    picksMade: picksMap([["hot", 2], ["even", 2], ["cold", 3]]),
+    outcomes: shuffled([
+      ...outcomeSeq("hot", "WW", "2026-10-25"),
+      ...outcomeSeq("even", "WL", "2026-10-25"),
+      ...outcomeSeq("cold", "LLL", "2026-10-25"),
+    ]),
+  },
+];
+const streakStandings = aggregateSeasonRounds(streakRounds, [], [
+  { userId: "hot", displayName: "Hot Hand" },
+  { userId: "even", displayName: "Even Steven" },
+  { userId: "cold", displayName: "Cold Snap" },
+  { userId: "ghost", displayName: "Ghost" }, // zero picks
+]);
+const sById = new Map(streakStandings.map((s) => [s.user_id, s]));
+
+check(
+  "streak fixture order: hot (4), even (2), cold (1), ghost (0)",
+  streakStandings.map((s) => s.user_id).join(",") === "hot,even,cold,ghost",
+  streakStandings.map((s) => s.user_id).join(",")
+);
+const hot = sById.get("hot")!;
+check(
+  "streak runs across rounds: L W W | W W ends on W4",
+  hot.streak === "W4",
+  hot.streak
+);
+check("last-5 spans both rounds: 4-1", hot.last5 === "4-1", hot.last5);
+const evenS = sById.get("even")!;
+check(
+  "alternating W L W L ends on L1 with a 2-2 last-5",
+  evenS.streak === "L1" && evenS.last5 === "2-2",
+  `${evenS.streak} / ${evenS.last5}`
+);
+const coldS = sById.get("cold")!;
+check(
+  "a win followed by three losses reads L3, last-5 1-3",
+  coldS.streak === "L3" && coldS.last5 === "1-3",
+  `${coldS.streak} / ${coldS.last5}`
+);
+check(
+  "games back in the streak fixture: leader 0, mid-pack even 2, cold 3",
+  hot.gamesBack === 0 && evenS.gamesBack === 2 && coldS.gamesBack === 3
+);
+const ghost = sById.get("ghost")!;
+check(
+  "zero-pick player: streak/last-5 dashes, full games back, rides the bottom",
+  ghost.streak === "—" &&
+    ghost.last5 === "—" &&
+    ghost.gamesBack === 4 &&
+    streakStandings[streakStandings.length - 1].user_id === "ghost"
+);
 
 // --------------------------------------------------- ordering rules
 

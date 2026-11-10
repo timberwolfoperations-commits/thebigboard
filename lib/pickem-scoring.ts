@@ -106,6 +106,68 @@ export async function computePickemLeaderboard(
   }
 }
 
+export interface PickemPickOutcome {
+  user_id: string;
+  starts_at: string | null;
+  correct: boolean;
+}
+
+// Per-pick outcomes for a pool: one entry per pick on a FINAL game
+// (decided picks only), unordered — callers sort by starts_at. This is
+// the raw material for streak / last-5 display stats; the leaderboard
+// above stays the authority for totals, and both grade with the same
+// winner functions so they can never disagree. Over/under pools grade
+// props rather than games and return no outcomes.
+export async function computePickemPickOutcomes(
+  supabase: any,
+  poolId: string
+): Promise<PickemPickOutcome[]> {
+  const [{ data: pool }, { data: links }, { data: picks }] = await Promise.all([
+    supabase.from("pickem_pools").select("id, variant, use_spread").eq("id", poolId).single(),
+    supabase.from("pickem_pool_games").select("game_id, spread").eq("pool_id", poolId),
+    supabase
+      .from("pickem_picks")
+      .select("user_id, game_id, picked_team")
+      .eq("pool_id", poolId),
+  ]);
+  if (!pool) throw new Error("Pool not found.");
+  if (pool.variant !== "standard") return [];
+
+  const gameIds = ((links ?? []) as any[]).map((l) => l.game_id);
+  const spreadByGame = new Map<string, number | null>(
+    ((links ?? []) as any[]).map((l) => {
+      const s = l.spread == null ? null : Number(l.spread);
+      return [l.game_id, Number.isFinite(s as number) ? (s as number) : null] as [
+        string,
+        number | null,
+      ];
+    })
+  );
+
+  const { data: games } = gameIds.length
+    ? await supabase
+        .from("games")
+        .select("id, home_team, away_team, home_score, away_score, status, starts_at")
+        .in("id", gameIds)
+    : { data: [] };
+  const gameById = new Map(((games ?? []) as PickemGame[]).map((g) => [g.id, g]));
+
+  const outcomes: PickemPickOutcome[] = [];
+  for (const p of (picks ?? []) as any[]) {
+    const g = gameById.get(p.game_id);
+    if (!g || g.status !== "final") continue;
+    const w = pool.use_spread
+      ? coveringTeam(g, spreadByGame.get(g.id) ?? null)
+      : gameWinner(g);
+    outcomes.push({
+      user_id: p.user_id,
+      starts_at: g.starts_at,
+      correct: !!w && String(p.picked_team ?? "").toUpperCase() === w,
+    });
+  }
+  return outcomes;
+}
+
 // v1: 1 point per correct pick. Only final games count. spreads is
 // present only for against-the-spread pools (use_spread): the winner of
 // each final game is then who COVERED the frozen line, not who won
