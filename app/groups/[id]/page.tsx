@@ -197,22 +197,12 @@ export default async function GroupPage({ params }: { params: Promise<{ id: stri
   const seasonPoolIds = new Set(
     ((seasonRoundRows ?? []) as any[]).map((r) => r.pool_id as string)
   );
-  // Quizzes: open ones always show; closed ones cap at the most recent
-  // 4 (the rest collapse into a "+N earlier quiz nights" line) so a
-  // long quiz history can't bury the page. List order stays
-  // created_at desc, same as the query.
+  // Quizzes: completed ones fall off the page entirely (see the filter
+  // where quizList is built, after the runs/winners batch below — the
+  // decision needs both). List order stays created_at desc, same as
+  // the query.
   const allQuizzes = (quizzes ?? []) as any[];
   const quizNow = Date.now();
-  const closedQuizTotal = allQuizzes.filter(
-    (q) => new Date(q.close_at).getTime() <= quizNow
-  ).length;
-  let closedQuizShown = 0;
-  const quizList = allQuizzes.filter((q) => {
-    if (new Date(q.close_at).getTime() > quizNow) return true;
-    closedQuizShown += 1;
-    return closedQuizShown <= 4;
-  });
-  const earlierQuizCount = Math.max(0, closedQuizTotal - 4);
   const pokerList = ((pokerTables ?? []) as any[]).slice(0, 8);
 
   const [
@@ -237,17 +227,22 @@ export default async function GroupPage({ params }: { params: Promise<{ id: stri
       .from("pickem_picks")
       .select("pool_id, user_id")
       .in("pool_id", (pickemPools ?? []).map((p: any) => p.id)),
-    quizList.length
+    // Runs + winners are fetched for every quiz in the group: the
+    // finished-run counts drive both the fall-off decision for closed
+    // quizzes and the played/runs counts on the rows that stay. The
+    // winners read is existence-only (quiz_id) — awarded quizzes fall
+    // off, so their winner names never render in this list.
+    allQuizzes.length
       ? supabase
           .from("quiz_runs")
           .select("quiz_id, finished_at")
-          .in("quiz_id", quizList.map((q) => q.id))
+          .in("quiz_id", allQuizzes.map((q) => q.id))
       : Promise.resolve({ data: [] as any[] }),
-    quizList.length
+    allQuizzes.length
       ? supabase
           .from("quiz_winners")
-          .select("quiz_id, user_id")
-          .in("quiz_id", quizList.map((q) => q.id))
+          .select("quiz_id")
+          .in("quiz_id", allQuizzes.map((q) => q.id))
       : Promise.resolve({ data: [] as any[] }),
     pokerList.length
       ? supabase
@@ -290,17 +285,26 @@ export default async function GroupPage({ params }: { params: Promise<{ id: stri
   }
 
   // ---- quizzes -------------------------------------------------------------
+  // A run counts once it's finished (finished_at set) — the same notion
+  // the award flow uses when it looks for somebody to crown.
   const playedByQuiz = new Map<string, number>();
   for (const r of (quizRuns ?? []) as any[]) {
     if (!r.finished_at) continue;
     playedByQuiz.set(r.quiz_id, (playedByQuiz.get(r.quiz_id) ?? 0) + 1);
   }
-  const quizWinnersByQuiz = new Map<string, string[]>();
-  for (const w of (quizWinnerRows ?? []) as any[]) {
-    const arr = quizWinnersByQuiz.get(w.quiz_id) ?? [];
-    arr.push(nameOf(w.user_id));
-    quizWinnersByQuiz.set(w.quiz_id, arr);
-  }
+  const awardedQuizIds = new Set(
+    ((quizWinnerRows ?? []) as any[]).map((w) => w.quiz_id as string)
+  );
+  // Completed quizzes fall off the list: once the winners are awarded
+  // there's nothing left to do here, and a closed quiz with no finished
+  // runs has nothing to award. A closed quiz with finished runs but no
+  // award yet STAYS — the commish reaches the award flow through it.
+  // Open quizzes always stay.
+  const quizList = allQuizzes.filter((q) => {
+    if (awardedQuizIds.has(q.id)) return false;
+    if (new Date(q.close_at).getTime() > quizNow) return true;
+    return (playedByQuiz.get(q.id) ?? 0) > 0;
+  });
 
   // ---- poker tables ---------------------------------------------------------
   const seatedByTable = new Map<string, number>();
@@ -599,7 +603,6 @@ export default async function GroupPage({ params }: { params: Promise<{ id: stri
             {quizList.map((q: any) => {
               const closed = new Date(q.close_at).getTime() <= Date.now();
               const played = playedByQuiz.get(q.id) ?? 0;
-              const champs = quizWinnersByQuiz.get(q.id) ?? [];
               return (
                 <Link key={q.id} href={`/groups/${id}/quiz/${q.id}`}>
                   <div className={tileClass}>
@@ -620,12 +623,7 @@ export default async function GroupPage({ params }: { params: Promise<{ id: stri
                     </div>
                     <p className={tileSubClass}>
                       {q.category_label} · {q.question_count} questions ·{" "}
-                      {champs.length > 0 ? (
-                        <>
-                          {champs.join(", ")} won · +10 pts · {played}{" "}
-                          {played === 1 ? "run" : "runs"}
-                        </>
-                      ) : closed ? (
+                      {closed ? (
                         <>
                           Closed · {played} {played === 1 ? "run" : "runs"}
                         </>
@@ -647,11 +645,6 @@ export default async function GroupPage({ params }: { params: Promise<{ id: stri
               );
             })}
           </div>
-          {earlierQuizCount > 0 && (
-            <p className="mt-2 text-[13px] text-slate-400">
-              +{earlierQuizCount} earlier quiz {earlierQuizCount === 1 ? "night" : "nights"}
-            </p>
-          )}
         </div>
       )}
 
