@@ -11,7 +11,7 @@ import { TRIVIA_BANK, type BankCategory } from "@/lib/trivia-bank";
 // timeout costs the same as the slowest legal answer.
 export const QUESTION_SECONDS = 15;
 export const ANSWER_LIMIT_MS = (QUESTION_SECONDS + 2) * 1000;
-export const QUIZ_WINNER_POINTS = 10;
+export const QUIZ_WINNER_POINTS = 1;
 
 export interface QuizCategory {
   label: string;

@@ -86,7 +86,7 @@ export default async function NewQuizPage({
             <p className="text-xs leading-relaxed text-slate-400">
               Everyone in the group gets one run at the same questions before it
               closes — 15 seconds a question, so nobody can look anything up. Most
-              correct wins; ties go to the fastest total time. Winner takes +10 pts
+              correct wins; ties go to the fastest total time. Winner takes +1 pt
               on the lifetime board.
             </p>
             <SubmitButton>Create quiz</SubmitButton>

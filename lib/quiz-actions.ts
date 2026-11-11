@@ -448,7 +448,7 @@ export async function answerQuizQuestion(
 // ------------------------------------------------------------------- award
 // Once the quiz has closed, the commish crowns the top finished run(s):
 // most correct, fastest total time breaking it. An exact tie on BOTH is
-// a dead heat — co-winners, 10 pts each on the lifetime board, same as
+// a dead heat — co-winners, 1 pt each on the lifetime board, same as
 // pick'em. One-shot: any quiz_winners row means it's done.
 export async function awardQuizWinner(quizId: string) {
   const { supabase, user } = await getUser();
