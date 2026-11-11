@@ -185,8 +185,8 @@ export default async function GroupPage({ params }: { params: Promise<{ id: stri
       .eq("group_id", id)
       .order("created_at", { ascending: false }),
     // Season linkage for this group: pools attached to a season are
-    // rounds — they live on the season page, so the settled-pools list
-    // below leaves them out. Tolerant like the seasons block further
+    // rounds — they live on the season page, so both pick'em lists
+    // below (open and settled) leave them out. Tolerant like the seasons block further
     // down: no table / no seasons -> empty set, page unchanged.
     supabase
       .from("pickem_season_rounds")
@@ -273,7 +273,12 @@ export default async function GroupPage({ params }: { params: Promise<{ id: stri
   }
 
   // ---- pick'em pools ------------------------------------------------------
-  const openPickem = ((pickemPools ?? []) as any[]).filter((p) => !p.winner_user_id && !p.scratched);
+  // Both pick'em lists exclude season rounds (see seasonPoolIds above):
+  // a round is reached through its season card, never as a standalone
+  // pool card next to it.
+  const openPickem = ((pickemPools ?? []) as any[]).filter(
+    (p) => !p.winner_user_id && !p.scratched && !seasonPoolIds.has(p.id)
+  );
   // Settled list excludes season rounds (see seasonPoolIds above).
   const settledPickem = ((pickemPools ?? []) as any[]).filter(
     (p) => (p.winner_user_id || p.scratched) && !seasonPoolIds.has(p.id)
