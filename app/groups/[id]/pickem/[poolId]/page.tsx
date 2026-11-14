@@ -6,7 +6,7 @@ import { computePickemLeaderboard, CONFIDENCE_PICK_COUNT } from "@/lib/pickem-sc
 import { getAvatarMap } from "@/lib/avatars";
 import { Avatar } from "@/components/Avatar";
 import { PROP_STAT_LABELS } from "@/lib/prop-stats";
-import { STANDARD_HOW_IT_WORKS, OVER_UNDER_HOW_IT_WORKS, ATS_HOW_IT_WORKS, CONFIDENCE_HOW_IT_WORKS, CONFIDENCE_ATS_HOW_IT_WORKS } from "@/lib/pickem-copy";
+import { STANDARD_HOW_IT_WORKS, OVER_UNDER_HOW_IT_WORKS, ATS_HOW_IT_WORKS, CONFIDENCE_HOW_IT_WORKS, CONFIDENCE_ATS_HOW_IT_WORKS, CONFIDENCE_ATS_CBB_HOW_IT_WORKS } from "@/lib/pickem-copy";
 import { Card, SectionTitle, SubmitButton } from "@/components/ui";
 import PickemGameCard from "@/components/pickem-game-card";
 import PropCard from "@/components/prop-card";
@@ -76,7 +76,7 @@ export default async function PickemPoolPage({
   const { data: games } = gameIds.length
     ? await supabase
         .from("games")
-        .select("id, label, home_team, away_team, starts_at, status, home_score, away_score")
+        .select("id, label, home_team, away_team, starts_at, status, home_score, away_score, sport")
         .in("id", gameIds)
         .order("starts_at", { ascending: true })
     : { data: [] };
@@ -236,6 +236,12 @@ export default async function PickemPoolPage({
 
   const howItWorks = (() => {
     const saved = (pool.description ?? "").trim();
+    // CBB confidence pools grade against the closing line (the sync
+    // refreshes each game's frozen line until tip-off), so they get
+    // their own copy; every other ATS pool still freezes at creation.
+    const isCbb = gameList.some((g: any) => String(g.sport ?? "").toUpperCase() === "CBB");
+    const confidenceAtsCopy =
+      isCbb && useSpread ? CONFIDENCE_ATS_CBB_HOW_IT_WORKS : CONFIDENCE_ATS_HOW_IT_WORKS;
     // Blank → variant default. Also repairs pools saved with the standard
     // default while on over/under (the old form's defaultValue bug) — a
     // commish who deliberately typed that text into an over/under pool is
@@ -248,13 +254,13 @@ export default async function PickemPoolPage({
         ? OVER_UNDER_HOW_IT_WORKS
         : isConfidence
           ? useSpread
-            ? CONFIDENCE_ATS_HOW_IT_WORKS
+            ? confidenceAtsCopy
             : CONFIDENCE_HOW_IT_WORKS
           : useSpread
             ? ATS_HOW_IT_WORKS
             : STANDARD_HOW_IT_WORKS;
     if (isConfidence && saved === STANDARD_HOW_IT_WORKS)
-      return useSpread ? CONFIDENCE_ATS_HOW_IT_WORKS : CONFIDENCE_HOW_IT_WORKS;
+      return useSpread ? confidenceAtsCopy : CONFIDENCE_HOW_IT_WORKS;
     if (isOverUnder && saved === STANDARD_HOW_IT_WORKS) return OVER_UNDER_HOW_IT_WORKS;
     if (useSpread && saved === STANDARD_HOW_IT_WORKS) return ATS_HOW_IT_WORKS;
     return pool.description;

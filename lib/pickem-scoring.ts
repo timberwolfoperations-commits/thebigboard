@@ -6,8 +6,11 @@
 //   final game is derived from home_score/away_score; a tie scores for
 //   nobody.
 // - Standard pools can also grade against the spread (use_spread): the
-//   line frozen on pickem_pool_games at creation decides who covered —
-//   never the live line on games, which keeps moving until kickoff.
+//   line frozen on pickem_pool_games decides who covered. Grading reads
+//   only that snapshot, never the live line on games. Football pools
+//   freeze the snapshot once at creation; the CBB sync refreshes it
+//   from the live line until each game tips off (closing-line behavior,
+//   lib/cbb-sync.ts) — either way the snapshot is the only input.
 // - Picks are public to the group (like roster entries) — trash talk
 //   requires knowing who took the Bills.
 

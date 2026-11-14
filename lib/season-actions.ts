@@ -66,8 +66,27 @@ export async function attachPoolToSeason(formData: FormData) {
   if (pool.group_id !== season.group_id) {
     throw new Error("That pool belongs to a different group.");
   }
-  if (pool.variant !== "standard") {
-    throw new Error("Season rounds are standard pick'em pools.");
+  if (pool.variant !== "standard" && pool.variant !== "confidence") {
+    throw new Error("Season rounds are standard or Top 5 Confidence pick'em pools.");
+  }
+
+  // A season is one format: every linked round must share the new
+  // pool's variant, or the season board wouldn't know whether to rank
+  // by correct picks or confidence points (see seasonIsConfidence).
+  const { data: linked } = await supabase
+    .from("pickem_season_rounds")
+    .select("pool_id, pickem_pools(variant)")
+    .eq("season_id", seasonId);
+  const linkedVariants = new Set(
+    ((linked ?? []) as any[])
+      .map((r) => r.pickem_pools?.variant)
+      .filter((v): v is string => typeof v === "string")
+  );
+  if (
+    linkedVariants.size > 0 &&
+    (linkedVariants.size !== 1 || !linkedVariants.has(pool.variant))
+  ) {
+    throw new Error("This season already has a different format — all rounds must be the same game type.");
   }
 
   const { data: existing } = await supabase

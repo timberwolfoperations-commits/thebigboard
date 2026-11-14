@@ -16,9 +16,13 @@
 //    Odds are fetched only for scheduled TOP games (ranked or
 //    both-power-conference — the only games that can land on a pool
 //    slate), in parallel batches of 10, fail-soft per game: a missing
-//    line leaves spread null and the next sync retries. A pool created
-//    before a line posts grades that game straight up, same as the
-//    football rule for a game whose line never posted.
+//    line leaves spread null and the next sync retries. And unlike
+//    football — where the frozen line is set once at pool creation —
+//    the sync refreshes each pool's frozen line from the live line
+//    until that game tips off (closing-line behavior, see
+//    refreshPoolLines below), so a pool created before a line posts
+//    still grades ATS once the line lands. Only a game whose line
+//    never posts by tip-off grades straight up.
 //
 // Rank comes from the scoreboard itself (competitor.curatedRank.current
 // <= 25; ESPN reports 99 for unranked — same helper as the CFB sync).
@@ -50,6 +54,7 @@ export interface CbbSyncResult {
   games_upserted: number;
   top_upserted: number;
   odds_filled: number;
+  lines_refreshed: number; // frozen pool lines moved to the live line this tick
 }
 
 type GameStatus = "scheduled" | "in_progress" | "final";
@@ -199,8 +204,11 @@ export async function syncCbb(): Promise<CbbSyncResult> {
 
   // Lines only matter for scheduled top games — the only games a pool
   // can include, and only before they tip (grading reads the line a
-  // pool froze at creation, never the live one). In-progress/final
-  // games skip the odds fetch entirely.
+  // pool froze, never the live one — but see the closing-line refresh
+  // below: for CBB the frozen line follows the live line until tip-off,
+  // so a pool created before a line posts still grades ATS once the line
+  // lands, and only a game whose line never posts by tip-off grades
+  // straight up). In-progress/final games skip the odds fetch entirely.
   const needsOdds = pending.filter(
     (p) => p.status === "scheduled" && (p.row.is_top25 === true || p.row.is_power_conf === true)
   );
@@ -256,6 +264,68 @@ export async function syncCbb(): Promise<CbbSyncResult> {
     games_upserted = upserted?.length ?? 0;
   }
 
+  // Closing-line refresh: a pool's frozen line follows the live line
+  // until its game tips off, then freezes for good. Fail-soft — the
+  // games above are already stored; a refresh failure just means the
+  // lines wait for the next 15-minute tick.
+  let lines_refreshed = 0;
+  try {
+    lines_refreshed = await refreshPoolLines(
+      supabase,
+      pending.map((p) => p.external_id)
+    );
+  } catch (e) {
+    console.error("CBB pool-line refresh failed (lines retry next tick):", e);
+  }
+
   await touchSyncState("CBB");
-  return { games_upserted, top_upserted, odds_filled };
+  return { games_upserted, top_upserted, odds_filled, lines_refreshed };
+}
+
+// Refresh the frozen ATS line on every pool game linked to a CBB game
+// that hasn't tipped yet, from the live line the sync just stored on
+// games. Grading is against the LINE AT TIP-OFF, not the line a player
+// saw when they picked — the number on the pick button stays live all
+// week and locks when the game does. Rules:
+//   - A game whose live line is missing keeps its stored snapshot:
+//     a failed or not-yet-posted line never overwrites with null.
+//   - A tipped game never moves again — the freeze happens naturally
+//     at tip-off (status scheduled + starts_at in the future only).
+//   - Only CBB-linked rows are reachable here (the lookup starts from
+//     CBB games), so other sports' pools are untouched — their lines
+//     still freeze once at creation.
+// Returns how many frozen snapshots moved.
+async function refreshPoolLines(supabase: any, externalIds: string[]): Promise<number> {
+  if (externalIds.length === 0) return 0;
+  const nowMs = Date.now();
+  const { data: games } = await supabase
+    .from("games")
+    .select("id, spread, starts_at, status")
+    .eq("sport", "CBB")
+    .in("external_id", externalIds);
+  const live = new Map<string, number>();
+  for (const g of (games ?? []) as any[]) {
+    if (g.status !== "scheduled") continue;
+    if (g.starts_at == null || new Date(g.starts_at).getTime() <= nowMs) continue;
+    if (g.spread == null) continue;
+    live.set(String(g.id), Number(g.spread));
+  }
+  if (live.size === 0) return 0;
+  const { data: links } = await supabase
+    .from("pickem_pool_games")
+    .select("pool_id, game_id, spread")
+    .in("game_id", [...live.keys()]);
+  const updates: { pool_id: string; game_id: string; spread: number }[] = [];
+  for (const l of (links ?? []) as any[]) {
+    const line = live.get(String(l.game_id));
+    if (line == null) continue;
+    const stored = l.spread == null ? null : Number(l.spread);
+    if (stored !== line) updates.push({ pool_id: l.pool_id, game_id: l.game_id, spread: line });
+  }
+  if (updates.length === 0) return 0;
+  const { error } = await supabase
+    .from("pickem_pool_games")
+    .upsert(updates, { onConflict: "pool_id,game_id" });
+  if (error) throw new Error(`pool-line refresh upsert failed: ${error.message}`);
+  return updates.length;
 }

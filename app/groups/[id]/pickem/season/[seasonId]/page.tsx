@@ -7,6 +7,7 @@ import {
   loadRoundGameStates,
   computeSeasonStandings,
   pickFocusRoundNo,
+  seasonIsConfidence,
   type SeasonStanding,
 } from "@/lib/season";
 import { attachPoolToSeason } from "@/lib/season-actions";
@@ -95,6 +96,11 @@ export default async function SeasonPage({
     computeSeasonStandings(supabase, loaded),
     loadRoundGameStates(supabase, rounds, user.id),
   ]);
+  // A confidence season races on cumulative confidence points (PTS
+  // below); a standard season races on correct picks, exactly as
+  // before. Detection is the shared helper — same rule the standings
+  // were aggregated with, so the board and the sort can never disagree.
+  const isConfidence = seasonIsConfidence(rounds);
   const avatars = await getAvatarMap(
     supabase,
     standings.map((s) => s.user_id)
@@ -139,7 +145,7 @@ export default async function SeasonPage({
       .from("pickem_pools")
       .select("id, name, week")
       .eq("group_id", id)
-      .eq("variant", "standard")
+      .in("variant", ["standard", "confidence"])
       .order("created_at", { ascending: true });
     unattachedPools = ((groupPools ?? []) as any[]).filter((p) => !attachedIds.has(p.id));
   }
@@ -399,7 +405,7 @@ export default async function SeasonPage({
                   {s.missed}
                 </span>
                 <span className="w-7 text-right text-[13px] font-semibold tabular-nums">
-                  {s.pointsBanked}
+                  {isConfidence ? s.points : s.pointsBanked}
                 </span>
                 <span className="w-5 text-right text-[13px] tabular-nums text-slate-500">
                   {s.gamesBack === 0 ? "—" : s.gamesBack}
@@ -413,8 +419,9 @@ export default async function SeasonPage({
           </div>
         </div>
         <p className="mt-1 text-[11px] text-slate-400">
-          Pts = banked points (10 per round won). GB = correct picks behind the leader.
-          Strk and L5 run off your decided picks.
+          {isConfidence
+            ? "Pts = cumulative confidence points (a win pays its rank, 5 down to 1). W / L are still correct / missed picks. GB = points behind the leader. Strk and L5 run off your decided picks."
+            : "Pts = banked points (10 per round won). GB = correct picks behind the leader. Strk and L5 run off your decided picks."}
         </p>
       </div>
 

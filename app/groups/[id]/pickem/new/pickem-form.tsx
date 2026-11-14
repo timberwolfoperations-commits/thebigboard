@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Card, SectionTitle, Field, inputClass, SubmitButton } from "@/components/ui";
 import type { SlateGame } from "@/lib/slate";
-import { STANDARD_HOW_IT_WORKS, OVER_UNDER_HOW_IT_WORKS, ATS_HOW_IT_WORKS, CONFIDENCE_HOW_IT_WORKS, CONFIDENCE_ATS_HOW_IT_WORKS } from "@/lib/pickem-copy";
+import { STANDARD_HOW_IT_WORKS, OVER_UNDER_HOW_IT_WORKS, ATS_HOW_IT_WORKS, CONFIDENCE_HOW_IT_WORKS, CONFIDENCE_ATS_HOW_IT_WORKS, CONFIDENCE_ATS_CBB_HOW_IT_WORKS } from "@/lib/pickem-copy";
 
 function fmtKickoff(iso: string): string {
   return new Date(iso).toLocaleString("en-US", {
@@ -22,13 +22,16 @@ function etLocal(iso: string): string {
 }
 
 // Picks default to locking at the first kickoff of the slate — no picks
-// once games start. Editable below.
-function defaultLock(games: SlateGame[]): string {
+// once games start. Confidence pools are the exception: a confidence
+// week spans days and each game locks at its own tip-off, so the pool
+// lock defaults to the LAST tip-off instead — otherwise the whole week
+// would lock at the first game. Editable below either way.
+function defaultLock(games: SlateGame[], confidence: boolean): string {
   const checked = games.filter((g) => g.defaultChecked);
   const pool = checked.length > 0 ? checked : games;
   if (pool.length === 0) return "";
-  const earliest = pool.map((g) => g.starts_at).sort()[0];
-  return etLocal(earliest);
+  const times = pool.map((g) => g.starts_at).sort();
+  return etLocal(confidence ? times[times.length - 1] : times[0]);
 }
 
 function defaultWeek(games: SlateGame[]): string {
@@ -78,6 +81,11 @@ export default function PickemForm({
   // Touching the checkbox makes it the commish's call from then on.
   const [useSpread, setUseSpread] = useState<boolean | null>(null);
   const ats = !isOverUnder && (useSpread ?? isCollege);
+  // null = untouched, so the default follows the sport/variant: a
+  // confidence week defaults to the last tip-off, everything else to
+  // the first kickoff. Typing once makes it the commish's call from
+  // then on; switching sports resets it (same as the slate below).
+  const [lockAt, setLockAt] = useState<string | null>(null);
   // null = untouched, so the text follows the variant; typing once makes it
   // the commish's own words and variant switches stop touching it.
   const [rules, setRules] = useState<string | null>(null);
@@ -85,7 +93,9 @@ export default function PickemForm({
     ? OVER_UNDER_HOW_IT_WORKS
     : isConfidence
       ? ats
-        ? CONFIDENCE_ATS_HOW_IT_WORKS
+        ? sport === "CBB"
+          ? CONFIDENCE_ATS_CBB_HOW_IT_WORKS
+          : CONFIDENCE_ATS_HOW_IT_WORKS
         : CONFIDENCE_HOW_IT_WORKS
       : ats
         ? ATS_HOW_IT_WORKS
@@ -139,6 +149,7 @@ export default function PickemForm({
             onChange={(e) => {
               const s = e.target.value as "NFL" | "MLB" | "CFB" | "CBB";
               setSport(s);
+              setLockAt(null); // new slate, new default lock
               if (s === "CFB") setVariant("standard"); // no CFB boxscores yet, so no props
               if (s === "CBB" && variant === "over_under") setVariant("standard"); // no CBB boxscores either
             }}
@@ -168,14 +179,17 @@ export default function PickemForm({
             name="lock_at"
             type="datetime-local"
             required
-            defaultValue={defaultLock(games)}
+            value={lockAt ?? defaultLock(games, isConfidence)}
+            onChange={(e) => setLockAt(e.target.value)}
             className={inputClass}
           />
         </Field>
         <p className="-mt-2 text-xs text-slate-500">
           {isOverUnder
             ? "Defaults to the first kickoff — every prop locks then."
-            : "Defaults to the first kickoff. Each game also locks individually at its own kickoff."}
+            : isConfidence
+              ? "Defaults to the last tip-off — the week stays open game by game. Each game also locks individually at its own kickoff."
+              : "Defaults to the first kickoff. Each game also locks individually at its own kickoff."}
         </p>
 
         {games.length > 0 ? (
@@ -232,7 +246,9 @@ export default function PickemForm({
             <span>
               <span className="font-medium">Against the spread</span>
               <span className="block text-xs text-slate-500">
-                Picks are graded against the line, not straight up. Lines freeze when the pool is created.
+                {sport === "CBB"
+                  ? "Picks are graded against the line, not straight up. Lines follow the live line until each game tips off, then freeze."
+                  : "Picks are graded against the line, not straight up. Lines freeze when the pool is created."}
               </span>
             </span>
           </label>

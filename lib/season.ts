@@ -63,6 +63,7 @@ export interface SeasonStanding {
   picksMade: number;
   weeklyWins: number;
   pointsBanked: number; // group points from THIS season's winners rows
+  points: number; // cumulative pick points across rounds (confidence points in a confidence season; == correct in a standard season)
   perRound: Map<number, RoundCell | null>; // key: round_no
   // Display stats for the leaderboard table, derived from the player's
   // decided picks in chronological order (see RoundPickOutcome):
@@ -103,15 +104,30 @@ export interface SeasonMemberInput {
   displayName: string;
 }
 
+// A season is a confidence season when it has linked rounds and every
+// one of them is a confidence pool. An empty shell, a mixed season, or
+// an all-standard season ranks the standard way — correct picks first.
+// The attach action keeps a season to one format, so mixed seasons
+// shouldn't arise; this stays defensive anyway.
+export function seasonIsConfidence(rounds: SeasonRound[]): boolean {
+  return rounds.length > 0 && rounds.every((r) => r.pool.variant === "confidence");
+}
+
 // Fold per-round leaderboards + winners rows into season standings.
 // `members` seeds the roster so a group member who has never picked
-// still appears at 0-0 (the honest bottom of the board). Ordering:
-// total correct desc, weekly wins desc, name asc — the race is about
-// picking games right; wins break the tie before the alphabet does.
+// still appears at 0-0 (the honest bottom of the board).
+// Ordering — standard seasons: total correct desc, weekly wins desc,
+// name asc; the race is about picking games right, wins break the tie
+// before the alphabet does.
+// Ordering — confidence seasons (opts.confidence): cumulative pick
+// POINTS desc (the race is the points), then total correct desc, then
+// name. Correct picks are still summed and tracked (W/L on the board);
+// only the sort key and the games-back basis change.
 export function aggregateSeasonRounds(
   rounds: RoundBoardInput[],
   winners: SeasonWinnerInput[],
-  members: SeasonMemberInput[] = []
+  members: SeasonMemberInput[] = [],
+  opts: { confidence?: boolean } = {}
 ): SeasonStanding[] {
   const byUser = new Map<string, SeasonStanding>();
   // Per-player decided-pick results in chronological order — the
@@ -130,6 +146,7 @@ export function aggregateSeasonRounds(
         picksMade: 0,
         weeklyWins: 0,
         pointsBanked: 0,
+        points: 0,
         perRound: new Map(rounds.map((r) => [r.roundNo, null])),
         streak: "—",
         last5: "—",
@@ -175,6 +192,7 @@ export function aggregateSeasonRounds(
       s.correct += row.correct;
       s.decided += row.total_decided;
       s.picksMade += cell.picksMade;
+      s.points += row.points ?? 0;
     }
     // A player can hold a winners row without a board row only if the
     // data is already inconsistent; still credit the win below via the
@@ -194,19 +212,36 @@ export function aggregateSeasonRounds(
 
   const standings = [...byUser.values()];
   for (const s of standings) s.missed = s.decided - s.correct;
-  standings.sort(
-    (a, b) =>
-      b.correct - a.correct ||
-      b.weeklyWins - a.weeklyWins ||
-      a.display_name.localeCompare(b.display_name)
-  );
+  if (opts.confidence) {
+    // The race is the points: cumulative confidence points first,
+    // correct picks as the tiebreak, then the alphabet.
+    standings.sort(
+      (a, b) =>
+        b.points - a.points ||
+        b.correct - a.correct ||
+        a.display_name.localeCompare(b.display_name)
+    );
+  } else {
+    standings.sort(
+      (a, b) =>
+        b.correct - a.correct ||
+        b.weeklyWins - a.weeklyWins ||
+        a.display_name.localeCompare(b.display_name)
+    );
+  }
 
   // Derived display stats, read after the sort: games back is measured
-  // off the leader's correct total (whoever tops the sorted board),
-  // streak and last-5 off each player's chronological sequence.
-  const leaderCorrect = standings.length > 0 ? standings[0].correct : 0;
+  // off the leader's race total — points in a confidence season,
+  // correct picks in a standard one — and streak and last-5 off each
+  // player's chronological sequence.
+  const leaderBase =
+    standings.length > 0
+      ? opts.confidence
+        ? standings[0].points
+        : standings[0].correct
+      : 0;
   for (const s of standings) {
-    s.gamesBack = leaderCorrect - s.correct;
+    s.gamesBack = leaderBase - (opts.confidence ? s.points : s.correct);
     const seq = sequences.get(s.user_id) ?? [];
     s.streak = formatStreak(seq);
     s.last5 = formatLast5(seq);
@@ -476,5 +511,9 @@ export async function computeSeasonStandings(
     displayName: m.profiles?.display_name ?? "Player",
   }));
 
-  return aggregateSeasonRounds(boards, winners, members);
+  // A confidence season ranks by cumulative points; a standard season
+  // keeps its exact current behavior (correct first, PTS = banked).
+  return aggregateSeasonRounds(boards, winners, members, {
+    confidence: seasonIsConfidence(rounds),
+  });
 }
