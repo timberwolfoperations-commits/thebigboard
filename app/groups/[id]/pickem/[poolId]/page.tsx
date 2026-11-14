@@ -6,7 +6,7 @@ import { computePickemLeaderboard, CONFIDENCE_PICK_COUNT } from "@/lib/pickem-sc
 import { getAvatarMap } from "@/lib/avatars";
 import { Avatar } from "@/components/Avatar";
 import { PROP_STAT_LABELS } from "@/lib/prop-stats";
-import { STANDARD_HOW_IT_WORKS, OVER_UNDER_HOW_IT_WORKS, ATS_HOW_IT_WORKS, CONFIDENCE_HOW_IT_WORKS, CONFIDENCE_ATS_HOW_IT_WORKS, CONFIDENCE_ATS_CBB_HOW_IT_WORKS } from "@/lib/pickem-copy";
+import { STANDARD_HOW_IT_WORKS, OVER_UNDER_HOW_IT_WORKS, ATS_HOW_IT_WORKS, CONFIDENCE_HOW_IT_WORKS, CONFIDENCE_ATS_HOW_IT_WORKS, CONFIDENCE_ATS_CBB_HOW_IT_WORKS, LEGACY_CONFIDENCE_ATS_CBB_HOW_IT_WORKS } from "@/lib/pickem-copy";
 import { Card, SectionTitle, SubmitButton } from "@/components/ui";
 import PickemGameCard from "@/components/pickem-game-card";
 import PropCard from "@/components/prop-card";
@@ -234,12 +234,12 @@ export default async function PickemPoolPage({
   const copySources =
     isOverUnder && isCommish && !locked ? await getCopyableLinePools(poolId) : [];
 
+  // CBB confidence pools grade against the closing line (the sync
+  // refreshes each game's frozen line until tip-off), so they get
+  // their own copy; every other ATS pool still freezes at creation.
+  const isCbb = gameList.some((g: any) => String(g.sport ?? "").toUpperCase() === "CBB");
   const howItWorks = (() => {
     const saved = (pool.description ?? "").trim();
-    // CBB confidence pools grade against the closing line (the sync
-    // refreshes each game's frozen line until tip-off), so they get
-    // their own copy; every other ATS pool still freezes at creation.
-    const isCbb = gameList.some((g: any) => String(g.sport ?? "").toUpperCase() === "CBB");
     const confidenceAtsCopy =
       isCbb && useSpread ? CONFIDENCE_ATS_CBB_HOW_IT_WORKS : CONFIDENCE_ATS_HOW_IT_WORKS;
     // Blank → variant default. Also repairs pools saved with the standard
@@ -261,6 +261,10 @@ export default async function PickemPoolPage({
             : STANDARD_HOW_IT_WORKS;
     if (isConfidence && saved === STANDARD_HOW_IT_WORKS)
       return useSpread ? confidenceAtsCopy : CONFIDENCE_HOW_IT_WORKS;
+    // Pools created with the pre-clarity CBB copy get the new one,
+    // so the late-lines sentence shows up on existing pools too.
+    if (isConfidence && useSpread && isCbb && saved === LEGACY_CONFIDENCE_ATS_CBB_HOW_IT_WORKS)
+      return CONFIDENCE_ATS_CBB_HOW_IT_WORKS;
     if (isOverUnder && saved === STANDARD_HOW_IT_WORKS) return OVER_UNDER_HOW_IT_WORKS;
     if (useSpread && saved === STANDARD_HOW_IT_WORKS) return ATS_HOW_IT_WORKS;
     return pool.description;
@@ -317,7 +321,9 @@ export default async function PickemPoolPage({
           {pool.week ? `Week ${pool.week} · ` : ""}
           {isConfidence ? "Top 5 confidence · " : ""}
           {useSpread
-            ? "Against the spread · lines set when the pool was created"
+            ? isCbb
+              ? "Against the spread · lines follow the live line until tip-off"
+              : "Against the spread · lines set when the pool was created"
             : isOverUnder
               ? "over/under"
               : "pick'em"}{" "}
