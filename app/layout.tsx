@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import HeaderMenu from "@/components/header-menu";
 import BottomBar from "@/components/bottom-bar";
 import { Analytics } from "@vercel/analytics/next";
+import { SpeedInsights } from "@vercel/speed-insights/next";
 import "./globals.css";
 
 const barlow = Barlow_Condensed({
@@ -104,6 +105,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         </main>
         {user && <BottomBar />}
         <Analytics />
+        <SpeedInsights />
       </body>
     </html>
   );
