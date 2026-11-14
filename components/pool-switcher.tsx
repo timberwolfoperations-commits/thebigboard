@@ -43,8 +43,11 @@ export default function PoolSwitcher({
   const [open, setOpen] = useState(false);
   const [view, setView] = useState<"pools" | "groups" | "types">("pools");
   const [newGroupId, setNewGroupId] = useState<string | null>(null);
-  const canCreate = useCanCreate();
   const current = pools.find((p) => p.key === currentKey);
+  // Group-aware: "+ New pool" in the switcher belongs to the group of
+  // the pool being viewed — a group admin sees it there, a plain member
+  // doesn't. A guest view (no group) falls back to the global check.
+  const canCreate = useCanCreate(current?.groupId);
 
   function close() {
     setOpen(false);

@@ -10,7 +10,7 @@ import {
   type SeasonStanding,
 } from "@/lib/season";
 import { attachPoolToSeason } from "@/lib/season-actions";
-import { creationLockedFor } from "@/lib/commissioner";
+import { creationLockedForGroup } from "@/lib/commissioner";
 import { getAvatarMap } from "@/lib/avatars";
 import { Avatar } from "@/components/Avatar";
 import { Card, SubmitButton, fieldClass } from "@/components/ui";
@@ -130,7 +130,8 @@ export default async function SeasonPage({
 
   // ---- attach-round control data (creator / group admin only) ------
   const canAttach =
-    !creationLockedFor(user) && (season.created_by === user.id || myRole === "admin");
+    !creationLockedForGroup(user, myRole) &&
+    (season.created_by === user.id || myRole === "admin");
   let unattachedPools: { id: string; name: string; week: number | null }[] = [];
   if (canAttach) {
     const attachedIds = new Set(rounds.map((r) => r.pool_id));

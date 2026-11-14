@@ -6,6 +6,15 @@
 // other account can still PLAY everything: join, pick, bet, settle
 // their own bets the normal way, take quizzes, play poker.
 //
+// Group-admin exemption (2026-11-13): a group's own admins may create
+// and administer INSIDE their group during the lockdown — that is the
+// whole point of the role (group_members.role = 'admin'). The
+// exemption is group-scoped by construction: the role is always read
+// for the group the action touches, so an admin of one group has no
+// power in any other. Creating groups, and promoting/demoting admins,
+// stay site-commissioner-only — a group admin must never be able to
+// mint other admins.
+//
 // Launch day is a one-line change: set COMMISSIONER_LOCKDOWN = false
 // (or delete this module and its call sites). Enforcement is
 // server-side in the action files — lib/actions.ts, pickem-actions,
@@ -50,4 +59,31 @@ export function assertCanCreate(user: { email?: string | null } | null | undefin
 
 export function assertCanAdminister(user: { email?: string | null } | null | undefined): void {
   if (creationLockedFor(user)) throw new Error(LOCKDOWN_ADMIN_MESSAGE);
+}
+
+export type GroupRole = "admin" | "member";
+
+// Group-scoped variants: pass the caller's group_members role for the
+// group the action touches. A group admin passes inside their own
+// group; everyone else faces the same lockdown as before. Creating a
+// group has no group to scope to, so it keeps the global guard above.
+export function creationLockedForGroup(
+  user: { email?: string | null } | null | undefined,
+  role: GroupRole | null | undefined,
+): boolean {
+  return COMMISSIONER_LOCKDOWN && !isSiteCommissioner(user) && role !== "admin";
+}
+
+export function assertCanCreateForGroup(
+  user: { email?: string | null } | null | undefined,
+  role: GroupRole | null | undefined,
+): void {
+  if (creationLockedForGroup(user, role)) throw new Error(LOCKDOWN_MESSAGE);
+}
+
+export function assertCanAdministerForGroup(
+  user: { email?: string | null } | null | undefined,
+  role: GroupRole | null | undefined,
+): void {
+  if (creationLockedForGroup(user, role)) throw new Error(LOCKDOWN_ADMIN_MESSAGE);
 }

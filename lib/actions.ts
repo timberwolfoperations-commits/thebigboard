@@ -4,9 +4,15 @@ import { randomBytes } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { createServiceClient } from "@/lib/supabase/service";
 import { GRACE_DAYS, AUTO_SETTLE_DAYS } from "@/lib/config";
 import { ANIMAL_KEYS } from "@/lib/avatar-keys";
-import { assertCanAdminister, assertCanCreate } from "@/lib/commissioner";
+import {
+  assertCanAdminister,
+  assertCanAdministerForGroup,
+  assertCanCreate,
+  assertCanCreateForGroup,
+} from "@/lib/commissioner";
 
 // ------------------------------------------------------------------ helpers
 
@@ -335,7 +341,9 @@ async function requireAdmin(groupId: string) {
   const { supabase, user } = await getUser();
   const role = await memberRole(supabase, groupId, user.id);
   if (role !== "admin") throw new Error("Admins only.");
-  assertCanAdminister(user);
+  // Group-aware: a group admin passes the lockdown inside their own
+  // group (the role check above already scoped it to this group).
+  assertCanAdministerForGroup(user, role);
   return { supabase, user };
 }
 
@@ -408,6 +416,36 @@ function parseEasternLock(raw: string): Date {
   return d;
 }
 
+// Promote/demote a member of a group — site commissioner ONLY, never
+// group-aware: a group admin must not be able to mint other admins.
+// This is the revoke valve for the group-admin test: one tap and an
+// admin loses their powers in that group. Cannot change your own role.
+// Service client: group_members writes go through security-definer
+// functions under RLS, so the role change runs here, behind the
+// commissioner check above.
+export async function setGroupMemberRole(
+  groupId: string,
+  targetUserId: string,
+  role: "admin" | "member",
+): Promise<void> {
+  const { user } = await getUser();
+  assertCanAdminister(user);
+  if (targetUserId === user.id) throw new Error("You can't change your own role.");
+  if (role !== "admin" && role !== "member") throw new Error("That isn't a role.");
+
+  const service = createServiceClient();
+  const { data, error } = await service
+    .from("group_members")
+    .update({ role })
+    .eq("group_id", groupId)
+    .eq("user_id", targetUserId)
+    .select("user_id");
+  if (error) throw new Error(error.message);
+  if (!data || data.length === 0) throw new Error("That player isn't in this group.");
+
+  revalidatePath(`/groups/${groupId}`);
+}
+
 async function loadPool(poolId: string) {
   const { supabase } = await getUser();
   const { data: pool, error } = await supabase
@@ -421,8 +459,8 @@ async function loadPool(poolId: string) {
 
 export async function createPool(groupId: string, formData: FormData) {
   const { supabase, user } = await getUser();
-  await memberRole(supabase, groupId, user.id);
-  assertCanCreate(user);
+  const role = await memberRole(supabase, groupId, user.id);
+  assertCanCreateForGroup(user, role);
 
   const name = String(formData.get("name") ?? "").trim();
   const description = String(formData.get("description") ?? "").trim() || null;
@@ -487,8 +525,8 @@ export async function refreshScores() {
 export async function addPoolPlayers(poolId: string, formData: FormData) {
   const { supabase, user } = await getUser();
   const { pool } = await loadPool(poolId);
-  await memberRole(supabase, pool.group_id, user.id);
-  assertCanAdminister(user);
+  const role = await memberRole(supabase, pool.group_id, user.id);
+  assertCanAdministerForGroup(user, role);
   if (new Date(pool.lock_at).getTime() <= Date.now()) {
     throw new Error("This pool is locked.");
   }
@@ -517,8 +555,8 @@ export async function addPoolPlayers(poolId: string, formData: FormData) {
 export async function addOnePoolPlayer(poolId: string, formData: FormData) {
   const { supabase, user } = await getUser();
   const { pool } = await loadPool(poolId);
-  await memberRole(supabase, pool.group_id, user.id);
-  assertCanAdminister(user);
+  const role = await memberRole(supabase, pool.group_id, user.id);
+  assertCanAdministerForGroup(user, role);
   if (pool.created_by !== user.id) throw new Error("Only the commish manages players.");
   if (new Date(pool.lock_at).getTime() <= Date.now()) {
     throw new Error("This pool is locked.");
@@ -544,8 +582,8 @@ export async function addOnePoolPlayer(poolId: string, formData: FormData) {
 export async function removePoolPlayer(poolId: string, formData: FormData) {
   const { supabase, user } = await getUser();
   const { pool } = await loadPool(poolId);
-  await memberRole(supabase, pool.group_id, user.id);
-  assertCanAdminister(user);
+  const role = await memberRole(supabase, pool.group_id, user.id);
+  assertCanAdministerForGroup(user, role);
   if (pool.created_by !== user.id) throw new Error("Only the commish manages players.");
   if (new Date(pool.lock_at).getTime() <= Date.now()) {
     throw new Error("This pool is locked.");
@@ -577,7 +615,8 @@ export async function removePoolPlayer(poolId: string, formData: FormData) {
 export async function awardPoolWinner(poolId: string) {
   const { supabase, user } = await getUser();
   const { pool } = await loadPool(poolId);
-  assertCanAdminister(user);
+  const role = await memberRole(supabase, pool.group_id, user.id);
+  assertCanAdministerForGroup(user, role);
   if (pool.created_by !== user.id) throw new Error("Only the commish awards the winner.");
   if (new Date(pool.lock_at).getTime() > Date.now()) throw new Error("The pool isn't locked yet.");
   if (pool.winner_user_id) throw new Error("This pool already has a winner.");
@@ -702,7 +741,8 @@ export async function deleteEntry(poolId: string) {
 export async function updatePool(poolId: string, formData: FormData) {
   const { supabase, user } = await getUser();
   const { pool } = await loadPool(poolId);
-  assertCanAdminister(user);
+  const role = await memberRole(supabase, pool.group_id, user.id);
+  assertCanAdministerForGroup(user, role);
   if (pool.created_by !== user.id) throw new Error("Only the commish can edit this.");
   if (new Date(pool.lock_at).getTime() <= Date.now()) {
     throw new Error("Picks are locked — no more changes.");
@@ -748,7 +788,8 @@ export async function updatePool(poolId: string, formData: FormData) {
 export async function enterStatLines(poolId: string, formData: FormData) {
   const { supabase, user } = await getUser();
   const { pool } = await loadPool(poolId);
-  assertCanAdminister(user);
+  const role = await memberRole(supabase, pool.group_id, user.id);
+  assertCanAdministerForGroup(user, role);
   if (pool.created_by !== user.id) throw new Error("Only the commish enters stats.");
   if (new Date(pool.lock_at).getTime() > Date.now()) {
     throw new Error("Picks aren't locked yet.");

@@ -8,6 +8,8 @@ import { GRACE_DAYS } from "@/lib/config";
 import { Card, StatusBadge } from "@/components/ui";
 import CopyButton from "@/components/copy-button";
 import NewMenu from "@/components/new-menu";
+import GroupMemberRoleButton from "@/components/group-member-role";
+import { isSiteCommissioner } from "@/lib/commissioner";
 import { getAvatarMap } from "@/lib/avatars";
 import { Avatar } from "@/components/Avatar";
 import GroupSwitcher from "@/components/group-switcher";
@@ -713,6 +715,21 @@ export default async function GroupPage({ params }: { params: Promise<{ id: stri
                       <span className="shrink-0 rounded bg-orange-100 px-1 py-px text-[10px] font-bold uppercase tracking-wide text-accent">
                         You
                       </span>
+                    )}
+                    {m.role === "admin" && m.user_id !== user.id && (
+                      <span className="shrink-0 rounded bg-slate-100 px-1 py-px text-[10px] font-bold uppercase tracking-wide text-slate-500">
+                        Admin
+                      </span>
+                    )}
+                    {/* Promote/demote: site commissioner only. The
+                        revoke valve for the group-admin test — one tap
+                        and an admin's powers in this group are gone. */}
+                    {isSiteCommissioner(user) && m.user_id !== user.id && (
+                      <GroupMemberRoleButton
+                        groupId={id}
+                        userId={m.user_id}
+                        role={m.role}
+                      />
                     )}
                   </p>
                   <span className="w-8 text-right text-[13px] font-semibold tabular-nums">

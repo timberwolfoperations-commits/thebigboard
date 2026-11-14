@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
-import { assertCanCreate } from "@/lib/commissioner";
+import { assertCanCreateForGroup } from "@/lib/commissioner";
 import { publicView, type Action, type PublicHandView } from "@/lib/poker/engine";
 import { deserializeState } from "@/lib/poker/serialize";
 import {
@@ -119,8 +119,8 @@ export async function createPokerTable(
   name?: string,
 ): Promise<CreatePokerTableResult> {
   const { supabase, user } = await getUser();
-  await memberRole(supabase, groupId, user.id);
-  assertCanCreate(user);
+  const role = await memberRole(supabase, groupId, user.id);
+  assertCanCreateForGroup(user, role);
 
   const service = createServiceClient();
   const { data: tableData, error: tErr } = await service

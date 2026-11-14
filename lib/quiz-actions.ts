@@ -3,7 +3,10 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { assertCanAdminister, assertCanCreate } from "@/lib/commissioner";
+import {
+  assertCanAdministerForGroup,
+  assertCanCreateForGroup,
+} from "@/lib/commissioner";
 import { createServiceClient } from "@/lib/supabase/service";
 import {
   ANSWER_LIMIT_MS,
@@ -120,8 +123,8 @@ async function serve(
 // ------------------------------------------------------------------ create
 export async function createQuiz(groupId: string, formData: FormData) {
   const { supabase, user } = await getUser();
-  await memberRole(supabase, groupId, user.id);
-  assertCanCreate(user);
+  const role = await memberRole(supabase, groupId, user.id);
+  assertCanCreateForGroup(user, role);
 
   const title = String(formData.get("title") ?? "").trim() || "Quiz Night";
   const category = QUIZ_CATEGORIES.find(
@@ -453,7 +456,8 @@ export async function answerQuizQuestion(
 export async function awardQuizWinner(quizId: string) {
   const { supabase, user } = await getUser();
   const quiz = await loadQuiz(supabase, quizId);
-  assertCanAdminister(user);
+  const role = await memberRole(supabase, quiz.group_id, user.id);
+  assertCanAdministerForGroup(user, role);
   if (quiz.created_by !== user.id) throw new Error("Only the commish awards the winner.");
   if (new Date(quiz.close_at).getTime() > Date.now()) {
     throw new Error("The quiz hasn't closed yet.");

@@ -2,21 +2,20 @@
 
 import { useState } from "react";
 import NewMenu from "@/components/new-menu";
-import { useCanCreate } from "@/components/use-commissioner";
 
 // "+ New" for the Pools tab. Pool creation is group-scoped (every create
 // route lives under /groups/[id]/…), and the Pools tab spans all groups —
 // so this picks the group first, then hands off to the existing NewMenu
-// for that group. No new creation flow is invented here.
+// for that group. No new creation flow is invented here. The caller
+// (Pools tab) only passes groups the viewer can create in; each
+// per-group NewMenu gates itself again, group-aware.
 export default function PoolsNewMenu({
   groups,
 }: {
   groups: { id: string; name: string }[];
 }) {
   const [open, setOpen] = useState(false);
-  const canCreate = useCanCreate();
 
-  if (!canCreate) return null;
   if (groups.length === 0) return null;
   if (groups.length === 1) return <NewMenu groupId={groups[0].id} />;
 

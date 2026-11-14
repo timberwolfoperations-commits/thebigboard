@@ -14,6 +14,9 @@ import { loadHostNames, loadMyGuestPoolIds } from "@/lib/open-pools";
 export interface MyGroup {
   id: string;
   name: string;
+  // The viewer's role in this group — drives the group-admin lockdown
+  // exemption (a group admin can create inside their own group).
+  role: "admin" | "member";
 }
 
 export interface MyPool {
@@ -38,13 +41,16 @@ export const loadMyGroups = cache(
   async (supabase: any, userId: string): Promise<MyGroup[]> => {
     const { data: memberships } = await supabase
       .from("group_members")
-      .select("groups(id, name)")
+      .select("role, groups(id, name)")
       .eq("user_id", userId)
       .order("joined_at", { ascending: false });
     return ((memberships ?? []) as any[])
-      .map((m) => m.groups)
-      .filter((g: any) => g?.id)
-      .map((g: any) => ({ id: g.id as string, name: g.name as string }));
+      .filter((m: any) => m.groups?.id)
+      .map((m: any) => ({
+        id: m.groups.id as string,
+        name: m.groups.name as string,
+        role: (m.role ?? "member") as "admin" | "member",
+      }));
   }
 );
 
