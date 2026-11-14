@@ -4,7 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { Card, SectionTitle } from "@/components/ui";
 import PokerCreateForm from "@/components/poker-create-form";
 import LockdownNotice from "@/components/lockdown-notice";
-import { creationLockedFor } from "@/lib/commissioner";
+import { creationLockedForGroup } from "@/lib/commissioner";
 
 export default async function NewPokerTablePage({
   params,
@@ -17,7 +17,14 @@ export default async function NewPokerTablePage({
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) redirect("/");
-  if (creationLockedFor(user)) return <LockdownNotice groupId={id} />;
+  const { data: member } = await supabase
+    .from("group_members")
+    .select("user_id, role")
+    .eq("group_id", id)
+    .eq("user_id", user.id)
+    .maybeSingle();
+  if (!member) redirect("/dashboard");
+  if (creationLockedForGroup(user, member.role)) return <LockdownNotice groupId={id} />;
 
   return (
     <div className="space-y-6">

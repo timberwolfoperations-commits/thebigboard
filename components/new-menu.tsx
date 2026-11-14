@@ -12,9 +12,10 @@ import Link from "next/link";
 export default function NewMenu({ groupId }: { groupId: string }) {
   const [open, setOpen] = useState(false);
   // Lockdown demotion: non-commissioners see only the Bet item —
-  // pools/quizzes/poker are created by the commissioner for now.
+  // pools/quizzes/poker are created by the commissioner for now, or
+  // by a group admin inside their own group (the hook is group-aware).
   // Bets stay: proposing one is playing, not administering.
-  const canCreate = useCanCreate();
+  const canCreate = useCanCreate(groupId);
 
   const allItems = [
     {

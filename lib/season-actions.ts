@@ -3,15 +3,15 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { assertCanAdminister } from "@/lib/commissioner";
+import { assertCanAdministerForGroup } from "@/lib/commissioner";
 
 // ---------------------------------------------------------- season admin
 // Seasons themselves are created by seed/admin SQL for now; the one
 // write the app needs is attaching an existing weekly pick'em pool as
 // a season round (Rounds 5/6 of a live season, without touching SQL).
-// Gate: commissioner lockdown first (assertCanAdminister), then the
-// caller must be the season's creator or a group admin — the same
-// pair the migration-029 RLS write policies enforce.
+// Gate: group-aware lockdown first (a group admin passes inside their
+// own group), then the caller must be the season's creator or a group
+// admin — the same pair the migration-029 RLS write policies enforce.
 
 async function getUser() {
   const supabase = await createClient();
@@ -24,7 +24,6 @@ async function getUser() {
 
 export async function attachPoolToSeason(formData: FormData) {
   const { supabase, user } = await getUser();
-  assertCanAdminister(user);
 
   const seasonId = String(formData.get("seasonId") ?? "");
   const poolId = String(formData.get("poolId") ?? "");
@@ -43,13 +42,15 @@ export async function attachPoolToSeason(formData: FormData) {
     throw new Error(`Round ${roundNo} is past this season's ${season.rounds_total} rounds.`);
   }
 
+  const { data: membership } = await supabase
+    .from("group_members")
+    .select("role")
+    .eq("group_id", season.group_id)
+    .eq("user_id", user.id)
+    .maybeSingle();
+  assertCanAdministerForGroup(user, membership?.role ?? null);
+
   if (season.created_by !== user.id) {
-    const { data: membership } = await supabase
-      .from("group_members")
-      .select("role")
-      .eq("group_id", season.group_id)
-      .eq("user_id", user.id)
-      .maybeSingle();
     if (!membership) throw new Error("You're not in this group.");
     if (membership.role !== "admin") {
       throw new Error("Only the season's creator or a group admin can attach rounds.");

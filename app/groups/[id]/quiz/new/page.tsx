@@ -5,7 +5,7 @@ import { createQuiz } from "@/lib/quiz-actions";
 import { QUIZ_CATEGORIES, QUIZ_COUNTS, QUIZ_DIFFICULTIES } from "@/lib/quiz";
 import { Card, Field, SectionTitle, SubmitButton, inputClass } from "@/components/ui";
 import LockdownNotice from "@/components/lockdown-notice";
-import { creationLockedFor } from "@/lib/commissioner";
+import { creationLockedForGroup } from "@/lib/commissioner";
 
 // UTC iso -> datetime-local value in Eastern. (Same helper as the
 // pick'em form.)
@@ -26,7 +26,14 @@ export default async function NewQuizPage({
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) redirect("/");
-  if (creationLockedFor(user)) return <LockdownNotice groupId={id} />;
+  const { data: member } = await supabase
+    .from("group_members")
+    .select("user_id, role")
+    .eq("group_id", id)
+    .eq("user_id", user.id)
+    .maybeSingle();
+  if (!member) redirect("/dashboard");
+  if (creationLockedForGroup(user, member.role)) return <LockdownNotice groupId={id} />;
 
   const create = createQuiz.bind(null, id);
   const defaultClose = etLocal(new Date(Date.now() + 3 * 24 * 3600 * 1000).toISOString());

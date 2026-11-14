@@ -5,7 +5,7 @@ import { loadMyGroups, loadMyPools, resolveLandingPool } from "@/lib/my-pools";
 import { loadOpenPoolDiscovery } from "@/lib/open-pools";
 import OpenPoolCard from "@/components/open-pool-card";
 import PoolsNewMenu from "@/components/pools-new-menu";
-import { creationLockedFor } from "@/lib/commissioner";
+import { isSiteCommissioner } from "@/lib/commissioner";
 
 // Pools tab, detail-first (2026-10-30): this route no longer renders a
 // list. It resolves the one pool you should be looking at — the one
@@ -90,18 +90,29 @@ export default async function PoolsPage() {
         <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-400">
           Start your own
         </h2>
-        {creationLockedFor(user) ? (
-          <p className="text-sm text-slate-500">
-            Creating is locked while The Big Board is in testing — Michael&rsquo;s running
-            all the pools for now. Join one above, or open an invite link and you&rsquo;re in.
-          </p>
-        ) : groups.length > 0 ? (
-          <PoolsNewMenu groups={groups} />
-        ) : (
+        {groups.length === 0 ? (
           <p className="text-sm text-slate-500">
             Pools live in groups — create a group from the Groups tab first, then start a pool
             for it. Or open an invite link and you&apos;re in.
           </p>
+        ) : (
+          (() => {
+            // Group-aware: the site commissioner can create anywhere; a
+            // group admin only in the groups they administer. Only those
+            // groups reach the picker — the per-group menus gate again.
+            const creatableGroups = isSiteCommissioner(user)
+              ? groups
+              : groups.filter((g) => g.role === "admin");
+            if (creatableGroups.length === 0) {
+              return (
+                <p className="text-sm text-slate-500">
+                  Creating is locked while The Big Board is in testing — Michael&rsquo;s running
+                  all the pools for now. Join one above, or open an invite link and you&rsquo;re in.
+                </p>
+              );
+            }
+            return <PoolsNewMenu groups={creatableGroups} />;
+          })()
         )}
       </section>
     </div>
