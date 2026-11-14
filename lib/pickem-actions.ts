@@ -94,7 +94,11 @@ export async function createPickemPool(groupId: string, formData: FormData) {
   const description = String(formData.get("description") ?? "").trim();
   const week = parseInt(String(formData.get("week") ?? ""), 10);
   const season = parseInt(String(formData.get("season") ?? ""), 10);
-  const lockAt = parseEasternLock(String(formData.get("lock_at") ?? ""));
+  // Blank is legitimate now: the form leaves the lock empty when the
+  // slate was empty (and iOS shows a phantom "now" in an empty
+  // datetime-local field), so a missing lock falls back to the default
+  // computed off the selected games below instead of a parse error.
+  const lockRaw = String(formData.get("lock_at") ?? "").trim();
   const variant = String(formData.get("variant") ?? "standard");
   const isPublic = formData.get("is_public") != null;
   // Against the spread is a standard/confidence grading mode (migration
@@ -108,18 +112,18 @@ export async function createPickemPool(groupId: string, formData: FormData) {
   if (!["standard", "over_under", "confidence"].includes(variant)) {
     throw new Error("That variant isn't playable yet.");
   }
-  if (lockAt.getTime() <= Date.now()) throw new Error("Lock time has to be in the future.");
 
   const gameIds = [...new Set(formData.getAll("game_ids").map(String))].filter(Boolean);
-  if (gameIds.length === 0) throw new Error("Check at least one game for the slate.");
+  if (gameIds.length === 0) throw new Error("Pick at least one game for the slate.");
 
   // Only link games that actually exist in the games table. For an ATS
   // pool this also reads each game's current line — the one frozen onto
   // the pool below. games.spread is the live DraftKings number; null
-  // until the book posts one for that game.
+  // until the book posts one for that game. starts_at is read for the
+  // blank-lock fallback below.
   const { data: games } = await supabase
     .from("games")
-    .select("id, spread")
+    .select("id, spread, starts_at")
     .in("id", gameIds);
   const gameRows = (games ?? []) as any[];
   const validIds = new Set(gameRows.map((g) => g.id));
@@ -140,6 +144,32 @@ export async function createPickemPool(groupId: string, formData: FormData) {
     throw new Error(
       `A Top 5 pool needs at least ${CONFIDENCE_PICK_COUNT} games on the slate.`
     );
+  }
+
+  // The lock. A supplied time keeps the old validation (must parse, must
+  // be in the future). A blank one — the form sends blank when the slate
+  // was empty — takes the same default the form promises, computed off
+  // the selected games: last tip-off for confidence, first kickoff
+  // otherwise (mirrors defaultLock in pickem-form.tsx). The future check
+  // still applies to the computed value, so a stale form can't create a
+  // pool whose games already tipped off.
+  let lockAt: Date;
+  if (lockRaw) {
+    lockAt = parseEasternLock(lockRaw);
+    if (lockAt.getTime() <= Date.now()) throw new Error("Lock time has to be in the future.");
+  } else {
+    const starts = gameRows
+      .filter((g) => validIds.has(g.id))
+      .map((g) => new Date(g.starts_at).getTime())
+      .filter((t) => Number.isFinite(t))
+      .sort((a, b) => a - b);
+    if (starts.length === 0) throw new Error("Those games aren't in the slate anymore.");
+    lockAt = new Date(
+      variant === "confidence" ? starts[starts.length - 1] : starts[0]
+    );
+    if (lockAt.getTime() <= Date.now()) {
+      throw new Error("Those games have already started — pick games that haven't tipped off yet.");
+    }
   }
 
   const { data: pool, error } = await supabase

@@ -25,7 +25,7 @@ export default async function NewPickemPage({ params }: { params: Promise<{ id: 
   if (creationLockedForGroup(user, member.role)) return <LockdownNotice groupId={id} />;
 
   const create = createPickemPool.bind(null, id);
-  const [nflGames, mlbGames, cfbGames, cbbGames] = await Promise.all([
+  const [nflGames, mlbGames, cfbGames, cbbSlate] = await Promise.all([
     loadSlateGames(supabase),
     loadMlbSlateGames(supabase),
     loadCfbSlateGames(supabase),
@@ -38,7 +38,14 @@ export default async function NewPickemPage({ params }: { params: Promise<{ id: 
         ← Back to group
       </Link>
 
-      <PickemForm action={create} nflGames={nflGames} mlbGames={mlbGames} cfbGames={cfbGames} cbbGames={cbbGames} />
+      <PickemForm
+        action={create}
+        nflGames={nflGames}
+        mlbGames={mlbGames}
+        cfbGames={cfbGames}
+        cbbGames={cbbSlate.games}
+        cbbSyncError={cbbSlate.syncError}
+      />
     </div>
   );
 }

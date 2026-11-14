@@ -62,12 +62,17 @@ export default function PickemForm({
   mlbGames,
   cfbGames,
   cbbGames,
+  cbbSyncError,
 }: {
   action: (formData: FormData) => Promise<void>;
   nflGames: SlateGame[];
   mlbGames: SlateGame[];
   cfbGames: SlateGame[];
   cbbGames: SlateGame[];
+  // Non-null when the CBB fallback sync threw while loading this page:
+  // the slate is empty because the feed failed, not because no top
+  // games are scheduled. Shown under the slate area (CBB tab only).
+  cbbSyncError?: string | null;
 }) {
   const [variant, setVariant] = useState("standard");
   const [sport, setSport] = useState<"NFL" | "MLB" | "CFB" | "CBB">("NFL");
@@ -178,18 +183,28 @@ export default function PickemForm({
           <input
             name="lock_at"
             type="datetime-local"
-            required
             value={lockAt ?? defaultLock(games, isConfidence)}
             onChange={(e) => setLockAt(e.target.value)}
+            // No slate, no default to compute: defaultLock returns "" and
+            // iOS Safari fills an empty datetime-local with right-now as
+            // a placeholder, which looks like a real time while the form
+            // refuses to submit. Disabled until games load — and the
+            // field is optional now anyway: a blank lock is computed on
+            // the server from the selected games (see createPickemPool).
+            disabled={games.length === 0}
             className={inputClass}
           />
         </Field>
         <p className="-mt-2 text-xs text-slate-500">
-          {isOverUnder
-            ? "Defaults to the first kickoff — every prop locks then."
-            : isConfidence
-              ? "Defaults to the last tip-off — the week stays open game by game. Each game also locks individually at its own kickoff."
-              : "Defaults to the first kickoff. Each game also locks individually at its own kickoff."}
+          {games.length === 0
+            ? isConfidence
+              ? "No games loaded yet — the lock will default to the last tip-off once the slate appears."
+              : "No games loaded yet — the lock will default to the first kickoff once the slate appears."
+            : isOverUnder
+              ? "Defaults to the first kickoff — every prop locks then."
+              : isConfidence
+                ? "Defaults to the last tip-off — the week stays open game by game. Each game also locks individually at its own kickoff."
+                : "Defaults to the first kickoff. Each game also locks individually at its own kickoff."}
         </p>
 
         {games.length > 0 ? (
@@ -227,6 +242,10 @@ export default function PickemForm({
                       : "Sunday games are checked by default — uncheck any, or add Thursday/Monday games. Winners fill in automatically from the scores feed."}
             </p>
           </div>
+        ) : sport === "CBB" && cbbSyncError ? (
+          <p className="text-xs font-medium text-red-600">
+            Couldn&rsquo;t load CBB games: {cbbSyncError}. Try reloading — the sync retries every 15 minutes.
+          </p>
         ) : (
           <p className="text-xs text-slate-500">
             No upcoming {sport} games found yet — the slate appears once ESPN posts it.

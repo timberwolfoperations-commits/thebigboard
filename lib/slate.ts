@@ -197,9 +197,21 @@ export async function loadCfbSlateGames(
 // default: the slate IS the top games, and a confidence player picks any
 // 5 of them. Same empty-table fallback as the other loaders: sync once
 // from ESPN.
+//
+// Unlike the other loaders, a failed fallback sync is SURFACED, not
+// swallowed: the form shows the reason, so a broken feed can't
+// masquerade as an empty week (Michael hit exactly that — a bare "no
+// games" line while the sync was failing). syncError is non-null only
+// when the sync threw; a successful sync with genuinely no top games
+// scheduled still returns syncError: null. The page always renders.
+export interface CbbSlateResult {
+  games: SlateGame[];
+  syncError: string | null;
+}
+
 export async function loadCbbSlateGames(
   supabase: Awaited<ReturnType<typeof createClient>>
-): Promise<SlateGame[]> {
+): Promise<CbbSlateResult> {
   const now = new Date();
   const horizon = new Date(now.getTime() + 4 * 24 * 3600 * 1000);
 
@@ -225,23 +237,30 @@ export async function loadCbbSlateGames(
   }
 
   let games = await read();
+  let syncError: string | null = null;
   if (games.length === 0) {
     try {
       const { syncCbb } = await import("@/lib/cbb-sync");
       await syncCbb();
       games = await read();
-    } catch {
-      // ESPN hiccup — the form still works, just without the checklist.
+    } catch (e) {
+      // Kept period-free: the form renders "{syncError}. Try reloading…".
+      syncError =
+        e instanceof Error ? e.message.replace(/[.\s]+$/, "") : "The scores feed didn't answer";
+      console.error("CBB slate sync failed (pool creation):", e);
     }
   }
 
-  return games.map((g) => ({
-    id: g.id,
-    label: g.label,
-    starts_at: g.starts_at,
-    week: g.week,
-    season: g.season,
-    line: slateLineLabel(g.home_team, g.away_team, g.spread),
-    defaultChecked: true,
-  }));
+  return {
+    games: games.map((g) => ({
+      id: g.id,
+      label: g.label,
+      starts_at: g.starts_at,
+      week: g.week,
+      season: g.season,
+      line: slateLineLabel(g.home_team, g.away_team, g.spread),
+      defaultChecked: true,
+    })),
+    syncError,
+  };
 }
