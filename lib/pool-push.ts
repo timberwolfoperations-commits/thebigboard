@@ -21,7 +21,7 @@
 
 import { createServiceClient } from "@/lib/supabase/service";
 import { sendPushToUser } from "@/lib/notify";
-import { computePickemLeaderboard } from "@/lib/pickem-scoring";
+import { computePickemLeaderboard, CONFIDENCE_PICK_COUNT } from "@/lib/pickem-scoring";
 import {
   categoryForKind,
   excludeUser,
@@ -242,9 +242,12 @@ async function missingPicksForPool(
   if (!isInReminderWindow(starts[0], now)) return 0;
 
   // A full card means one pick per game — or, for over/under pools,
-  // one side per commish line (those picks live in their own table).
+  // one side per commish line (those picks live in their own table) —
+  // or, for Top 5 Confidence pools, 5 ranked picks no matter how many
+  // games are on the slate.
   const overUnder = pool.variant === "over_under";
-  let total = gameIds.length;
+  const confidence = pool.variant === "confidence";
+  let total = confidence ? CONFIDENCE_PICK_COUNT : gameIds.length;
   if (overUnder) {
     const { count } = await service
       .from("pickem_lines")

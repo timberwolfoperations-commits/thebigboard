@@ -8,6 +8,7 @@ import {
   assertCanCreateForGroup,
 } from "@/lib/commissioner";
 import { notifyPickemPoolOpen } from "@/lib/pool-push";
+import { CONFIDENCE_PICK_COUNT } from "@/lib/pickem-scoring";
 
 // ------------------------------------------------------------- pick'em pools
 // Pick winners, not players. The slate of games comes from the games table
@@ -96,13 +97,15 @@ export async function createPickemPool(groupId: string, formData: FormData) {
   const lockAt = parseEasternLock(String(formData.get("lock_at") ?? ""));
   const variant = String(formData.get("variant") ?? "standard");
   const isPublic = formData.get("is_public") != null;
-  // Against the spread is a standard-variant grading mode (migration
+  // Against the spread is a standard/confidence grading mode (migration
   // 023): picks grade against the line frozen at creation, not straight
-  // up. Meaningless for over/under, so it's standard-only.
-  const useSpread = variant === "standard" && formData.get("use_spread") != null;
+  // up. Meaningless for over/under, so it's standard/confidence-only.
+  const useSpread =
+    (variant === "standard" || variant === "confidence") &&
+    formData.get("use_spread") != null;
 
   if (!name) throw new Error("Give your pool a name.");
-  if (!["standard", "over_under"].includes(variant)) {
+  if (!["standard", "over_under", "confidence"].includes(variant)) {
     throw new Error("That variant isn't playable yet.");
   }
   if (lockAt.getTime() <= Date.now()) throw new Error("Lock time has to be in the future.");
@@ -131,6 +134,13 @@ export async function createPickemPool(groupId: string, formData: FormData) {
   );
   const linked = gameIds.filter((id) => validIds.has(id));
   if (linked.length === 0) throw new Error("Those games aren't in the slate anymore.");
+  // Top 5 Confidence is pick-5-of-the-slate: the slate has to hold at
+  // least 5 games or nobody can fill a card.
+  if (variant === "confidence" && linked.length < CONFIDENCE_PICK_COUNT) {
+    throw new Error(
+      `A Top 5 pool needs at least ${CONFIDENCE_PICK_COUNT} games on the slate.`
+    );
+  }
 
   const { data: pool, error } = await supabase
     .from("pickem_pools")
@@ -221,6 +231,131 @@ export async function savePickemPick(poolId: string, formData: FormData) {
     },
     { onConflict: "pool_id,user_id,game_id" }
   );
+  if (error) throw new Error(error.message);
+
+  revalidatePath(`/groups/${pool.group_id}/pickem/${poolId}`);
+}
+
+// Confidence pick (or change) for one game: same locks as a standard
+// pick, plus the rank rules. Ranks 5 down to 1, each used once per
+// player; a player holds at most CONFIDENCE_PICK_COUNT picks. The rank
+// comes from the form when the player taps one; when they just tap a
+// team, the server assigns the highest free rank (5 first), so a pick
+// is never left unranked. Re-tapping the same game with a new rank
+// moves it; re-tapping a team keeps the game's rank.
+export async function saveConfidencePick(poolId: string, formData: FormData) {
+  const { supabase, user } = await getUser();
+  const { pool } = await loadPickemPool(poolId);
+  await assertPoolAccess(supabase, pool.group_id, poolId, user.id);
+  if (pool.variant !== "confidence") {
+    throw new Error("That pool doesn't rank picks.");
+  }
+  if (new Date(pool.lock_at).getTime() <= Date.now()) {
+    throw new Error("Picks are locked.");
+  }
+
+  const gameId = String(formData.get("game_id") ?? "");
+  const picked = String(formData.get("picked_team") ?? "").trim().toUpperCase();
+  if (!gameId || !picked) throw new Error("Pick a team.");
+
+  const { data: link } = await supabase
+    .from("pickem_pool_games")
+    .select("game_id")
+    .eq("pool_id", poolId)
+    .eq("game_id", gameId)
+    .maybeSingle();
+  if (!link) throw new Error("That game isn't in this pool.");
+
+  const { data: game } = await supabase
+    .from("games")
+    .select("home_team, away_team, starts_at")
+    .eq("id", gameId)
+    .single();
+  if (!game) throw new Error("Game not found.");
+  if (new Date(game.starts_at).getTime() <= Date.now()) {
+    throw new Error("That game already kicked off.");
+  }
+  const teams = [game.home_team, game.away_team].map((t) => String(t ?? "").toUpperCase());
+  if (!teams.includes(picked)) throw new Error("Pick one of the two teams.");
+
+  const { data: mine } = await supabase
+    .from("pickem_picks")
+    .select("game_id, confidence")
+    .eq("pool_id", poolId)
+    .eq("user_id", user.id);
+  const myPicks = (mine ?? []) as any[];
+  const existing = myPicks.find((p) => p.game_id === gameId);
+  const usedRanks = new Set(
+    myPicks
+      .filter((p) => p.game_id !== gameId)
+      .map((p) => Number(p.confidence))
+      .filter((n) => Number.isFinite(n))
+  );
+  if (!existing && myPicks.length >= CONFIDENCE_PICK_COUNT) {
+    throw new Error(`Top 5 means 5 picks — drop one to change your card.`);
+  }
+
+  const wanted = Number(String(formData.get("confidence") ?? ""));
+  let rank: number;
+  if (Number.isFinite(wanted) && wanted >= 1 && wanted <= CONFIDENCE_PICK_COUNT) {
+    if (usedRanks.has(wanted)) {
+      throw new Error(`You already used ${wanted} on another game.`);
+    }
+    rank = wanted;
+  } else if (existing && Number.isFinite(Number(existing.confidence))) {
+    rank = Number(existing.confidence);
+  } else {
+    // Highest free rank: first pick lands on 5, then 4, and so on.
+    rank = CONFIDENCE_PICK_COUNT;
+    while (rank > 1 && usedRanks.has(rank)) rank--;
+    if (usedRanks.has(rank)) throw new Error(`You've used all ${CONFIDENCE_PICK_COUNT} ranks.`);
+  }
+
+  const { error } = await supabase.from("pickem_picks").upsert(
+    {
+      pool_id: poolId,
+      user_id: user.id,
+      game_id: gameId,
+      picked_team: picked,
+      confidence: rank,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: "pool_id,user_id,game_id" }
+  );
+  if (error) throw new Error(error.message);
+
+  revalidatePath(`/groups/${pool.group_id}/pickem/${poolId}`);
+}
+
+// Drop one of your picks — confidence pools only in the UI, so a player
+// with a full 5-pick card can swap a game out. Same locks as picking:
+// pool lock or that game's kickoff ends it.
+export async function clearPickemPick(poolId: string, formData: FormData) {
+  const { supabase, user } = await getUser();
+  const { pool } = await loadPickemPool(poolId);
+  await assertPoolAccess(supabase, pool.group_id, poolId, user.id);
+  if (new Date(pool.lock_at).getTime() <= Date.now()) {
+    throw new Error("Picks are locked.");
+  }
+
+  const gameId = String(formData.get("game_id") ?? "");
+  if (!gameId) throw new Error("Pick a game to clear.");
+
+  const { data: game } = await supabase
+    .from("games")
+    .select("starts_at")
+    .eq("id", gameId)
+    .single();
+  if (game && new Date(game.starts_at).getTime() <= Date.now()) {
+    throw new Error("That game already kicked off.");
+  }
+
+  const { error } = await supabase
+    .from("pickem_picks")
+    .delete()
+    .eq("pool_id", poolId)
+    .eq("user_id", user.id)
+    .eq("game_id", gameId);
   if (error) throw new Error(error.message);
 
   revalidatePath(`/groups/${pool.group_id}/pickem/${poolId}`);

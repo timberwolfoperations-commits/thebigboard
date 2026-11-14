@@ -190,3 +190,58 @@ export async function loadCfbSlateGames(
     defaultChecked: true,
   }));
 }
+
+// CBB slate for Top 5 Confidence pool creation: TOP GAMES ONLY — at
+// least one ranked team (is_top25) OR both teams in a power conference
+// (is_power_conf), kicking off in the next 4 days. All come checked by
+// default: the slate IS the top games, and a confidence player picks any
+// 5 of them. Same empty-table fallback as the other loaders: sync once
+// from ESPN.
+export async function loadCbbSlateGames(
+  supabase: Awaited<ReturnType<typeof createClient>>
+): Promise<SlateGame[]> {
+  const now = new Date();
+  const horizon = new Date(now.getTime() + 4 * 24 * 3600 * 1000);
+
+  async function read() {
+    const { data } = await supabase
+      .from("games")
+      .select("id, label, starts_at, week, season, home_team, away_team, spread")
+      .eq("sport", "CBB")
+      .or("is_top25.eq.true,is_power_conf.eq.true")
+      .gte("starts_at", now.toISOString())
+      .lt("starts_at", horizon.toISOString())
+      .order("starts_at", { ascending: true });
+    return (data ?? []) as {
+      id: string;
+      label: string;
+      starts_at: string;
+      week: number | null;
+      season: number | null;
+      home_team: string | null;
+      away_team: string | null;
+      spread: number | null;
+    }[];
+  }
+
+  let games = await read();
+  if (games.length === 0) {
+    try {
+      const { syncCbb } = await import("@/lib/cbb-sync");
+      await syncCbb();
+      games = await read();
+    } catch {
+      // ESPN hiccup — the form still works, just without the checklist.
+    }
+  }
+
+  return games.map((g) => ({
+    id: g.id,
+    label: g.label,
+    starts_at: g.starts_at,
+    week: g.week,
+    season: g.season,
+    line: slateLineLabel(g.home_team, g.away_team, g.spread),
+    defaultChecked: true,
+  }));
+}

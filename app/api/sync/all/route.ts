@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { syncNfl } from "@/lib/nfl-sync";
 import { syncMlb } from "@/lib/mlb-sync";
 import { syncCfb } from "@/lib/cfb-sync";
+import { syncCbb } from "@/lib/cbb-sync";
 import { createServiceClient } from "@/lib/supabase/service";
 import { sweepAllTables } from "@/lib/poker/server";
 import { sweepPoolPushes } from "@/lib/pool-push";
@@ -33,6 +34,7 @@ export async function GET(req: Request) {
     const nfl = await syncNfl();
     const mlb = await syncMlb();
     const cfb = await syncCfb();
+    const cbb = await syncCbb();
     let poker: unknown;
     try {
       poker = await sweepAllTables(createServiceClient(), new Date());
@@ -49,7 +51,7 @@ export async function GET(req: Request) {
     } catch (e: any) {
       poolPush = { error: e?.message ?? "pool push sweep failed" };
     }
-    return NextResponse.json({ ok: true, nfl, mlb, cfb, poker, poolPush });
+    return NextResponse.json({ ok: true, nfl, mlb, cfb, cbb, poker, poolPush });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e?.message ?? "sync failed" }, { status: 500 });
   }

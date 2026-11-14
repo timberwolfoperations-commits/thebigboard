@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { createPickemPool } from "@/lib/pickem-actions";
-import { loadSlateGames, loadMlbSlateGames, loadCfbSlateGames } from "@/lib/slate";
+import { loadSlateGames, loadMlbSlateGames, loadCfbSlateGames, loadCbbSlateGames } from "@/lib/slate";
 import PickemForm from "./pickem-form";
 import LockdownNotice from "@/components/lockdown-notice";
 import { creationLockedForGroup } from "@/lib/commissioner";
@@ -25,10 +25,11 @@ export default async function NewPickemPage({ params }: { params: Promise<{ id: 
   if (creationLockedForGroup(user, member.role)) return <LockdownNotice groupId={id} />;
 
   const create = createPickemPool.bind(null, id);
-  const [nflGames, mlbGames, cfbGames] = await Promise.all([
+  const [nflGames, mlbGames, cfbGames, cbbGames] = await Promise.all([
     loadSlateGames(supabase),
     loadMlbSlateGames(supabase),
     loadCfbSlateGames(supabase),
+    loadCbbSlateGames(supabase),
   ]);
 
   return (
@@ -37,7 +38,7 @@ export default async function NewPickemPage({ params }: { params: Promise<{ id: 
         ← Back to group
       </Link>
 
-      <PickemForm action={create} nflGames={nflGames} mlbGames={mlbGames} cfbGames={cfbGames} />
+      <PickemForm action={create} nflGames={nflGames} mlbGames={mlbGames} cfbGames={cfbGames} cbbGames={cbbGames} />
     </div>
   );
 }

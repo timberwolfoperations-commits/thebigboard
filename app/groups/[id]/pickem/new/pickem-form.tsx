@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Card, SectionTitle, Field, inputClass, SubmitButton } from "@/components/ui";
 import type { SlateGame } from "@/lib/slate";
-import { STANDARD_HOW_IT_WORKS, OVER_UNDER_HOW_IT_WORKS } from "@/lib/pickem-copy";
+import { STANDARD_HOW_IT_WORKS, OVER_UNDER_HOW_IT_WORKS, ATS_HOW_IT_WORKS, CONFIDENCE_HOW_IT_WORKS, CONFIDENCE_ATS_HOW_IT_WORKS } from "@/lib/pickem-copy";
 
 function fmtKickoff(iso: string): string {
   return new Date(iso).toLocaleString("en-US", {
@@ -58,24 +58,38 @@ export default function PickemForm({
   nflGames,
   mlbGames,
   cfbGames,
+  cbbGames,
 }: {
   action: (formData: FormData) => Promise<void>;
   nflGames: SlateGame[];
   mlbGames: SlateGame[];
   cfbGames: SlateGame[];
+  cbbGames: SlateGame[];
 }) {
   const [variant, setVariant] = useState("standard");
-  const [sport, setSport] = useState<"NFL" | "MLB" | "CFB">("NFL");
-  const games = sport === "MLB" ? mlbGames : sport === "CFB" ? cfbGames : nflGames;
+  const [sport, setSport] = useState<"NFL" | "MLB" | "CFB" | "CBB">("NFL");
+  const games =
+    sport === "MLB" ? mlbGames : sport === "CFB" ? cfbGames : sport === "CBB" ? cbbGames : nflGames;
   const isOverUnder = variant === "over_under";
+  const isConfidence = variant === "confidence";
+  const isCollege = sport === "CFB" || sport === "CBB";
   // null = untouched, so the default follows the sport: college pools
   // grade against the spread out of the box, NFL pools straight up.
   // Touching the checkbox makes it the commish's call from then on.
   const [useSpread, setUseSpread] = useState<boolean | null>(null);
-  const ats = !isOverUnder && (useSpread ?? sport === "CFB");
+  const ats = !isOverUnder && (useSpread ?? isCollege);
   // null = untouched, so the text follows the variant; typing once makes it
   // the commish's own words and variant switches stop touching it.
   const [rules, setRules] = useState<string | null>(null);
+  const defaultRules = isOverUnder
+    ? OVER_UNDER_HOW_IT_WORKS
+    : isConfidence
+      ? ats
+        ? CONFIDENCE_ATS_HOW_IT_WORKS
+        : CONFIDENCE_HOW_IT_WORKS
+      : ats
+        ? ATS_HOW_IT_WORKS
+        : STANDARD_HOW_IT_WORKS;
 
   return (
     <Card>
@@ -99,7 +113,10 @@ export default function PickemForm({
             className={inputClass}
           >
             <option value="standard">Standard — pick every game&rsquo;s winner</option>
-            <option value="over_under" disabled={sport === "CFB"}>
+            <option value="confidence">
+              Top 5 Confidence — pick 5 games, rank them 5 to 1
+            </option>
+            <option value="over_under" disabled={sport === "CFB" || sport === "CBB"}>
               Over/Under — pick sides on player props
             </option>
           </select>
@@ -110,7 +127,7 @@ export default function PickemForm({
             name="description"
             rows={4}
             maxLength={2000}
-            value={rules ?? (isOverUnder ? OVER_UNDER_HOW_IT_WORKS : STANDARD_HOW_IT_WORKS)}
+            value={rules ?? defaultRules}
             onChange={(e) => setRules(e.target.value)}
             className={inputClass}
           />
@@ -120,15 +137,17 @@ export default function PickemForm({
           <select
             value={sport}
             onChange={(e) => {
-              const s = e.target.value as "NFL" | "MLB" | "CFB";
+              const s = e.target.value as "NFL" | "MLB" | "CFB" | "CBB";
               setSport(s);
               if (s === "CFB") setVariant("standard"); // no CFB boxscores yet, so no props
+              if (s === "CBB" && variant === "over_under") setVariant("standard"); // no CBB boxscores either
             }}
             className={inputClass}
           >
             <option value="NFL">NFL</option>
             <option value="MLB">MLB</option>
             <option value="CFB">College football</option>
+            <option value="CBB">College basketball</option>
           </select>
         </Field>
 
@@ -187,7 +206,11 @@ export default function PickemForm({
                   ? "The next game is checked by default — check any other games the pool covers. Winners fill in automatically from the scores feed."
                   : sport === "CFB"
                     ? "Top-25 games only, all checked by default — uncheck any you don't want. Winners fill in automatically from the scores feed."
-                    : "Sunday games are checked by default — uncheck any, or add Thursday/Monday games. Winners fill in automatically from the scores feed."}
+                    : sport === "CBB"
+                      ? isConfidence
+                        ? "Top games only — ranked teams and big-conference games — all checked by default. Each player picks any 5 and ranks them 5 to 1. Winners fill in automatically from the scores feed."
+                        : "Top games only — ranked teams and big-conference games — all checked by default. Uncheck any you don't want. Winners fill in automatically from the scores feed."
+                      : "Sunday games are checked by default — uncheck any, or add Thursday/Monday games. Winners fill in automatically from the scores feed."}
             </p>
           </div>
         ) : (
@@ -202,7 +225,7 @@ export default function PickemForm({
             <input
               type="checkbox"
               name="use_spread"
-              checked={useSpread ?? sport === "CFB"}
+              checked={useSpread ?? isCollege}
               onChange={(e) => setUseSpread(e.target.checked)}
               className="mt-0.5 h-4 w-4 shrink-0 accent-[#c2410c]"
             />

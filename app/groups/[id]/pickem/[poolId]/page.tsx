@@ -1,12 +1,12 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { savePickemPick, savePropPick, setPickemLines, awardPickemWinner, scratchPickemPool, getRecentPropPlayers, getCopyableLinePools } from "@/lib/pickem-actions";
-import { computePickemLeaderboard } from "@/lib/pickem-scoring";
+import { savePickemPick, savePropPick, setPickemLines, awardPickemWinner, scratchPickemPool, getRecentPropPlayers, getCopyableLinePools, saveConfidencePick, clearPickemPick } from "@/lib/pickem-actions";
+import { computePickemLeaderboard, CONFIDENCE_PICK_COUNT } from "@/lib/pickem-scoring";
 import { getAvatarMap } from "@/lib/avatars";
 import { Avatar } from "@/components/Avatar";
 import { PROP_STAT_LABELS } from "@/lib/prop-stats";
-import { STANDARD_HOW_IT_WORKS, OVER_UNDER_HOW_IT_WORKS, ATS_HOW_IT_WORKS } from "@/lib/pickem-copy";
+import { STANDARD_HOW_IT_WORKS, OVER_UNDER_HOW_IT_WORKS, ATS_HOW_IT_WORKS, CONFIDENCE_HOW_IT_WORKS, CONFIDENCE_ATS_HOW_IT_WORKS } from "@/lib/pickem-copy";
 import { Card, SectionTitle, SubmitButton } from "@/components/ui";
 import PickemGameCard from "@/components/pickem-game-card";
 import PropCard from "@/components/prop-card";
@@ -84,15 +84,21 @@ export default async function PickemPoolPage({
 
   const { data: myPicks } = await supabase
     .from("pickem_picks")
-    .select("game_id, picked_team")
+    .select("game_id, picked_team, confidence")
     .eq("pool_id", poolId)
     .eq("user_id", user.id);
   const myPickByGame = new Map(((myPicks ?? []) as any[]).map((p) => [p.game_id, p.picked_team]));
+  const myRankByGame = new Map(
+    ((myPicks ?? []) as any[])
+      .filter((p) => p.confidence != null)
+      .map((p) => [p.game_id, Number(p.confidence)])
+  );
 
 
   const nowMs = Date.now();
   const locked = new Date(pool.lock_at).getTime() <= nowMs;
   const isOverUnder = pool.variant === "over_under";
+  const isConfidence = pool.variant === "confidence";
 
   // Per-game reveal for standard pick'em: a game's picks go public once
   // THAT game kicks off — nobody can pick or change it anymore — even
@@ -109,12 +115,16 @@ export default async function PickemPoolPage({
   if ((locked || anyStarted) && gameList.length > 0) {
     const { data: allPicks } = await supabase
       .from("pickem_picks")
-      .select("game_id, picked_team, profiles(display_name)")
+      .select("game_id, picked_team, confidence, profiles(display_name)")
       .eq("pool_id", poolId);
     const byGame = new Map<string, Map<string, string[]>>();
     for (const p of (allPicks ?? []) as any[]) {
       const team = String(p.picked_team ?? "").toUpperCase();
-      const name = p.profiles?.display_name ?? "Player";
+      // Confidence pools reveal the rank with the name — "Big Red (5)"
+      // — so the board shows who was most sure, not just who picked it.
+      const name =
+        (p.profiles?.display_name ?? "Player") +
+        (isConfidence && p.confidence != null ? ` (${p.confidence})` : "");
       if (!byGame.has(p.game_id)) byGame.set(p.game_id, new Map());
       const m = byGame.get(p.game_id)!;
       if (!m.has(team)) m.set(team, []);
@@ -200,6 +210,8 @@ export default async function PickemPoolPage({
       : [];
 
   const savePick = savePickemPick.bind(null, poolId);
+  const saveConfidence = saveConfidencePick.bind(null, poolId);
+  const clearPick = clearPickemPick.bind(null, poolId);
   const saveProp = savePropPick.bind(null, poolId);
   const setLines = setPickemLines.bind(null, poolId);
   const awardWinner = awardPickemWinner.bind(null, poolId);
@@ -229,8 +241,20 @@ export default async function PickemPoolPage({
     // commish who deliberately typed that text into an over/under pool is
     // not a case worth preserving the wrong copy for. Same repair for
     // against-the-spread pools: the untouched standard default would tell
-    // players to pick winners in a pool that grades covers.
-    if (!saved) return isOverUnder ? OVER_UNDER_HOW_IT_WORKS : useSpread ? ATS_HOW_IT_WORKS : STANDARD_HOW_IT_WORKS;
+    // players to pick winners in a pool that grades covers. And for
+    // confidence pools, which need the rank rules, not the standard ones.
+    if (!saved)
+      return isOverUnder
+        ? OVER_UNDER_HOW_IT_WORKS
+        : isConfidence
+          ? useSpread
+            ? CONFIDENCE_ATS_HOW_IT_WORKS
+            : CONFIDENCE_HOW_IT_WORKS
+          : useSpread
+            ? ATS_HOW_IT_WORKS
+            : STANDARD_HOW_IT_WORKS;
+    if (isConfidence && saved === STANDARD_HOW_IT_WORKS)
+      return useSpread ? CONFIDENCE_ATS_HOW_IT_WORKS : CONFIDENCE_HOW_IT_WORKS;
     if (isOverUnder && saved === STANDARD_HOW_IT_WORKS) return OVER_UNDER_HOW_IT_WORKS;
     if (useSpread && saved === STANDARD_HOW_IT_WORKS) return ATS_HOW_IT_WORKS;
     return pool.description;
@@ -285,6 +309,7 @@ export default async function PickemPoolPage({
         />
         <p className="mt-1 text-sm text-slate-500">
           {pool.week ? `Week ${pool.week} · ` : ""}
+          {isConfidence ? "Top 5 confidence · " : ""}
           {useSpread
             ? "Against the spread · lines set when the pool was created"
             : isOverUnder
@@ -398,6 +423,17 @@ export default async function PickemPoolPage({
       ) : (
         <div>
           <SectionTitle>Make your picks</SectionTitle>
+          {isConfidence && !locked && (
+            <p className="mb-3 text-sm text-slate-600">
+              Your Top 5:{" "}
+              <span className="font-semibold text-slate-900">
+                {myPicks?.length ?? 0} of {CONFIDENCE_PICK_COUNT}
+              </span>{" "}
+              ranked
+              {(myPicks?.length ?? 0) < CONFIDENCE_PICK_COUNT &&
+                " — tap a team to pick it, then set its rank"}
+            </p>
+          )}
           <div className="space-y-3">
             {gameList.map((g: any) => (
               <PickemGameCard
@@ -408,12 +444,21 @@ export default async function PickemPoolPage({
                 reveal={locked || gameStarted(g) ? revealByGame.get(g.id) ?? [] : null}
                 spread={useSpread ? (spreadByGame.get(g.id) ?? null) : null}
                 action={savePick}
+                confidenceMode={isConfidence}
+                myRank={myRankByGame.get(g.id) ?? null}
+                usedRanks={[...myRankByGame.entries()]
+                  .filter(([gid]) => gid !== g.id)
+                  .map(([, r]) => r)}
+                onRank={saveConfidence}
+                onClear={clearPick}
               />
             ))}
           </div>
           {!locked && (
             <p className="mt-2 text-xs text-slate-400">
-              Tap a team to pick — tap the other to change your mind. Each game locks at its own kickoff.
+              {isConfidence
+                ? "Tap a team to pick it — your highest free rank is assigned, then tap a rank to move it. Remove frees the rank. Each game locks at its own kickoff."
+                : "Tap a team to pick — tap the other to change your mind. Each game locks at its own kickoff."}
             </p>
           )}
         </div>

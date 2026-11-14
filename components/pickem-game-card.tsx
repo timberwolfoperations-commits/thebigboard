@@ -8,6 +8,14 @@ import { Card } from "@/components/ui";
 // the server write happens in the background, so there's no waiting on the
 // round-trip to see your pick. After kickoff or lock the buttons go dead
 // and the score shows instead.
+//
+// Confidence mode (Top 5 pools): the same two buttons pick a team, and
+// the card grows a 5-to-1 rank row under them. Tapping a team assigns
+// the highest free rank automatically (5 first); tapping a rank moves
+// it. Ranks used on your other games are dead. A picked card also gets
+// a small remove button, so a full 5-pick card can swap a game out.
+// The server re-checks all of it (rank uniqueness, the 5-pick cap) —
+// the client just keeps the taps honest.
 
 export interface PickemCardGame {
   id: string;
@@ -83,6 +91,11 @@ export default function PickemGameCard({
   reveal,
   spread,
   action,
+  confidenceMode,
+  myRank,
+  usedRanks,
+  onRank,
+  onClear,
 }: {
   game: PickemCardGame;
   myPick: string | null;
@@ -94,16 +107,51 @@ export default function PickemGameCard({
   // null/omitted = straight-up pool, no line shown.
   spread?: number | null;
   action: (formData: FormData) => Promise<void>;
+  // Confidence (Top 5) extras. myRank is this game's rank (null =
+  // unpicked); usedRanks are the ranks on the player's OTHER games.
+  confidenceMode?: boolean;
+  myRank?: number | null;
+  usedRanks?: number[];
+  onRank?: (formData: FormData) => Promise<void>;
+  onClear?: (formData: FormData) => Promise<void>;
 }) {
   const [optimisticPick, setOptimisticPick] = useOptimistic<string | null, string>(
     myPick,
     (_current, next) => next
   );
+  const [optimisticRank, setOptimisticRank] = useOptimistic<number | null, number | null>(
+    myRank ?? null,
+    (_current, next) => next
+  );
 
   // Highlight the tapped team immediately; the server write runs behind it.
+  // In confidence mode a fresh pick gets the highest free rank (5 first);
+  // switching teams on a game that already has a rank keeps that rank,
+  // exactly like the server does.
   async function pick(formData: FormData) {
-    setOptimisticPick(String(formData.get("picked_team") ?? ""));
-    await action(formData);
+    const team = String(formData.get("picked_team") ?? "");
+    setOptimisticPick(team);
+    if (confidenceMode && onRank) {
+      if (optimisticRank == null) {
+        const free = [5, 4, 3, 2, 1].find((r) => !(usedRanks ?? []).includes(r));
+        if (free != null) setOptimisticRank(free);
+      }
+      await onRank(formData);
+    } else {
+      await action(formData);
+    }
+  }
+
+  async function rank(formData: FormData) {
+    const r = Number(formData.get("confidence") ?? "");
+    if (Number.isFinite(r)) setOptimisticRank(r);
+    if (onRank) await onRank(formData);
+  }
+
+  async function clear(formData: FormData) {
+    setOptimisticPick("");
+    setOptimisticRank(null);
+    if (onClear) await onClear(formData);
   }
 
   const away = String(game.away_team ?? "").toUpperCase();
@@ -111,6 +159,7 @@ export default function PickemGameCard({
   const sel = (optimisticPick ?? "").toUpperCase();
   const awayLine = teamLine(false, spread ?? null);
   const homeLine = teamLine(true, spread ?? null);
+  const rankSel = optimisticRank ?? null;
 
   return (
     <Card>
@@ -136,6 +185,45 @@ export default function PickemGameCard({
           action={pick}
         />
       </div>
+      {confidenceMode && sel && (
+        <div className="mt-2 flex items-center justify-center gap-1.5">
+          <span className="mr-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+            Rank
+          </span>
+          {[5, 4, 3, 2, 1].map((r) => {
+            const takenElsewhere = (usedRanks ?? []).includes(r) && rankSel !== r;
+            return (
+              <form key={r} action={rank}>
+                <input type="hidden" name="game_id" value={game.id} />
+                <input type="hidden" name="picked_team" value={sel} />
+                <input type="hidden" name="confidence" value={r} />
+                <button
+                  type="submit"
+                  disabled={!canPick || takenElsewhere}
+                  className={`h-8 w-8 rounded-full text-sm font-bold transition ${
+                    rankSel === r
+                      ? "bg-[#c2410c] text-white"
+                      : "border border-slate-300 bg-white text-slate-700 hover:border-slate-500"
+                  } disabled:cursor-not-allowed disabled:opacity-40`}
+                >
+                  {r}
+                </button>
+              </form>
+            );
+          })}
+          {canPick && onClear && (
+            <form action={clear} className="ml-1">
+              <input type="hidden" name="game_id" value={game.id} />
+              <button
+                type="submit"
+                className="rounded-full px-2 py-1 text-[11px] font-semibold text-slate-400 hover:text-red-600"
+              >
+                Remove
+              </button>
+            </form>
+          )}
+        </div>
+      )}
       <p className="mt-2 text-center text-xs text-slate-500">
         {game.status === "final" ? (
           <span className="font-semibold text-slate-700">

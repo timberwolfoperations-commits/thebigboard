@@ -30,6 +30,12 @@ export interface PickemRow {
   earliest_pick: string;
 }
 
+// Top 5 Confidence: every player picks exactly 5 games and ranks them
+// 5 (most confident) down to 1, each rank used once. Shared by the
+// scorer, the pick action's validation, and the missing-picks push
+// (a full confidence card is 5 picks, not one per game).
+export const CONFIDENCE_PICK_COUNT = 5;
+
 function gameWinner(g: PickemGame): string | null {
   if (g.status !== "final" || g.home_score == null || g.away_score == null) return null;
   const home = String(g.home_team ?? "").toUpperCase();
@@ -66,7 +72,7 @@ export async function computePickemLeaderboard(
     supabase.from("pickem_pool_games").select("game_id, spread").eq("pool_id", poolId),
     supabase
       .from("pickem_picks")
-      .select("user_id, game_id, picked_team, created_at, profiles(display_name)")
+      .select("user_id, game_id, picked_team, confidence, created_at, profiles(display_name)")
       .eq("pool_id", poolId),
   ]);
   if (!pool) throw new Error("Pool not found.");
@@ -98,6 +104,10 @@ export async function computePickemLeaderboard(
       return pool.use_spread
         ? scoreStandard(gameList, pickList, spreadByGame)
         : scoreStandard(gameList, pickList);
+    case "confidence":
+      return pool.use_spread
+        ? scoreConfidence(gameList, pickList, spreadByGame)
+        : scoreConfidence(gameList, pickList);
     case "over_under":
       return scoreOverUnder(supabase, poolId, gameList);
     // Future variants plug in here: case "elimination": ..., etc.
@@ -131,7 +141,11 @@ export async function computePickemPickOutcomes(
       .eq("pool_id", poolId),
   ]);
   if (!pool) throw new Error("Pool not found.");
-  if (pool.variant !== "standard") return [];
+  // Confidence grades per game exactly like standard — one winner per
+  // final game, spread-aware when the pool is ATS — so streak / last-5
+  // outcomes work for confidence pools too. Over/under props grade
+  // differently and still return no outcomes.
+  if (pool.variant !== "standard" && pool.variant !== "confidence") return [];
 
   const gameIds = ((links ?? []) as any[]).map((l) => l.game_id);
   const spreadByGame = new Map<string, number | null>(
@@ -217,6 +231,72 @@ function scoreStandard(
 
   // Ties break to whoever got their picks in first — same spirit as the
   // roster pools breaking to the earliest entry.
+  rows.sort(
+    (a, b) => b.points - a.points || a.earliest_pick.localeCompare(b.earliest_pick)
+  );
+  return rows;
+}
+
+// Confidence: same winner logic as standard (straight-up, or who
+// covered the frozen line when spreads are present — push and tie
+// still score for nobody), but a correct pick pays its rank (5 down
+// to 1) instead of 1 point. `correct` keeps counting correct picks —
+// the leaderboard's small "3/5", the rating's accuracy feed, and the
+// season's W/L all read it — while `points` is the weighted total
+// the board sorts and awards on. A pick with no rank stored (never
+// happens through the pick action, which always assigns one) scores
+// 1, so a bad row can't zero a player's week.
+// Exported for tests: the dispatcher above is the only production caller.
+export function scoreConfidence(
+  games: PickemGame[],
+  picks: any[],
+  spreads?: Map<string, number | null>
+): PickemRow[] {
+  const ats = spreads != null;
+  const winners = new Map<string, string | null>(
+    games.map((g) => [
+      g.id,
+      ats ? coveringTeam(g, spreads.get(g.id) ?? null) : gameWinner(g),
+    ])
+  );
+  const decided = new Set(games.filter((g) => g.status === "final").map((g) => g.id));
+
+  const byUser = new Map<string, any[]>();
+  for (const p of picks) {
+    const arr = byUser.get(p.user_id) ?? [];
+    arr.push(p);
+    byUser.set(p.user_id, arr);
+  }
+
+  const rows: PickemRow[] = [...byUser.entries()].map(([user_id, ps]) => {
+    let correct = 0;
+    let total = 0;
+    let points = 0;
+    for (const p of ps) {
+      if (!decided.has(p.game_id)) continue;
+      total++;
+      const w = winners.get(p.game_id);
+      if (w && String(p.picked_team ?? "").toUpperCase() === w) {
+        correct++;
+        const rank = Number(p.confidence);
+        points += Number.isFinite(rank) && rank >= 1 && rank <= 5 ? rank : 1;
+      }
+    }
+    return {
+      user_id,
+      display_name: ps[0]?.profiles?.display_name ?? "Player",
+      correct,
+      total_decided: total,
+      points,
+      earliest_pick: ps.reduce(
+        (min: string, p: any) => (p.created_at < min ? p.created_at : min),
+        ps[0]?.created_at ?? ""
+      ),
+    };
+  });
+
+  // Same tiebreak as standard: most points, then earliest picks in.
+  // The award step still crowns everyone tied at the top as co-winners.
   rows.sort(
     (a, b) => b.points - a.points || a.earliest_pick.localeCompare(b.earliest_pick)
   );

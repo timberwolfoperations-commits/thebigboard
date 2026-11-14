@@ -10,3 +10,9 @@ export const ATS_HOW_IT_WORKS =
 
 export const OVER_UNDER_HOW_IT_WORKS =
   "Pick over or under on each prop — 1 point per correct side, most points wins. Props push (land exactly on the line) and score for nobody.";
+
+export const CONFIDENCE_HOW_IT_WORKS =
+  "Top 5 Confidence — pick any 5 games from the slate and rank them 5 to 1. Your 5 is the game you're most sure about, your 1 the least. A win pays its rank, so a perfect week is 15 points. Ties score for nobody, most points wins.";
+
+export const CONFIDENCE_ATS_HOW_IT_WORKS =
+  "Top 5 Confidence, against the spread — pick any 5 games from the slate and rank them 5 to 1. Your 5 is the game you're most sure about, your 1 the least. A win pays its rank, so a perfect week is 15 points. Picks grade against the line, not straight up: the favorite has to win by more than it, and the underdog can lose by less (or win outright). Lines were set when this pool was created and don't move. Land exactly on the number and it's a push — nobody gets the points. Ties score for nobody, most points wins.";
