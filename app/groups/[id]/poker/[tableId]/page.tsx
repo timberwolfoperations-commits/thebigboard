@@ -13,6 +13,7 @@ import { Card, SectionTitle } from "@/components/ui";
 import { CardBack, PokerCard, cardText } from "@/components/poker-card";
 import PokerActions, { type PokerActionModel } from "@/components/poker-actions";
 import PokerDealNext from "@/components/poker-deal-next";
+import PokerLobbyActions from "@/components/poker-lobby";
 import PushNudge from "@/components/push-nudge";
 import { blindsForHand, type PublicHandView } from "@/lib/poker/engine";
 import { evaluateHand } from "@/lib/poker/evaluate";
@@ -255,7 +256,9 @@ export default async function PokerTablePage({
             ? ` · Hand ${hand.handNumber} · Level ${levelFor(hand.handNumber)}`
             : table.status === "complete"
               ? " · Tournament over"
-              : ""}
+              : table.status === "lobby"
+                ? " · Lobby — waiting for players"
+                : ""}
         </p>
       </div>
 
@@ -267,6 +270,59 @@ export default async function PokerTablePage({
           <p className="mt-1 text-sm text-[#b6b0a2]">
             Last one standing · +{POKER_WINNER_POINTS} lifetime points on the board
           </p>
+        </div>
+      )}
+
+      {/* ------------------------------------------------ lobby */}
+      {table.status === "lobby" && (
+        <div>
+          <SectionTitle>Who&rsquo;s in</SectionTitle>
+          <Card className="p-0">
+            {view.seats.map((seat, i) => (
+              <div
+                key={seat.id}
+                className={`flex items-center gap-2.5 px-5 py-3 ${i > 0 ? "border-t border-slate-100" : ""} ${
+                  seat.seat_no === mySeatNo ? "bg-slate-50" : ""
+                }`}
+              >
+                <Avatar
+                  name={seat.displayName ?? "Player"}
+                  animal={avatars.get(seat.user_id)}
+                  size={30}
+                />
+                <p className="min-w-0">
+                  <span className="text-sm font-semibold">
+                    {seat.displayName ?? "Player"}
+                    {seat.seat_no === mySeatNo && (
+                      <span className="ml-1 text-xs font-normal text-slate-400">(you)</span>
+                    )}
+                    {table.created_by === seat.user_id && (
+                      <span className="ml-1.5 inline-block rounded border border-[#e9e4da] px-1 py-px align-middle text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                        Started it
+                      </span>
+                    )}
+                  </span>
+                </p>
+                <p className="ml-auto text-right">
+                  <span className="block font-display text-xl font-bold tabular-nums leading-none">
+                    {seat.stack}
+                  </span>
+                  <span className="mt-0.5 block text-[10px] font-semibold uppercase tracking-wider text-[#b6b0a2]">
+                    chips
+                  </span>
+                </p>
+              </div>
+            ))}
+            <div className="px-5 pb-5">
+              <PokerLobbyActions
+                tableId={table.id}
+                isCreator={view.isTableCreator}
+                isSeated={mySeatNo !== null}
+                seatedCount={view.seats.length}
+                creatorName={nameOfUser(table.created_by)}
+              />
+            </div>
+          </Card>
         </div>
       )}
 
@@ -338,7 +394,7 @@ export default async function PokerTablePage({
         </>
       )}
 
-      {!hand && table.status !== "complete" && (
+      {!hand && table.status === "running" && (
         <Card>
           <p className="text-sm text-slate-500">The first hand hasn&rsquo;t been dealt yet.</p>
         </Card>
