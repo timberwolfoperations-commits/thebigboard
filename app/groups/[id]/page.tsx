@@ -586,11 +586,17 @@ export default async function GroupPage({ params }: { params: Promise<{ id: stri
                       <p className={tileTitleClass}>{t.name}</p>
                       <span className="flex shrink-0 gap-1">
                         <span className={`${chipClass} bg-slate-900 text-white`}>poker</span>
-                        <span className={`${chipClass} bg-blue-100 text-blue-800`}>running</span>
+                        {t.status === "lobby" ? (
+                          <span className={`${chipClass} bg-amber-100 text-amber-800`}>lobby</span>
+                        ) : (
+                          <span className={`${chipClass} bg-blue-100 text-blue-800`}>running</span>
+                        )}
                       </span>
                     </div>
                     <p className={tileSubClass}>
-                      Hand {t.hand_no} · {n} at the table · blinds climbing
+                      {t.status === "lobby"
+                        ? `${n} in so far · tap to join the table`
+                        : `Hand ${t.hand_no} · ${n} at the table · blinds climbing`}
                     </p>
                   </div>
                 </Link>

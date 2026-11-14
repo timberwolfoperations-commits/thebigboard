@@ -24,10 +24,12 @@ import {
 } from "@/lib/poker/server";
 
 // ------------------------------------------------------------- slow poker
-// Tournament hold'em on a clock (files/POKER-SPEC.md): the whole group
-// is seated, a hand is dealt every ~2 days, decisions get 8h (first of
-// the hand) or 4h (the rest), and a timeout is an automatic
-// check-or-fold applied by the /api/poker/tick sweep.
+// Tournament hold'em on a clock (files/POKER-SPEC.md): a table opens
+// in the LOBBY with only its creator seated — the rest of the group
+// taps "I'm in" to take a seat, and the creator deals the first hand
+// once at least two are in. A hand is dealt every ~2 days, decisions
+// get 8h (first of the hand) or 4h (the rest), and a timeout is an
+// automatic check-or-fold applied by the /api/poker/tick sweep.
 //
 // Secrecy: poker_hands is deny-all under RLS (migration 027) — the
 // engine state in it holds EVERY player's hole cards and the undealt
@@ -102,13 +104,16 @@ export interface PokerTableView {
 export interface CreatePokerTableResult {
   tableId: string;
   seatedCount: number;
-  capped: boolean; // true when the group had more than MAX_SEATS members
 }
 
-// Start a table for a group: EVERY current member is seated (stable
-// order — longest-standing member first), 100 chips each, and hand 1
-// is dealt on the spot. Defaults are pre-filled per the spec; the only
-// input is an optional name.
+// Start a table for a group: the table opens in the LOBBY with only
+// its creator seated, 100 chips, and no hand dealt. The rest of the
+// group taps "I'm in" (joinPokerTable) to take a seat, up to MAX_SEATS;
+// the creator deals the first hand (startPokerTable) once at least two
+// are in. Nobody is seated by default — an unplayed seat used to burn
+// the 8h clock and earn "your move" pushes for a game its owner never
+// asked to join. Defaults are pre-filled per the spec; the only input
+// is an optional name.
 export async function createPokerTable(
   groupId: string,
   name?: string,
@@ -117,29 +122,14 @@ export async function createPokerTable(
   await memberRole(supabase, groupId, user.id);
   assertCanCreate(user);
 
-  const { data: memberRows, error: mErr } = await supabase
-    .from("group_members")
-    .select("user_id, joined_at")
-    .eq("group_id", groupId)
-    .order("joined_at", { ascending: true })
-    .order("user_id", { ascending: true });
-  if (mErr) throw new Error(mErr.message);
-  const members = (memberRows ?? []) as { user_id: string }[];
-  if (members.length < 2) {
-    throw new Error("Poker needs at least two players — invite someone to the group first.");
-  }
-  const capped = members.length > MAX_SEATS;
-  const seated = members.slice(0, MAX_SEATS);
-
   const service = createServiceClient();
-  const now = new Date();
   const { data: tableData, error: tErr } = await service
     .from("poker_tables")
     .insert({
       group_id: groupId,
       name: (name ?? "").trim() || "Poker Night",
       created_by: user.id,
-      status: "running",
+      status: "lobby",
       hand_no: 0,
       next_deal_at: null,
     })
@@ -149,29 +139,101 @@ export async function createPokerTable(
   const table = tableData as TableRow;
 
   try {
-    const { error: sErr } = await service.from("poker_seats").insert(
-      seated.map((m, i) => ({
-        table_id: table.id,
-        user_id: m.user_id,
-        seat_no: i,
-        stack: STARTING_STACK,
-        status: "active",
-      })),
-    );
+    const { error: sErr } = await service.from("poker_seats").insert({
+      table_id: table.id,
+      user_id: user.id,
+      seat_no: 0,
+      stack: STARTING_STACK,
+      status: "active",
+    });
     if (sErr) throw new Error(sErr.message);
-
-    const seats = await loadSeats(service, table.id);
-    const stats: FlowStats = { timeoutsApplied: 0, handsCompleted: 0, handsDealt: 0 };
-    await dealHand(service, table, seats, 1, 0, now, stats);
   } catch (e) {
-    // Don't leave a seat-less or hand-less table behind (cascades clean
-    // up the seats/hands with it).
+    // Don't leave a seat-less table behind.
     await service.from("poker_tables").delete().eq("id", table.id);
     throw e;
   }
 
   revalidatePath(`/groups/${groupId}`);
-  return { tableId: table.id, seatedCount: seated.length, capped };
+  return { tableId: table.id, seatedCount: 1 };
+}
+
+// ------------------------------------------------------------------- join
+
+// Take a seat at a table that's still in the lobby — the "I'm in".
+// Seats fill in join order, 100 chips each, up to MAX_SEATS. Once the
+// first hand is dealt the table is running and the lobby is closed:
+// late entry would mean joining mid-tournament with a full stack
+// against short stacks, so there is none in v1.
+export async function joinPokerTable(tableId: string): Promise<PokerTableView> {
+  const { supabase, user } = await getUser();
+  const service = createServiceClient();
+  const table = await loadTable(service, tableId);
+  await memberRole(supabase, table.group_id, user.id);
+  if (table.status !== "lobby") {
+    throw new Error(
+      table.status === "complete"
+        ? "This table has finished."
+        : "This table is already running — the lobby closed when the first hand was dealt.",
+    );
+  }
+  const seats = await loadSeats(service, table.id);
+  if (seats.some((s) => s.user_id === user.id)) {
+    throw new Error("You're already in.");
+  }
+  if (seats.length >= MAX_SEATS) {
+    throw new Error("This table is full — ten at a table, max.");
+  }
+  const { error } = await service.from("poker_seats").insert({
+    table_id: table.id,
+    user_id: user.id,
+    seat_no: seats.length,
+    stack: STARTING_STACK,
+    status: "active",
+  });
+  if (error) throw new Error(error.message);
+
+  revalidatePath(`/groups/${table.group_id}`);
+  revalidatePath(`/groups/${table.group_id}/poker/${table.id}`);
+  return buildView(service, table, user.id);
+}
+
+// ------------------------------------------------------------------ start
+
+// Deal the first hand: the creator's button in the lobby, once at
+// least two are seated. Flips the table to running and deals hand 1
+// through the same dealHand the sweep uses, so the first hand is timed
+// and announced exactly like a scheduled one.
+export async function startPokerTable(tableId: string): Promise<PokerTableView> {
+  const { supabase, user } = await getUser();
+  const service = createServiceClient();
+  const table = await loadTable(service, tableId);
+  await memberRole(supabase, table.group_id, user.id);
+  if (table.created_by !== user.id) {
+    throw new Error("Only the player who started this table can deal the first hand.");
+  }
+  if (table.status !== "lobby") {
+    throw new Error(
+      table.status === "complete" ? "This table has finished." : "This table is already running.",
+    );
+  }
+  const seats = await loadSeats(service, table.id);
+  if (seats.length < 2) {
+    throw new Error("Need at least two players to deal — wait for someone to tap I'm in.");
+  }
+  const { error: tErr } = await service
+    .from("poker_tables")
+    .update({ status: "running" })
+    .eq("id", table.id);
+  if (tErr) throw new Error(tErr.message);
+  table.status = "running";
+
+  const now = new Date();
+  const stats: FlowStats = { timeoutsApplied: 0, handsCompleted: 0, handsDealt: 0 };
+  await dealHand(service, table, seats, 1, 0, now, stats);
+
+  revalidatePath(`/groups/${table.group_id}`);
+  revalidatePath(`/groups/${table.group_id}/poker/${table.id}`);
+  return buildView(service, table, user.id);
 }
 
 // -------------------------------------------------------------------- act

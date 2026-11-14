@@ -30,9 +30,10 @@ export default async function NewPokerTablePage({
           <PokerCreateForm groupId={id} />
           <div className="mt-5 border-t border-slate-100 pt-4">
             <p className="text-sm leading-relaxed text-slate-600">
-              Slow-play hold&rsquo;em for the whole group — everyone&rsquo;s seated with{" "}
-              <span className="font-semibold text-slate-900">100 chips</span>, up to ten at a
-              table. A hand is dealt{" "}
+              Slow-play hold&rsquo;em — you&rsquo;re in with{" "}
+              <span className="font-semibold text-slate-900">100 chips</span>, and the rest
+              of the group taps <span className="font-semibold text-slate-900">I&rsquo;m in</span>{" "}
+              to take a seat, up to ten at a table. A hand is dealt{" "}
               <span className="font-semibold text-slate-900">
                 Monday, Wednesday and Friday at 9:00 AM ET
               </span>
