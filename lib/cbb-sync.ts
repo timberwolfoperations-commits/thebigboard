@@ -3,10 +3,14 @@
 //
 // Two CBB quirks the football syncs don't have:
 //
-// 1. The scoreboard is DAY-based, not week-based — one fetch per day,
-//    today through the next 4 days (the slate window the creation form
-//    shows). The `dates` range form doesn't work on this endpoint, so
-//    the sync pulls five single-day scoreboards.
+// 1. The scoreboard is DAY-based, not week-based — one fetch per day.
+//    The window runs 2 days back through the next 4 days: the slate
+//    window is today + next 4 (what the creation form shows), and the
+//    2-day lookback is what flips late games final — a 10 PM ET tip
+//    that ends after midnight never appears as "post" inside a
+//    forward-only window (LBSU @ UCLA, Mon Nov 16, sat in_progress
+//    for 4 days). The `dates` range form doesn't work on this
+//    endpoint, so the sync pulls single-day scoreboards.
 // 2. The CBB scoreboard carries NO odds — every game comes back with
 //    odds: null, pre/in/post. The lines live on the core API instead:
 //    …/events/{id}/competitions/{id}/odds returns DraftKings first,
@@ -42,9 +46,14 @@ const SCOREBOARD_URL =
 const oddsUrl = (eventId: string) =>
   `https://sports.core.api.espn.com/v2/sports/basketball/leagues/mens-college-basketball/events/${eventId}/competitions/${eventId}/odds`;
 
-// Days of scoreboard to pull: today + the next 4, matching the slate
-// window the pool-creation form shows.
+// Days of scoreboard to pull forward: today + the next 4, matching the
+// slate window the pool-creation form shows.
 const SYNC_DAYS = 5;
+// Days to look back: yesterday and the day before. A game that ends
+// after midnight ET only shows as final on the NEXT day's board, and
+// a second day covers a day of missed syncs — without this, late games
+// stick in_progress forever (LBSU @ UCLA, Nov 16, 2026).
+const LOOKBACK_DAYS = 2;
 // Odds fan-out: parallel batches of 10, each fetch capped so one slow
 // ESPN response can't stall the whole sync.
 const ODDS_BATCH = 10;
@@ -128,9 +137,12 @@ async function fetchOdds(
 export async function syncCbb(): Promise<CbbSyncResult> {
   const supabase = createServiceClient();
 
-  // Five single-day scoreboards in parallel — the range form of the
+  // Seven single-day scoreboards in parallel — the range form of the
   // dates param errors on this endpoint, so days are fetched one by one.
-  const days = Array.from({ length: SYNC_DAYS }, (_, i) => etDateString(i));
+  // Window: 2 days back through today + the next 4.
+  const days = Array.from({ length: SYNC_DAYS + LOOKBACK_DAYS }, (_, i) =>
+    etDateString(i - LOOKBACK_DAYS)
+  );
   const boards = await Promise.all(
     days.map(async (date) => {
       const url = new URL(SCOREBOARD_URL);
@@ -141,7 +153,12 @@ export async function syncCbb(): Promise<CbbSyncResult> {
     })
   );
 
-  const season = boards[0]?.leagues?.[0]?.season?.year ?? boards[0]?.season?.year ?? null;
+  // Season year comes off the TODAY board (boards[LOOKBACK_DAYS]), not
+  // the first fetched day.
+  const season =
+    boards[LOOKBACK_DAYS]?.leagues?.[0]?.season?.year ??
+    boards[LOOKBACK_DAYS]?.season?.year ??
+    null;
 
   type PendingGame = {
     external_id: string;
