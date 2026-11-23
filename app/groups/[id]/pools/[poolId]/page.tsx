@@ -86,13 +86,23 @@ export default async function PoolPage({
   // API stat lines on the pool's linked games when it has any; otherwise
   // from manual stat lines, exactly as before.
   const { entries: scoredEntries, linkedGames, unmatched, hasModifiers } = await computeEntryScores(supabase, poolId);
-  const board = scoredEntries.map((e: any) => ({
-    ...e,
-    user_id: e.userId,
-    profiles: { display_name: e.displayName },
-    picks: e.picks,
-    total: e.total,
-  }));
+  // Pre-lock, a user sees only their own picks. Other entries' picks and
+  // modifier tags are stripped here, server-side, so they are not in the
+  // rendered page at all — no one can copy picks before lock. The entry
+  // count in the header still shows those entries exist. After lock,
+  // everything is revealed (post-lock reveal, the app's existing
+  // philosophy). This applies to everyone, including the commissioner.
+  const board = scoredEntries.map((e: any) => {
+    const picksHidden = !locked && e.userId !== user.id;
+    return {
+      ...e,
+      user_id: e.userId,
+      profiles: { display_name: e.displayName },
+      picks: picksHidden ? [] : e.picks,
+      picksHidden,
+      total: e.total,
+    };
+  });
 
   const { data: statLines } = await supabase
     .from("pool_stat_lines")
@@ -119,9 +129,10 @@ export default async function PoolPage({
   // (or entries) with the most points from that game's slot — MODIFIED
   // points, so a doubled pick can win its game's crown. Board only —
   // no lifetime points. A game only crowns once it is live or final and
-  // someone has scored in it.
+  // someone has scored in it. Crowns are a post-lock reveal too: they
+  // only render once the pool is locked, so no standing leaks before then.
   const hasGameNumbers = playerList.some((p: any) => p.game_number != null);
-  const crowns = hasGameNumbers
+  const crowns = locked && hasGameNumbers
     ? linkedGames
         .map((g, i) => {
           if (g.status !== "in_progress" && g.status !== "final") return null;
@@ -185,15 +196,19 @@ export default async function PoolPage({
                         {e.total}
                       </p>
                     </div>
-                    <p className="mt-1 text-sm text-slate-600">
-                      {e.picks
-                        .map(
-                          (p: any) =>
-                            `${p.name}${p.modifier ? ` [${MODIFIER_SHORTS[p.modifier as ModifierCode] ?? p.modifier}]` : ""} (${p.modified})`
-                        )
-                        .join(" · ")}
-                    </p>
-                    {hasModifiers && e.bonusTotal > 0 && (
+                    {e.picksHidden ? (
+                      <p className="mt-1 text-sm text-slate-400">Picks hidden until lock.</p>
+                    ) : (
+                      <p className="mt-1 text-sm text-slate-600">
+                        {e.picks
+                          .map(
+                            (p: any) =>
+                              `${p.name}${p.modifier ? ` [${MODIFIER_SHORTS[p.modifier as ModifierCode] ?? p.modifier}]` : ""} (${p.modified})`
+                          )
+                          .join(" · ")}
+                      </p>
+                    )}
+                    {hasModifiers && !e.picksHidden && e.bonusTotal > 0 && (
                       <p className="mt-0.5 text-xs text-slate-400">
                         Base {e.baseTotal} · bonuses +{e.bonusTotal}
                       </p>
@@ -327,6 +342,7 @@ export default async function PoolPage({
               budget={pool.budget}
               rosterSize={pool.roster_size}
               modifiersRequired={hasGameNumbers}
+              games={linkedGames.map((g, i) => ({ game_number: i + 1, label: g.label, starts_at: g.starts_at }))}
             />
           )}
 
