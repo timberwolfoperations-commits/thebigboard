@@ -103,6 +103,15 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         >
           {children}
         </main>
+        <footer className="mx-auto max-w-3xl px-4 pb-6 text-center text-xs text-slate-500">
+          <Link href="/privacy" className="underline">
+            Privacy Policy
+          </Link>
+          <span className="mx-2">·</span>
+          <Link href="/terms" className="underline">
+            Terms of Service
+          </Link>
+        </footer>
         {user && <BottomBar />}
         <Analytics />
         <SpeedInsights />
