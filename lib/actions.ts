@@ -538,10 +538,20 @@ export async function addPoolPlayers(poolId: string, formData: FormData) {
     .filter(Boolean)
     .map((line) => {
       const parts = line.split(",").map((s) => s.trim());
-      if (parts.length < 3) throw new Error(`Can't parse: "${line}" — use Name, TEAM, salary.`);
+      if (parts.length < 3)
+        throw new Error(`Can't parse: "${line}" — use Name, TEAM, salary, game.`);
       const salary = parseInt(parts[2], 10);
       if (!parts[0] || !(salary >= 0)) throw new Error(`Can't parse: "${line}".`);
-      return { pool_id: poolId, name: parts[0], team: parts[1], salary };
+      // Optional 4th field: which slate game the player is in (1–5).
+      // Absent = legacy pool, no game slot.
+      let gameNumber: number | null = null;
+      if (parts.length >= 4 && parts[3] !== "") {
+        gameNumber = parseInt(parts[3], 10);
+        if (!Number.isInteger(gameNumber) || gameNumber < 1 || gameNumber > 5) {
+          throw new Error(`Can't parse: "${line}" — game has to be 1–5.`);
+        }
+      }
+      return { pool_id: poolId, name: parts[0], team: parts[1], salary, game_number: gameNumber };
     });
   if (rows.length === 0) throw new Error("Paste at least one player.");
 
@@ -683,7 +693,7 @@ export async function submitEntry(poolId: string, formData: FormData) {
 
   const { data: players } = await supabase
     .from("pool_players")
-    .select("id, salary")
+    .select("id, salary, game_number")
     .eq("pool_id", poolId)
     .in("id", ids);
   if (!players || players.length !== ids.length) {
@@ -692,6 +702,14 @@ export async function submitEntry(poolId: string, formData: FormData) {
   const spent = (players as any[]).reduce((s, p) => s + p.salary, 0);
   if (spent > pool.budget) {
     throw new Error(`That's $${spent} — over the $${pool.budget} cap.`);
+  }
+  // Pools whose players carry a game slot: at most one pick per game.
+  // Players without a slot (legacy pools) don't take part in the check.
+  const gameNumbers = (players as any[])
+    .map((p) => p.game_number)
+    .filter((g) => g != null);
+  if (new Set(gameNumbers).size !== gameNumbers.length) {
+    throw new Error("Pick at most one player per game.");
   }
 
   const { data: existing } = await supabase
