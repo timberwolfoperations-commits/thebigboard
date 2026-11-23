@@ -3,7 +3,8 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { addPoolPlayers, addOnePoolPlayer, removePoolPlayer, deleteEntry, updatePool, awardPoolWinner } from "@/lib/actions";
 import { defaultPoolRules, defaultScoringFormula } from "@/lib/config";
-import { computePoolPoints } from "@/lib/pool-scoring";
+import { computeEntryScores } from "@/lib/pool-scoring";
+import { MODIFIER_SHORTS, type ModifierCode } from "@/lib/modifiers";
 import { Card, SectionTitle, Field, inputClass, fieldClass, SubmitButton, DangerButton } from "@/components/ui";
 import PoolStatGrid from "@/components/pool-stat-grid";
 import PoolEntryPicker from "@/components/pool-entry-picker";
@@ -65,13 +66,13 @@ export default async function PoolPage({
 
   const { data: picks } = await supabase
     .from("pool_entry_picks")
-    .select("entry_id, player_id")
+    .select("entry_id, player_id, modifier")
     .in("entry_id", entryList.map((e) => e.id));
   const picksByEntry = new Map<string, any[]>();
   for (const pk of (picks ?? []) as any[]) {
     const arr = picksByEntry.get(pk.entry_id) ?? [];
     const pl = playerById.get(pk.player_id);
-    if (pl) arr.push(pl);
+    if (pl) arr.push({ ...pl, modifier: pk.modifier ?? null });
     picksByEntry.set(pk.entry_id, arr);
   }
 
@@ -80,9 +81,18 @@ export default async function PoolPage({
   const locked = new Date(pool.lock_at).getTime() <= Date.now();
   const isCommish = pool.created_by === user.id;
 
-  // Points come from the API stat lines on the pool's linked games when it
-  // has any; otherwise from manual stat lines, exactly as before.
-  const { points: pointsByPlayer, perGame, unmatched, linkedGames } = await computePoolPoints(supabase, poolId);
+  // Entry standings WITH the modifiers applied — the same totals the
+  // award action and the dashboard use. Base points still come from the
+  // API stat lines on the pool's linked games when it has any; otherwise
+  // from manual stat lines, exactly as before.
+  const { entries: scoredEntries, linkedGames, unmatched, hasModifiers } = await computeEntryScores(supabase, poolId);
+  const board = scoredEntries.map((e: any) => ({
+    ...e,
+    user_id: e.userId,
+    profiles: { display_name: e.displayName },
+    picks: e.picks,
+    total: e.total,
+  }));
 
   const { data: statLines } = await supabase
     .from("pool_stat_lines")
@@ -105,19 +115,9 @@ export default async function PoolPage({
       ? linkedGames.map((_, i) => i + 1)
       : [...manualGames, (manualGames.length > 0 ? manualGames[manualGames.length - 1] + 1 : 1)];
 
-  const board = entryList
-    .map((e: any) => ({
-      ...e,
-      picks: picksByEntry.get(e.id) ?? [],
-      total: (picksByEntry.get(e.id) ?? []).reduce(
-        (sum: number, p: any) => sum + (pointsByPlayer.get(p.id) ?? 0),
-        0
-      ),
-    }))
-    .sort((a: any, b: any) => b.total - a.total);
-
   // Per-game crowns: for pools whose players carry a game slot, the entry
-  // (or entries) with the most points from that game's slot. Board only —
+  // (or entries) with the most points from that game's slot — MODIFIED
+  // points, so a doubled pick can win its game's crown. Board only —
   // no lifetime points. A game only crowns once it is live or final and
   // someone has scored in it.
   const hasGameNumbers = playerList.some((p: any) => p.game_number != null);
@@ -127,10 +127,7 @@ export default async function PoolPage({
           if (g.status !== "in_progress" && g.status !== "final") return null;
           const scored = board.map((e: any) => ({
             name: e.profiles?.display_name ?? "Player",
-            score: (e.picks ?? []).reduce(
-              (sum: number, p: any) => sum + (perGame.get(p.id)?.[i] ?? 0),
-              0
-            ),
+            score: e.perGameModified?.[i] ?? 0,
           }));
           const max = Math.max(0, ...scored.map((s) => s.score));
           if (max <= 0) return null;
@@ -190,9 +187,17 @@ export default async function PoolPage({
                     </div>
                     <p className="mt-1 text-sm text-slate-600">
                       {e.picks
-                        .map((p: any) => `${p.name} (${pointsByPlayer.get(p.id) ?? 0})`)
+                        .map(
+                          (p: any) =>
+                            `${p.name}${p.modifier ? ` [${MODIFIER_SHORTS[p.modifier as ModifierCode] ?? p.modifier}]` : ""} (${p.modified})`
+                        )
                         .join(" · ")}
                     </p>
+                    {hasModifiers && e.bonusTotal > 0 && (
+                      <p className="mt-0.5 text-xs text-slate-400">
+                        Base {e.baseTotal} · bonuses +{e.bonusTotal}
+                      </p>
+                    )}
                   </Card>
                 ))}
               </div>
@@ -321,6 +326,7 @@ export default async function PoolPage({
               players={playerList}
               budget={pool.budget}
               rosterSize={pool.roster_size}
+              modifiersRequired={hasGameNumbers}
             />
           )}
 
@@ -328,7 +334,12 @@ export default async function PoolPage({
             <Card className="border-green-200 bg-green-50">
               <p className="font-semibold">You&rsquo;re in.</p>
               <p className="mt-1 text-sm text-slate-600">
-                {myPicks.map((p: any) => `${p.name} ($${p.salary})`).join(" · ")}
+                {myPicks
+                  .map(
+                    (p: any) =>
+                      `${p.name}${p.modifier ? ` [${MODIFIER_SHORTS[p.modifier as ModifierCode] ?? p.modifier}]` : ""} ($${p.salary})`
+                  )
+                  .join(" · ")}
               </p>
               <form action={removeEntry} className="mt-3">
                 <DangerButton>Change my picks</DangerButton>
