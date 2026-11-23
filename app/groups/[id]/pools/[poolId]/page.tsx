@@ -1,13 +1,35 @@
+import type { ReactNode } from "react";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { addPoolPlayers, addOnePoolPlayer, removePoolPlayer, deleteEntry, updatePool, awardPoolWinner } from "@/lib/actions";
+import {
+  addPoolPlayers,
+  addOnePoolPlayer,
+  removePoolPlayer,
+  deleteEntry,
+  updatePool,
+  awardPoolWinner,
+} from "@/lib/actions";
 import { defaultPoolRules, defaultScoringFormula } from "@/lib/config";
 import { computeEntryScores } from "@/lib/pool-scoring";
 import { MODIFIER_SHORTS, type ModifierCode } from "@/lib/modifiers";
+import { getAvatarMap } from "@/lib/avatars";
+import { Avatar } from "@/components/Avatar";
 import { Card, SectionTitle, Field, inputClass, fieldClass, SubmitButton, DangerButton } from "@/components/ui";
 import PoolStatGrid from "@/components/pool-stat-grid";
 import PoolEntryPicker from "@/components/pool-entry-picker";
+
+// Local section heading, one notch down from the shared SectionTitle —
+// the pool page runs at Poolr density (compact rows, modest type), same
+// as the season page, so it carries its own heading rather than
+// changing the shared component.
+function PoolSectionTitle({ children }: { children: ReactNode }) {
+  return (
+    <h2 className="mb-2 font-display text-lg font-semibold uppercase tracking-wider text-slate-900">
+      {children}
+    </h2>
+  );
+}
 
 function fmtLock(iso: string): string {
   return new Date(iso).toLocaleString("en-US", {
@@ -35,6 +57,14 @@ function etInputValue(iso: string): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
+// The roster pool home: the season page's layout, translated to a single
+// contest. The pool is an ACTIVITY view — your points, your lineup, the
+// race — in the same order as the season home (hero, your picks, dense
+// board, per-game crowns). The group's lifetime board and rating stay on
+// the group page, where the permanent scoreboard lives. Everything below
+// the homepage sections (how it works, games, commish controls) keeps
+// its existing order and behavior.
+
 export default async function PoolPage({
   params,
 }: {
@@ -49,6 +79,12 @@ export default async function PoolPage({
 
   const { data: pool } = await supabase.from("pools").select("*").eq("id", poolId).single();
   if (!pool) redirect(`/groups/${id}`);
+
+  const { data: group } = await supabase
+    .from("groups")
+    .select("name")
+    .eq("id", id)
+    .maybeSingle();
 
   const { data: players } = await supabase
     .from("pool_players")
@@ -104,6 +140,43 @@ export default async function PoolPage({
     };
   });
 
+  const avatars = await getAvatarMap(
+    supabase,
+    board.map((e: any) => e.user_id)
+  );
+  const myBoardEntry = board.find((e: any) => e.user_id === user.id);
+  const myRank = myBoardEntry ? board.indexOf(myBoardEntry) + 1 : null;
+  const leaderTotal = board.length > 0 ? board[0].total : 0;
+  // Has anything scored yet — a linked game live or final, or any entry
+  // off zero. Drives the hero's honest pre-game line.
+  const anyScored =
+    board.some((e: any) => e.total !== 0) ||
+    linkedGames.some((g) => g.status === "in_progress" || g.status === "final");
+  const heroLine =
+    myBoardEntry && hasModifiers && myBoardEntry.bonusTotal > 0
+      ? `Base ${myBoardEntry.baseTotal} · bonuses +${myBoardEntry.bonusTotal}`
+      : myBoardEntry && !anyScored
+        ? "No scores yet — points land as the games play."
+        : null;
+
+  // Pool state for the your-picks chip, same shape as the season's
+  // round status: final once every linked game is in the books, live
+  // while any is playing, locked once picks close, open before that.
+  const poolStatus: "final" | "live" | "locked" | "open" =
+    linkedGames.length > 0 && linkedGames.every((g) => g.status === "final")
+      ? "final"
+      : linkedGames.some((g) => g.status === "in_progress")
+        ? "live"
+        : locked
+          ? "locked"
+          : "open";
+  const statusChip = (st: "final" | "live" | "locked" | "open") =>
+    st === "final"
+      ? "bg-slate-100 text-slate-500"
+      : st === "live" || st === "locked"
+        ? "bg-red-100 text-red-700"
+        : "bg-blue-100 text-blue-800";
+
   const { data: statLines } = await supabase
     .from("pool_stat_lines")
     .select("player_id, game_number, stats")
@@ -155,14 +228,18 @@ export default async function PoolPage({
   const awardWinner = awardPoolWinner.bind(null, poolId);
 
   return (
-    <div className="space-y-6">
-      <Link href={`/groups/${id}`} className="text-sm text-slate-500 underline-offset-4 hover:underline">
-        ← Back to group
-      </Link>
-
-      <div className="text-center">
-        <h1 className="font-display text-4xl font-bold uppercase leading-none tracking-wide">{pool.name}</h1>
-        <p className="mt-1 text-sm text-slate-500">
+    <div className="space-y-5">
+      <div>
+        <Link
+          href={`/groups/${id}`}
+          className="text-[13px] text-slate-500 underline-offset-4 hover:underline"
+        >
+          ← {group?.name ?? "Group"}
+        </Link>
+        <h1 className="mt-1.5 font-display text-4xl font-bold uppercase leading-none tracking-wide">
+          {pool.name}
+        </h1>
+        <p className="mt-1.5 text-xs font-semibold uppercase tracking-wider text-slate-500">
           ${pool.budget} cap · {pool.roster_size} players · {entryList.length}{" "}
           {entryList.length === 1 ? "entry" : "entries"} ·{" "}
           {locked ? (
@@ -175,70 +252,202 @@ export default async function PoolPage({
         </p>
       </div>
 
+      {/* ---- your points hero --------------------------------------- */}
+      {/* Dark tile as a plain div, NOT Card: Card's base bg-white wins the
+          Tailwind cascade over a bg-slate-900 override, which left this
+          card white with white hero text on the first season preview. The
+          total is the one billboard element on the page — everything
+          below it runs dense; this goes big like Poolr's season home. */}
+      <div className="rounded-2xl border border-slate-900 bg-slate-900 px-4 py-4 text-white shadow-sm">
+        <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+          Your points
+        </p>
+        {myBoardEntry ? (
+          <>
+            <div className="mt-1.5 flex flex-wrap items-end gap-x-5 gap-y-1">
+              <p className="font-display text-7xl font-bold tabular-nums leading-none">
+                {myBoardEntry.total}
+              </p>
+              <div className="pb-1">
+                <p className="font-display text-2xl font-semibold leading-none">
+                  Ranked #{myRank ?? "—"}
+                </p>
+                <p className="mt-1 text-xs text-slate-400">
+                  of {board.length} {board.length === 1 ? "entry" : "entries"}
+                </p>
+              </div>
+            </div>
+            {heroLine && <p className="mt-2.5 text-xs text-slate-300">{heroLine}</p>}
+          </>
+        ) : (
+          <p className="mt-1.5 text-sm text-slate-300">
+            {playerList.length === 0
+              ? "This pool is still being set up — the player list lands here."
+              : locked
+                ? "Picks locked — you didn't get an entry in."
+                : `You haven't entered yet. Pick your ${pool.roster_size} before the lock — your points start here.`}
+          </p>
+        )}
+      </div>
+
+      {/* ---- your picks --------------------------------------------- */}
       {playerList.length > 0 && (
         <div>
-          <SectionTitle>Leaderboard</SectionTitle>
-            {board.length === 0 ? (
-              <Card>
-                <p className="text-sm text-slate-500">No entries yet. Be the first.</p>
-              </Card>
-            ) : (
-              <div className="space-y-2">
-                {board.map((e: any, i: number) => (
-                  <Card key={e.id} className={e.user_id === user.id ? "border-slate-400" : ""}>
-                    <div className="flex items-center justify-between gap-2">
-                      <p className="font-semibold">
-                        <span className="mr-2 font-display text-lg tabular-nums text-slate-400">{i + 1}</span>
-                        {e.profiles?.display_name ?? "Player"}
-                        {e.user_id === user.id && <span className="ml-1 text-xs text-slate-400">(you)</span>}
-                      </p>
-                      <p className="font-display text-3xl font-bold tabular-nums leading-none">
-                        {e.total}
-                      </p>
-                    </div>
-                    {e.picksHidden ? (
-                      <p className="mt-1 text-sm text-slate-400">Picks hidden until lock.</p>
-                    ) : (
-                      <p className="mt-1 text-sm text-slate-600">
-                        {e.picks
-                          .map(
-                            (p: any) =>
-                              `${p.name}${p.modifier ? ` [${MODIFIER_SHORTS[p.modifier as ModifierCode] ?? p.modifier}]` : ""} (${p.modified})`
-                          )
-                          .join(" · ")}
-                      </p>
-                    )}
-                    {hasModifiers && !e.picksHidden && e.bonusTotal > 0 && (
-                      <p className="mt-0.5 text-xs text-slate-400">
-                        Base {e.baseTotal} · bonuses +{e.bonusTotal}
-                      </p>
-                    )}
-                  </Card>
-                ))}
+          {myEntry ? (
+            <>
+              <PoolSectionTitle>Your picks</PoolSectionTitle>
+              <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3.5 shadow-sm">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="font-display text-base font-semibold uppercase tracking-wide">
+                    Your lineup
+                  </p>
+                  <span
+                    className={`inline-block shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold ${statusChip(poolStatus)}`}
+                  >
+                    {poolStatus}
+                  </span>
+                </div>
+                <p className="mt-1 text-[13px] text-slate-600">
+                  {myPicks
+                    .map(
+                      (p: any) =>
+                        `${p.name}${p.modifier ? ` [${MODIFIER_SHORTS[p.modifier as ModifierCode] ?? p.modifier}]` : ""} ($${p.salary})`
+                    )
+                    .join(" · ")}
+                </p>
+                {hasModifiers && myBoardEntry && myBoardEntry.bonusTotal > 0 && (
+                  <p className="mt-0.5 text-xs text-slate-400">
+                    Base {myBoardEntry.baseTotal} · bonuses +{myBoardEntry.bonusTotal}
+                  </p>
+                )}
+                {!locked && (
+                  <form action={removeEntry} className="mt-3">
+                    <DangerButton>Change my picks</DangerButton>
+                  </form>
+                )}
               </div>
-            )}
+            </>
+          ) : !locked ? (
+            <PoolEntryPicker
+              poolId={poolId}
+              players={playerList}
+              budget={pool.budget}
+              rosterSize={pool.roster_size}
+              modifiersRequired={hasGameNumbers}
+              games={linkedGames.map((g, i) => ({ game_number: i + 1, label: g.label, starts_at: g.starts_at }))}
+            />
+          ) : (
+            <>
+              <PoolSectionTitle>Your picks</PoolSectionTitle>
+              <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3.5 shadow-sm">
+                <p className="text-[13px] text-slate-500">
+                  Picks locked — you didn&rsquo;t get an entry in.
+                </p>
+              </div>
+            </>
+          )}
         </div>
       )}
 
+      {/* ---- leaderboard -------------------------------------------- */}
+      {playerList.length > 0 && (
+        <div>
+          <PoolSectionTitle>Leaderboard</PoolSectionTitle>
+          {board.length === 0 ? (
+            <Card>
+              <p className="text-sm text-slate-500">No entries yet. Be the first.</p>
+            </Card>
+          ) : (
+            <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+              <div className="flex items-center gap-1.5 border-b border-slate-100 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                <span className="min-w-0 flex-1">Plr</span>
+                <span className="w-12 text-right">Pts</span>
+                <span className="w-8 text-right">GB</span>
+              </div>
+              <div className="divide-y divide-slate-100">
+                {board.map((e: any) => {
+                  const gb = leaderTotal - e.total;
+                  return (
+                    <div
+                      key={e.id}
+                      className={`px-3 py-1.5 ${e.user_id === user.id ? "bg-orange-50" : ""}`}
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <p className="flex min-w-0 flex-1 items-center gap-1.5">
+                          <Avatar
+                            name={e.profiles?.display_name ?? "Player"}
+                            animal={avatars.get(e.user_id)}
+                            size={24}
+                          />
+                          <span className="min-w-0 truncate text-[13px] font-medium">
+                            {e.profiles?.display_name ?? "Player"}
+                          </span>
+                          {e.user_id === user.id && (
+                            <span className="shrink-0 rounded bg-orange-100 px-1 py-px text-[10px] font-bold uppercase tracking-wide text-accent">
+                              You
+                            </span>
+                          )}
+                        </p>
+                        <span className="w-12 text-right text-[13px] font-semibold tabular-nums">
+                          {e.total}
+                        </span>
+                        <span className="w-8 text-right text-[13px] tabular-nums text-slate-500">
+                          {gb === 0 ? "—" : gb}
+                        </span>
+                      </div>
+                      {e.picksHidden ? (
+                        <p className="mt-0.5 pl-8 text-xs text-slate-400">
+                          Picks hidden until lock.
+                        </p>
+                      ) : (
+                        <p className="mt-0.5 pl-8 text-xs text-slate-600">
+                          {e.picks
+                            .map(
+                              (p: any) =>
+                                `${p.name}${p.modifier ? ` [${MODIFIER_SHORTS[p.modifier as ModifierCode] ?? p.modifier}]` : ""} (${p.modified})`
+                            )
+                            .join(" · ")}
+                        </p>
+                      )}
+                      {hasModifiers && !e.picksHidden && e.bonusTotal > 0 && (
+                        <p className="mt-0.5 pl-8 text-[11px] text-slate-400">
+                          Base {e.baseTotal} · bonuses +{e.bonusTotal}
+                        </p>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ---- per-game crowns ---------------------------------------- */}
       {crowns.length > 0 && (
         <div>
-          <SectionTitle>Per-game crowns</SectionTitle>
-          <Card>
-            <ul className="space-y-1 text-sm">
+          <PoolSectionTitle>Per-game crowns</PoolSectionTitle>
+          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <div className="divide-y divide-slate-100">
               {crowns.map((c: any) => (
-                <li key={c.game.id} className="flex items-baseline justify-between gap-2">
-                  <span className="font-medium text-slate-700">{c.game.label}</span>
+                <div
+                  key={c.game.id}
+                  className="flex items-baseline justify-between gap-2 px-3 py-1.5"
+                >
+                  <span className="min-w-0 truncate text-[13px] font-medium text-slate-700">
+                    {c.game.label}
+                  </span>
                   <span className="shrink-0 text-xs text-slate-500">
                     {c.winners.map((w: any) => w.name).join(", ")} · {c.points} pts
                   </span>
-                </li>
+                </div>
               ))}
-            </ul>
-            <p className="mt-2 text-xs text-slate-400">
-              Most points from that game&rsquo;s slot. Co-winners tie — crowns are
-              board-only, no lifetime points.
-            </p>
-          </Card>
+            </div>
+          </div>
+          <p className="mt-1 text-[11px] text-slate-400">
+            Most points from that game&rsquo;s slot. Co-winners tie — crowns are
+            board-only, no lifetime points.
+          </p>
         </div>
       )}
 
@@ -335,40 +544,6 @@ export default async function PoolPage({
         </Card>
       ) : (
         <>
-          {!locked && !myEntry && (
-            <PoolEntryPicker
-              poolId={poolId}
-              players={playerList}
-              budget={pool.budget}
-              rosterSize={pool.roster_size}
-              modifiersRequired={hasGameNumbers}
-              games={linkedGames.map((g, i) => ({ game_number: i + 1, label: g.label, starts_at: g.starts_at }))}
-            />
-          )}
-
-          {!locked && myEntry && (
-            <Card className="border-green-200 bg-green-50">
-              <p className="font-semibold">You&rsquo;re in.</p>
-              <p className="mt-1 text-sm text-slate-600">
-                {myPicks
-                  .map(
-                    (p: any) =>
-                      `${p.name}${p.modifier ? ` [${MODIFIER_SHORTS[p.modifier as ModifierCode] ?? p.modifier}]` : ""} ($${p.salary})`
-                  )
-                  .join(" · ")}
-              </p>
-              <form action={removeEntry} className="mt-3">
-                <DangerButton>Change my picks</DangerButton>
-              </form>
-            </Card>
-          )}
-
-          {locked && !myEntry && (
-            <Card>
-              <p className="text-sm text-slate-500">Picks locked — you didn&rsquo;t get an entry in.</p>
-            </Card>
-          )}
-
           {isCommish && locked && board.length > 0 && (
             <div>
               {pool.winner_user_id ? (
