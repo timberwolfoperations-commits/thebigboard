@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { submitEntry } from "@/lib/actions";
 import { Card, SectionTitle, SubmitButton } from "@/components/ui";
+import { MODIFIERS, type ModifierCode } from "@/lib/modifiers";
 
 export interface PickerPlayer {
   id: string;
@@ -17,21 +18,47 @@ export default function PoolEntryPicker({
   players,
   budget,
   rosterSize,
+  modifiersRequired = false,
 }: {
   poolId: string;
   players: PickerPlayer[];
   budget: number;
   rosterSize: number;
+  modifiersRequired?: boolean;
 }) {
   const [selected, setSelected] = useState<string[]>([]);
+  const [mods, setMods] = useState<Record<string, ModifierCode>>({});
 
   const toggle = (id: string) =>
-    setSelected((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
+    setSelected((s) => {
+      const next = s.includes(id) ? s.filter((x) => x !== id) : [...s, id];
+      if (!next.includes(id)) {
+        setMods((m) => {
+          const copy = { ...m };
+          delete copy[id];
+          return copy;
+        });
+      }
+      return next;
+    });
 
   const spent = players.filter((p) => selected.includes(p.id)).reduce((s, p) => s + p.salary, 0);
   const over = spent > budget;
   const countOk = selected.length === rosterSize;
-  const canSubmit = countOk && !over;
+  // Showdown-style pools: all five modifiers, one per pick, each used once.
+  const modsAssigned = selected.filter((id) => mods[id]).length;
+  const modsDistinct = new Set(selected.map((id) => mods[id]).filter(Boolean)).size;
+  const modsOk =
+    !modifiersRequired ||
+    (selected.length === MODIFIERS.length &&
+      modsAssigned === MODIFIERS.length &&
+      modsDistinct === MODIFIERS.length);
+  const canSubmit = countOk && !over && modsOk;
+
+  // Selected players in game order, so the modifier rows read G1–G5.
+  const selectedPlayers = players
+    .filter((p) => selected.includes(p.id))
+    .sort((a, b) => (a.game_number ?? 99) - (b.game_number ?? 99) || a.name.localeCompare(b.name));
 
   const submit = submitEntry.bind(null, poolId);
 
@@ -91,6 +118,55 @@ export default function PoolEntryPicker({
             </p>
           )
         )}
+
+        {modifiersRequired && selectedPlayers.length > 0 && (
+          <div className="space-y-2 rounded-xl border border-slate-200 p-3">
+            <p className="text-sm font-semibold">Modifiers — one per pick</p>
+            {selectedPlayers.map((p) => {
+              const takenByOther = new Set(
+                selectedPlayers.filter((q) => q.id !== p.id).map((q) => mods[q.id]).filter(Boolean)
+              );
+              return (
+                <div key={p.id} className="flex items-center gap-2 text-sm">
+                  <span className="flex-1 font-medium">
+                    {p.name}
+                    {p.game_number != null && <span className="ml-1 text-xs text-slate-400">G{p.game_number}</span>}
+                  </span>
+                  <select
+                    name={`mod_${p.id}`}
+                    value={mods[p.id] ?? ""}
+                    onChange={(e) =>
+                      setMods((m) => ({ ...m, [p.id]: e.target.value as ModifierCode }))
+                    }
+                    className="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm"
+                  >
+                    <option value="" disabled>
+                      Pick one
+                    </option>
+                    {MODIFIERS.map((mod) => (
+                      <option key={mod.code} value={mod.code} disabled={takenByOther.has(mod.code)}>
+                        {mod.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              );
+            })}
+            <p className="text-xs text-slate-500">
+              {modsOk
+                ? "All five assigned — one per pick."
+                : `${MODIFIERS.length - modsDistinct} to go — each modifier can be used once.`}
+            </p>
+            <ul className="space-y-0.5 text-xs text-slate-500">
+              {MODIFIERS.map((mod) => (
+                <li key={mod.code}>
+                  <span className="font-semibold text-slate-600">{mod.label}:</span> {mod.hint}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
         <SubmitButton disabled={!canSubmit}>
           {canSubmit ? `Lock in my ${rosterSize}` : "Pick your players"}
         </SubmitButton>

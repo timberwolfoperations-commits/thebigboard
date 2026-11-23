@@ -6,6 +6,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
 import { GRACE_DAYS, AUTO_SETTLE_DAYS } from "@/lib/config";
+import { MODIFIER_CODES, isModifierCode } from "@/lib/modifiers";
 import { ANIMAL_KEYS } from "@/lib/avatar-keys";
 import {
   assertCanAdminister,
@@ -631,45 +632,16 @@ export async function awardPoolWinner(poolId: string) {
   if (new Date(pool.lock_at).getTime() > Date.now()) throw new Error("The pool isn't locked yet.");
   if (pool.winner_user_id) throw new Error("This pool already has a winner.");
 
-  const { computePoolPoints } = await import("./pool-scoring");
-  const { points: pointsByPlayer } = await computePoolPoints(supabase, poolId);
-
-  const [{ data: entries }, { data: picks }] = await Promise.all([
-    supabase.from("pool_entries").select("id, user_id, created_at").eq("pool_id", poolId),
-    supabase
-      .from("pool_entry_picks")
-      .select("entry_id, pool_players!inner(id, pool_id)")
-      .eq("pool_players.pool_id", poolId),
-  ]);
-
-  const playerIdsByEntry = new Map<string, string[]>();
-  for (const pk of (picks ?? []) as any[]) {
-    const arr = playerIdsByEntry.get(pk.entry_id) ?? [];
-    arr.push(pk.pool_players.id);
-    playerIdsByEntry.set(pk.entry_id, arr);
-  }
-
-  const board = ((entries ?? []) as any[])
-    .map((e: any) => ({
-      user_id: e.user_id,
-      created_at: e.created_at,
-      total: (playerIdsByEntry.get(e.id) ?? []).reduce(
-        (sum: number, pid: string) => sum + (pointsByPlayer.get(pid) ?? 0),
-        0
-      ),
-    }))
-    .sort(
-      (a: any, b: any) =>
-        b.total - a.total ||
-        new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-    );
-
-  const winner = board[0];
+  // The winner is the top MODIFIED total (base + modifier bonuses) —
+  // the same number the pool page shows. Ties break to the earliest entry.
+  const { computeEntryScores } = await import("./pool-scoring");
+  const { entries } = await computeEntryScores(supabase, poolId);
+  const winner = entries[0];
   if (!winner) throw new Error("No entries to award.");
 
   const { error } = await supabase
     .from("pools")
-    .update({ winner_user_id: winner.user_id, winner_points: 10 })
+    .update({ winner_user_id: winner.userId, winner_points: 10 })
     .eq("id", poolId);
   if (error) throw new Error(error.message);
 
@@ -712,6 +684,26 @@ export async function submitEntry(poolId: string, formData: FormData) {
     throw new Error("Pick at most one player per game.");
   }
 
+  // Pools whose players carry a game slot (showdown-style): one modifier
+  // per pick, all five used exactly once. Legacy pools (no game slots)
+  // skip this entirely — modifiers are never required there.
+  const usesModifiers = (players as any[]).some((p) => p.game_number != null);
+  const modsByPlayer = new Map<string, string>();
+  if (usesModifiers) {
+    for (const pid of ids) {
+      const m = String(formData.get(`mod_${pid}`) ?? "").trim().toUpperCase();
+      if (!m) throw new Error("Assign a modifier to every pick.");
+      if (!isModifierCode(m)) throw new Error(`Unknown modifier: ${m}.`);
+      modsByPlayer.set(pid, m);
+    }
+    if (modsByPlayer.size !== MODIFIER_CODES.length) {
+      throw new Error("Assign all five modifiers — one per pick.");
+    }
+    if (new Set(modsByPlayer.values()).size !== MODIFIER_CODES.length) {
+      throw new Error("Each modifier can be used once — assign all five, one per pick.");
+    }
+  }
+
   const { data: existing } = await supabase
     .from("pool_entries")
     .select("id")
@@ -729,7 +721,7 @@ export async function submitEntry(poolId: string, formData: FormData) {
 
   const { error: pErr } = await supabase
     .from("pool_entry_picks")
-    .insert(ids.map((pid) => ({ entry_id: entry.id, player_id: pid })));
+    .insert(ids.map((pid) => ({ entry_id: entry.id, player_id: pid, modifier: modsByPlayer.get(pid) ?? null })));
   if (pErr) {
     await supabase.from("pool_entries").delete().eq("id", entry.id);
     throw new Error(pErr.message);

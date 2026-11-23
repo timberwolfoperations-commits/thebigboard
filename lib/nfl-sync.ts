@@ -17,6 +17,71 @@ const summaryUrl = (eventId: string) =>
 export interface NflSyncResult {
   games_upserted: number;
   stat_lines_upserted: number;
+  scoring_plays_upserted: number;
+}
+
+// One scoring play from the ESPN summary endpoint. The spec assumed
+// fields scoreValue == 6 and statYardage >= 40 — neither exists in the
+// real response (verified against a live Week 11 summary, 2026-11-22):
+// a TD is type.text "Passing Touchdown" / "Rushing Touchdown", the
+// yardage lives in the text ("Carnell Tate 59 Yd pass from Cam Ward"),
+// and the players are named in the text too — there are no
+// participants/athletes arrays on scoring plays. So yardage and the
+// scorer/passer are parsed out of the text here, once, at sync time.
+export interface ScoringPlay {
+  play_id: string;
+  seq: number;
+  team: string;
+  type_text: string;
+  text: string;
+  yardage: number | null;
+  scorer_name: string | null;
+  passer_name: string | null;
+  away_score: number;
+  home_score: number;
+  period: number | null;
+  clock_seconds: number | null;
+}
+
+export function parseScoringPlays(scoringPlays: any): ScoringPlay[] {
+  const out: ScoringPlay[] = [];
+  (scoringPlays ?? []).forEach((p: any, i: number) => {
+    const typeText = String(p?.type?.text ?? "");
+    const text = String(p?.text ?? "");
+    const y = text.match(/(\d+)\s*Yd/i);
+    const yardage = y ? parseInt(y[1], 10) : null;
+    let scorer: string | null = null;
+    let passer: string | null = null;
+    if (typeText === "Passing Touchdown") {
+      const m = text.match(/^(.+?)\s+\d+\s*Yd pass from\s+(.+?)\s*(?:\(|$)/i);
+      if (m) {
+        scorer = m[1].trim();
+        passer = m[2].trim();
+      }
+    } else if (typeText === "Rushing Touchdown") {
+      const m = text.match(/^(.+?)\s+\d+\s*Yd Rush/i);
+      if (m) scorer = m[1].trim();
+    } else if (/Touchdown/i.test(typeText)) {
+      // Return / defensive TDs: scorer is the name leading the text.
+      const m = text.match(/^(.+?)\s+\d+\s*Yd/i);
+      if (m) scorer = m[1].trim();
+    }
+    out.push({
+      play_id: String(p?.id ?? `${i}`),
+      seq: i,
+      team: String(p?.team?.abbreviation ?? "").toUpperCase(),
+      type_text: typeText,
+      text,
+      yardage,
+      scorer_name: scorer,
+      passer_name: passer,
+      away_score: num(p?.awayScore),
+      home_score: num(p?.homeScore),
+      period: p?.period?.number != null ? Number(p.period.number) : null,
+      clock_seconds: p?.clock?.value != null ? Number(p.clock.value) : null,
+    });
+  });
+  return out;
 }
 
 type GameStatus = "scheduled" | "in_progress" | "final";
@@ -200,6 +265,7 @@ export async function syncNfl(): Promise<NflSyncResult> {
   const idByExternal = new Map(((gameRows ?? []) as any[]).map((g) => [g.external_id, g.id]));
 
   let stat_lines_upserted = 0;
+  let scoring_plays_upserted = 0;
   for (const eventId of liveIds) {
     const gameId = idByExternal.get(eventId);
     if (!gameId) continue;
@@ -223,8 +289,21 @@ export async function syncNfl(): Promise<NflSyncResult> {
       .upsert(lines, { onConflict: "game_id,player_name,team" });
     if (error) continue;
     stat_lines_upserted += lines.length;
+    // Scoring plays ride the same summary fetch — the Wildcard derives
+    // from them at scoring time. Fail-soft: until migration 033 is run
+    // the table doesn't exist and the plays just don't land yet.
+    const plays = parseScoringPlays(summary.scoringPlays);
+    if (plays.length > 0) {
+      const { error: pErr } = await supabase
+        .from("game_scoring_plays")
+        .upsert(
+          plays.map((pl) => ({ game_id: gameId, ...pl })),
+          { onConflict: "game_id,play_id" }
+        );
+      if (!pErr) scoring_plays_upserted += plays.length;
+    }
   }
 
   await touchSyncState("NFL");
-  return { games_upserted, stat_lines_upserted };
+  return { games_upserted, stat_lines_upserted, scoring_plays_upserted };
 }

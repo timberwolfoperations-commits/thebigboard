@@ -1,4 +1,12 @@
 import { calcPoints, type ScoringFormula } from "./config";
+import {
+  isModifierCode,
+  modifierBonus,
+  wildcardCreditsForGame,
+  wildcardKey,
+  type ModifierCode,
+} from "./modifiers";
+import type { ScoringPlay } from "./nfl-sync";
 
 // One place that turns a pool's stats into points per player. Used by the
 // pool page leaderboard, /scoring, and the award-winner action.
@@ -118,4 +126,190 @@ export async function computePoolPoints(supabase: any, poolId: string): Promise<
   }
 
   return { points, perGame, unmatched, linkedGames };
+}
+
+// --- Entry standings with modifiers -----------------------------------------
+// One place that turns a pool's entries into totals WITH the Final 5
+// modifiers applied. The pool page leaderboard, the award-winner action,
+// and the dashboard standing all read from here, so the number a player
+// sees is the number that wins.
+//
+// Base points come from computePoolPoints (same as before). On top, each
+// pick's modifier bonus is computed from:
+//   - ownership n (entries that drafted the player) for DD and SOLO,
+//   - the game's final result + the pick's base points for Winner's Circle,
+//   - the game's stored scoring plays for the Wildcard.
+// Per-game crowns use the modified (post-modifier) points for that slot.
+
+export interface EntryPickScore {
+  playerId: string;
+  name: string;
+  team: string;
+  salary: number;
+  gameNumber: number | null;
+  base: number;
+  modifier: ModifierCode | null;
+  bonus: number;
+  modified: number;
+}
+
+export interface EntryScore {
+  entryId: string;
+  userId: string;
+  displayName: string;
+  createdAt: string;
+  picks: EntryPickScore[];
+  baseTotal: number;
+  bonusTotal: number;
+  total: number; // modified total — the number that wins
+  perGameModified: number[]; // modified points per linked game, kickoff order
+}
+
+export interface EntryScores {
+  entries: EntryScore[]; // sorted by total desc, then earliest entry first
+  linkedGames: LinkedGame[];
+  unmatched: string[];
+  hasModifiers: boolean; // any entry carries a modifier
+}
+
+const round2 = (n: number) => Math.round(n * 100) / 100;
+
+export async function computeEntryScores(supabase: any, poolId: string): Promise<EntryScores> {
+  const { points, unmatched, linkedGames } = await computePoolPoints(supabase, poolId);
+
+  const [{ data: players }, { data: entries }, { data: picks }] = await Promise.all([
+    supabase
+      .from("pool_players")
+      .select("id, name, team, salary, game_number")
+      .eq("pool_id", poolId),
+    supabase
+      .from("pool_entries")
+      .select("id, user_id, created_at, profiles(display_name)")
+      .eq("pool_id", poolId),
+    // pool_entry_picks has no pool_id — filter through the entry join.
+    supabase
+      .from("pool_entry_picks")
+      .select("entry_id, player_id, modifier, pool_entries!inner(pool_id)")
+      .eq("pool_entries.pool_id", poolId),
+  ]);
+  const entryList = (entries ?? []) as any[];
+  const pickRows = (picks ?? []) as any[];
+
+  const playerList = (players ?? []) as any[];
+  const playerById = new Map(playerList.map((p) => [p.id, p]));
+
+  // Ownership n per player: entries that drafted him, regardless of modifier.
+  const ownership = new Map<string, number>();
+  for (const pk of pickRows as any[]) {
+    ownership.set(pk.player_id, (ownership.get(pk.player_id) ?? 0) + 1);
+  }
+
+  // Wildcard credits per linked game, from the stored scoring plays.
+  const wildcardByGame = new Map<string, Set<string>>();
+  if (linkedGames.length > 0) {
+    const { data: playRows } = await supabase
+      .from("game_scoring_plays")
+      .select("game_id, play_id, seq, team, type_text, text, yardage, scorer_name, passer_name, away_score, home_score, period, clock_seconds")
+      .in(
+        "game_id",
+        linkedGames.map((g) => g.id)
+      )
+      .order("seq", { ascending: true });
+    const playsByGame = new Map<string, ScoringPlay[]>();
+    for (const r of (playRows ?? []) as any[]) {
+      const arr = playsByGame.get(r.game_id) ?? [];
+      arr.push(r as ScoringPlay);
+      playsByGame.set(r.game_id, arr);
+    }
+    for (const g of linkedGames) {
+      wildcardByGame.set(
+        g.id,
+        wildcardCreditsForGame(playsByGame.get(g.id) ?? [], {
+          status: g.status,
+          home_team: g.home_team,
+          away_team: g.away_team,
+        })
+      );
+    }
+  }
+
+  const picksByEntry = new Map<string, any[]>();
+  for (const pk of pickRows as any[]) {
+    const arr = picksByEntry.get(pk.entry_id) ?? [];
+    arr.push(pk);
+    picksByEntry.set(pk.entry_id, arr);
+  }
+
+  const hasModifiers = (pickRows as any[]).some((pk) => pk.modifier != null);
+
+  const entriesOut: EntryScore[] = entryList.map((e: any) => {
+    const entryPicks = picksByEntry.get(e.id) ?? [];
+    const perGameModified: number[] = linkedGames.map(() => 0);
+    let baseTotal = 0;
+    let bonusTotal = 0;
+    const scored: EntryPickScore[] = entryPicks.map((pk: any) => {
+      const p = playerById.get(pk.player_id);
+      const base = round2(points.get(pk.player_id) ?? 0);
+      const modifier: ModifierCode | null = isModifierCode(pk.modifier) ? pk.modifier.toUpperCase() as ModifierCode : null;
+      // The pick's game, by its game slot (kickoff order = linked-game order).
+      const gameIdx =
+        p?.game_number != null ? Number(p.game_number) - 1 : -1;
+      const game = gameIdx >= 0 && gameIdx < linkedGames.length ? linkedGames[gameIdx] : null;
+      let teamWon: boolean | null = null;
+      if (game && game.status === "final" && p) {
+        const team = String(p.team ?? "").toUpperCase();
+        if (team === String(game.home_team ?? "").toUpperCase()) {
+          teamWon = (game.home_score ?? 0) > (game.away_score ?? 0);
+        } else if (team === String(game.away_team ?? "").toUpperCase()) {
+          teamWon = (game.away_score ?? 0) > (game.home_score ?? 0);
+        }
+        if ((game.home_score ?? 0) === (game.away_score ?? 0)) teamWon = null;
+      }
+      const wildcardCredit =
+        game != null && p != null
+          ? (wildcardByGame.get(game.id) ?? new Set()).has(wildcardKey(p.team, p.name))
+          : false;
+      const bonus = modifierBonus({
+        base,
+        modifier,
+        ownership: ownership.get(pk.player_id) ?? 0,
+        teamWon,
+        wildcardCredit,
+      });
+      const modified = round2(base + bonus);
+      if (gameIdx >= 0 && gameIdx < perGameModified.length) {
+        perGameModified[gameIdx] = round2(perGameModified[gameIdx] + modified);
+      }
+      baseTotal = round2(baseTotal + base);
+      bonusTotal = round2(bonusTotal + bonus);
+      return {
+        playerId: pk.player_id,
+        name: p?.name ?? "Player",
+        team: p?.team ?? "",
+        salary: p?.salary ?? 0,
+        gameNumber: p?.game_number ?? null,
+        base,
+        modifier,
+        bonus,
+        modified,
+      };
+    });
+    return {
+      entryId: e.id,
+      userId: e.user_id,
+      displayName: e.profiles?.display_name ?? "Player",
+      createdAt: e.created_at,
+      picks: scored,
+      baseTotal,
+      bonusTotal,
+      total: round2(baseTotal + bonusTotal),
+      perGameModified,
+    };
+  });
+
+  entriesOut.sort(
+    (a, b) => b.total - a.total || new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+  );
+
+  return { entries: entriesOut, linkedGames, unmatched, hasModifiers };
 }

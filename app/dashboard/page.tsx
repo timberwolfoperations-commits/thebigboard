@@ -3,7 +3,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { computePickemLeaderboard } from "@/lib/pickem-scoring";
 import { computeSurvivorState } from "@/lib/survivor";
-import { computePoolPoints } from "@/lib/pool-scoring";
+import { computeEntryScores } from "@/lib/pool-scoring";
 import { loadHostNames, loadMyGuestPoolIds, loadOpenPoolDiscovery } from "@/lib/open-pools";
 import { createServiceClient } from "@/lib/supabase/service";
 import { listMyPokerTurns } from "@/lib/poker/server";
@@ -409,33 +409,16 @@ export default async function Dashboard({
   }
 
   // ---- standings for live (locked) pools ---------------------------------------
+  // Roster-pool standing, with modifiers applied — the same modified total
+  // the pool page shows, so the dashboard rank never disagrees with it.
   async function rosterStanding(poolId: string) {
-    const { data: entries } = await supabase
-      .from("pool_entries")
-      .select("id, user_id")
-      .eq("pool_id", poolId);
-    const entryList = (entries ?? []) as any[];
-    if (entryList.length === 0) return null;
-    // Entry picks and the pool's points are independent — one batch.
-    const [{ data: picks }, { points }] = await Promise.all([
-      supabase
-        .from("pool_entry_picks")
-        .select("entry_id, player_id")
-        .in("entry_id", entryList.map((e: any) => e.id)),
-      computePoolPoints(supabase, poolId),
-    ]);
-    const picksByEntry = new Map<string, number>();
-    for (const pk of (picks ?? []) as any[]) {
-      picksByEntry.set(pk.entry_id, (picksByEntry.get(pk.entry_id) ?? 0) + (points.get(pk.player_id) ?? 0));
-    }
-    const board = entryList
-      .map((e: any) => ({ user_id: e.user_id, total: picksByEntry.get(e.id) ?? 0 }))
-      .sort((a: any, b: any) => b.total - a.total);
-    const idx = board.findIndex((r: any) => r.user_id === userId);
+    const { entries } = await computeEntryScores(supabase, poolId);
+    if (entries.length === 0) return null;
+    const idx = entries.findIndex((r: any) => r.userId === userId);
     return {
       rank: idx >= 0 ? idx + 1 : null,
-      points: idx >= 0 ? board[idx].total : null,
-      count: board.length,
+      points: idx >= 0 ? entries[idx].total : null,
+      count: entries.length,
     };
   }
 
