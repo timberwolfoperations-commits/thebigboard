@@ -23,6 +23,7 @@ export interface LinkedGame {
 
 export interface PoolPoints {
   points: Map<string, number>; // pool_player.id -> points
+  perGame: Map<string, number[]>; // pool_player.id -> points per linked game, kickoff order
   unmatched: string[]; // player names with no API match anywhere (linked pools)
   linkedGames: LinkedGame[];
 }
@@ -43,6 +44,7 @@ export async function computePoolPoints(supabase: any, poolId: string): Promise<
   const gameIds = ((links ?? []) as any[]).map((l) => l.game_id);
 
   const points = new Map<string, number>();
+  const perGame = new Map<string, number[]>();
 
   // Legacy: no linked games — manual lines only, exactly as before.
   if (gameIds.length === 0) {
@@ -54,7 +56,7 @@ export async function computePoolPoints(supabase: any, poolId: string): Promise<
       const pts = calcPoints((s.stats ?? {}) as Record<string, number>, formula);
       points.set(s.player_id, (points.get(s.player_id) ?? 0) + pts);
     }
-    return { points, unmatched: [], linkedGames: [] };
+    return { points, perGame, unmatched: [], linkedGames: [] };
   }
 
   const { data: games } = await supabase
@@ -91,24 +93,29 @@ export async function computePoolPoints(supabase: any, poolId: string): Promise<
   for (const p of playerList) {
     let total = 0;
     let matched = false;
+    const perGameArr: number[] = [];
     linkedGames.forEach((g, i) => {
       const override = manualByKey.get(`${p.id}|${i + 1}`);
+      let pts = 0;
       if (override) {
-        total += calcPoints((override.stats ?? {}) as Record<string, number>, formula);
+        pts = calcPoints((override.stats ?? {}) as Record<string, number>, formula);
         matched = true;
-        return;
+      } else {
+        const line = (apiByGame.get(g.id) ?? []).find(
+          (l: any) => norm(l.player_name) === norm(p.name) && norm(l.team) === norm(p.team)
+        );
+        if (line) {
+          pts = calcPoints((line.stats ?? {}) as Record<string, number>, formula);
+          matched = true;
+        }
       }
-      const line = (apiByGame.get(g.id) ?? []).find(
-        (l: any) => norm(l.player_name) === norm(p.name) && norm(l.team) === norm(p.team)
-      );
-      if (line) {
-        total += calcPoints((line.stats ?? {}) as Record<string, number>, formula);
-        matched = true;
-      }
+      perGameArr.push(Math.round(pts * 100) / 100);
+      total += pts;
     });
     points.set(p.id, Math.round(total * 100) / 100);
+    perGame.set(p.id, perGameArr);
     if (!matched) unmatched.push(p.name);
   }
 
-  return { points, unmatched, linkedGames };
+  return { points, perGame, unmatched, linkedGames };
 }

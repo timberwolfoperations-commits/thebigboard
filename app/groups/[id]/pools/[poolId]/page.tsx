@@ -51,7 +51,7 @@ export default async function PoolPage({
 
   const { data: players } = await supabase
     .from("pool_players")
-    .select("id, name, team, salary")
+    .select("id, name, team, salary, game_number")
     .eq("pool_id", poolId)
     .order("salary", { ascending: false });
   const playerList = (players ?? []) as any[];
@@ -82,7 +82,7 @@ export default async function PoolPage({
 
   // Points come from the API stat lines on the pool's linked games when it
   // has any; otherwise from manual stat lines, exactly as before.
-  const { points: pointsByPlayer, unmatched, linkedGames } = await computePoolPoints(supabase, poolId);
+  const { points: pointsByPlayer, perGame, unmatched, linkedGames } = await computePoolPoints(supabase, poolId);
 
   const { data: statLines } = await supabase
     .from("pool_stat_lines")
@@ -115,6 +115,29 @@ export default async function PoolPage({
       ),
     }))
     .sort((a: any, b: any) => b.total - a.total);
+
+  // Per-game crowns: for pools whose players carry a game slot, the entry
+  // (or entries) with the most points from that game's slot. Board only —
+  // no lifetime points. A game only crowns once it is live or final and
+  // someone has scored in it.
+  const hasGameNumbers = playerList.some((p: any) => p.game_number != null);
+  const crowns = hasGameNumbers
+    ? linkedGames
+        .map((g, i) => {
+          if (g.status !== "in_progress" && g.status !== "final") return null;
+          const scored = board.map((e: any) => ({
+            name: e.profiles?.display_name ?? "Player",
+            score: (e.picks ?? []).reduce(
+              (sum: number, p: any) => sum + (perGame.get(p.id)?.[i] ?? 0),
+              0
+            ),
+          }));
+          const max = Math.max(0, ...scored.map((s) => s.score));
+          if (max <= 0) return null;
+          return { game: g, winners: scored.filter((s) => s.score === max), points: max };
+        })
+        .filter(Boolean)
+    : [];
 
   const addPlayers = addPoolPlayers.bind(null, poolId);
   const addPlayer = addOnePoolPlayer.bind(null, poolId);
@@ -174,6 +197,28 @@ export default async function PoolPage({
                 ))}
               </div>
             )}
+        </div>
+      )}
+
+      {crowns.length > 0 && (
+        <div>
+          <SectionTitle>Per-game crowns</SectionTitle>
+          <Card>
+            <ul className="space-y-1 text-sm">
+              {crowns.map((c: any) => (
+                <li key={c.game.id} className="flex items-baseline justify-between gap-2">
+                  <span className="font-medium text-slate-700">{c.game.label}</span>
+                  <span className="shrink-0 text-xs text-slate-500">
+                    {c.winners.map((w: any) => w.name).join(", ")} · {c.points} pts
+                  </span>
+                </li>
+              ))}
+            </ul>
+            <p className="mt-2 text-xs text-slate-400">
+              Most points from that game&rsquo;s slot. Co-winners tie — crowns are
+              board-only, no lifetime points.
+            </p>
+          </Card>
         </div>
       )}
 
@@ -256,12 +301,12 @@ export default async function PoolPage({
         <Card>
           <SectionTitle>Add the player pool</SectionTitle>
           <form action={addPlayers} className="space-y-4">
-            <Field label='One per line: Name, TEAM, salary'>
+            <Field label="One per line: Name, TEAM, salary, game (1–5, optional)">
               <textarea
                 name="players"
                 rows={10}
                 required
-                placeholder={"Shohei Ohtani, LAD, 10\nJacob Misiorowski, MIL, 10\nMookie Betts, LAD, 9"}
+                placeholder={"Shohei Ohtani, LAD, 10, 1\nJacob Misiorowski, MIL, 10, 2\nMookie Betts, LAD, 9, 1"}
                 className={`${inputClass} font-mono`}
               />
             </Field>

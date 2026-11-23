@@ -9,6 +9,7 @@ export interface PickerPlayer {
   name: string;
   team: string;
   salary: number;
+  game_number?: number | null;
 }
 
 export default function PoolEntryPicker({
@@ -64,6 +65,11 @@ export default function PoolEntryPicker({
                   className="h-4 w-4 accent-slate-900"
                 />
                 <span className="flex-1 font-medium">{p.name}</span>
+                {p.game_number != null && (
+                  <span className={`text-xs font-semibold ${checked ? "text-slate-300" : "text-slate-400"}`}>
+                    G{p.game_number}
+                  </span>
+                )}
                 <span className={`text-xs ${checked ? "text-slate-300" : "text-slate-400"}`}>{p.team}</span>
                 <span className={`font-display text-base font-semibold tabular-nums ${checked ? "" : "text-slate-500"}`}>
                   ${p.salary}
