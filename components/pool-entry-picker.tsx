@@ -13,23 +13,57 @@ export interface PickerPlayer {
   game_number?: number | null;
 }
 
+export interface PickerGame {
+  game_number: number;
+  label: string;
+  starts_at: string | null;
+}
+
+function fmtGameShort(iso: string | null): string {
+  if (!iso) return "";
+  return new Date(iso).toLocaleString("en-US", {
+    timeZone: "America/New_York",
+    weekday: "short",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
 export default function PoolEntryPicker({
   poolId,
   players,
   budget,
   rosterSize,
   modifiersRequired = false,
+  games = [],
 }: {
   poolId: string;
   players: PickerPlayer[];
   budget: number;
   rosterSize: number;
   modifiersRequired?: boolean;
+  games?: PickerGame[];
 }) {
   const [selected, setSelected] = useState<string[]>([]);
   const [mods, setMods] = useState<Record<string, ModifierCode>>({});
 
-  const toggle = (id: string) =>
+  const hasGameNumbers = players.some((p) => p.game_number != null);
+
+  // Games whose slot is already taken by a selected player — the other
+  // players in those games grey out (client feedback only; the server
+  // still enforces one pick per game in submitEntry).
+  const takenGames = new Set(
+    players
+      .filter((p) => selected.includes(p.id) && p.game_number != null)
+      .map((p) => p.game_number as number)
+  );
+
+  const isDisabled = (p: PickerPlayer) =>
+    !selected.includes(p.id) && p.game_number != null && takenGames.has(p.game_number);
+
+  const toggle = (p: PickerPlayer) => {
+    if (isDisabled(p)) return;
+    const id = p.id;
     setSelected((s) => {
       const next = s.includes(id) ? s.filter((x) => x !== id) : [...s, id];
       if (!next.includes(id)) {
@@ -41,6 +75,7 @@ export default function PoolEntryPicker({
       }
       return next;
     });
+  };
 
   const spent = players.filter((p) => selected.includes(p.id)).reduce((s, p) => s + p.salary, 0);
   const over = spent > budget;
@@ -60,6 +95,29 @@ export default function PoolEntryPicker({
     .filter((p) => selected.includes(p.id))
     .sort((a, b) => (a.game_number ?? 99) - (b.game_number ?? 99) || a.name.localeCompare(b.name));
 
+  // Players grouped by game slot (kickoff order G1–G5); players without
+  // a slot go in one ungrouped section (legacy pools).
+  const gameByNumber = new Map(games.map((g) => [g.game_number, g]));
+  const groups: { key: string; title: string; sub?: string; players: PickerPlayer[] }[] = [];
+  if (hasGameNumbers) {
+    const numbers = [...new Set(players.map((p) => p.game_number).filter((g) => g != null))].sort(
+      (a, b) => (a as number) - (b as number)
+    );
+    for (const n of numbers) {
+      const g = gameByNumber.get(n as number);
+      groups.push({
+        key: `g${n}`,
+        title: g ? `G${n} · ${g.label}` : `Game ${n}`,
+        sub: g?.starts_at ? `${fmtGameShort(g.starts_at)} ET` : undefined,
+        players: players.filter((p) => p.game_number === n),
+      });
+    }
+    const ungrouped = players.filter((p) => p.game_number == null);
+    if (ungrouped.length > 0) groups.push({ key: "ungrouped", title: "Players", players: ungrouped });
+  } else {
+    groups.push({ key: "all", title: "Players", players });
+  }
+
   const submit = submitEntry.bind(null, poolId);
 
   return (
@@ -73,38 +131,65 @@ export default function PoolEntryPicker({
           </span>
           {over && <span className="text-red-600"> over the cap</span>}
         </p>
-        <div className="max-h-96 space-y-1 overflow-y-auto rounded-xl border border-slate-200 p-3">
-          {players.map((p) => {
-            const checked = selected.includes(p.id);
-            return (
-              <label
-                key={p.id}
-                className={`flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm ${
-                  checked ? "bg-slate-900 text-white" : "hover:bg-slate-50"
-                }`}
-              >
-                <input
-                  type="checkbox"
-                  name="players"
-                  value={p.id}
-                  checked={checked}
-                  onChange={() => toggle(p.id)}
-                  className="h-4 w-4 accent-slate-900"
-                />
-                <span className="flex-1 font-medium">{p.name}</span>
-                {p.game_number != null && (
-                  <span className={`text-xs font-semibold ${checked ? "text-slate-300" : "text-slate-400"}`}>
-                    G{p.game_number}
-                  </span>
-                )}
-                <span className={`text-xs ${checked ? "text-slate-300" : "text-slate-400"}`}>{p.team}</span>
-                <span className={`font-display text-base font-semibold tabular-nums ${checked ? "" : "text-slate-500"}`}>
-                  ${p.salary}
+        {hasGameNumbers && (
+          <p className="text-xs text-slate-500">
+            One pick per game — picking a player greys out the rest of his game.
+          </p>
+        )}
+        <div className="max-h-96 space-y-3 overflow-y-auto rounded-xl border border-slate-200 p-3">
+          {groups.map((group) => (
+            <div key={group.key}>
+              <div className="mb-1 flex items-baseline gap-2">
+                <span className="min-w-0 flex-1 truncate text-xs font-semibold uppercase tracking-wider text-slate-500">
+                  {group.title}
                 </span>
-              </label>
-            );
-          })}
+                {group.sub && <span className="shrink-0 text-xs text-slate-400">{group.sub}</span>}
+              </div>
+              <div className="space-y-1">
+                {group.players.map((p) => {
+                  const checked = selected.includes(p.id);
+                  const disabled = isDisabled(p);
+                  return (
+                    <button
+                      key={p.id}
+                      type="button"
+                      disabled={disabled}
+                      onClick={() => toggle(p)}
+                      aria-pressed={checked}
+                      className={`flex w-full items-center gap-2 rounded-lg border px-3 py-2 text-left text-sm transition ${
+                        checked
+                          ? "border-slate-900 bg-slate-900 text-white"
+                          : disabled
+                            ? "cursor-not-allowed border-slate-200 bg-white text-slate-400 opacity-50"
+                            : "border-slate-200 bg-white hover:border-slate-400 hover:bg-slate-50"
+                      }`}
+                    >
+                      <span className="min-w-0 flex-1 truncate font-medium">{p.name}</span>
+                      <span className={`shrink-0 text-xs ${checked ? "text-slate-300" : "text-slate-400"}`}>
+                        {p.team}
+                      </span>
+                      <span
+                        className={`shrink-0 font-display text-base font-semibold tabular-nums ${checked ? "" : "text-slate-500"}`}
+                      >
+                        ${p.salary}
+                      </span>
+                      {checked && (
+                        <span className="shrink-0 text-sm font-bold" aria-hidden>
+                          ✓
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
         </div>
+        {/* Hidden inputs carry the selected ids — the server action reads
+            formData.getAll("players"), exactly as the checkboxes did. */}
+        {selected.map((id) => (
+          <input key={id} type="hidden" name="players" value={id} />
+        ))}
         {over ? (
           <p className="text-sm font-medium text-red-600">
             ${spent - budget} over the cap — swap out a player.
@@ -128,7 +213,7 @@ export default function PoolEntryPicker({
               );
               return (
                 <div key={p.id} className="flex items-center gap-2 text-sm">
-                  <span className="flex-1 font-medium">
+                  <span className="min-w-0 flex-1 truncate font-medium">
                     {p.name}
                     {p.game_number != null && <span className="ml-1 text-xs text-slate-400">G{p.game_number}</span>}
                   </span>
