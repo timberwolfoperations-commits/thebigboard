@@ -21,8 +21,10 @@ import {
   loadGroupSeasons,
   loadSeason,
   loadRoundGameStates,
+  loadSeasonWinners,
   computeSeasonStandings,
   pickFocusRoundNo,
+  SEASON_WINNER_POINTS,
 } from "@/lib/season";
 
 function daysOverdue(settleDate: string) {
@@ -340,13 +342,16 @@ export default async function GroupPage({ params }: { params: Promise<{ id: stri
     roundsTotal: number;
     focusRoundNo: number | null;
     myRecord: string | null;
+    awarded: boolean;
+    championNames: string[];
   }[] = [];
   for (const s of groupSeasons) {
     const loadedSeason = await loadSeason(supabase, s.id);
     if (!loadedSeason) continue;
-    const [standings, states] = await Promise.all([
+    const [standings, states, winners] = await Promise.all([
       computeSeasonStandings(supabase, loadedSeason),
       loadRoundGameStates(supabase, loadedSeason.rounds, user.id),
+      loadSeasonWinners(supabase, s.id),
     ]);
     const mine = standings.find((x) => x.user_id === user.id);
     seasonCards.push({
@@ -362,8 +367,20 @@ export default async function GroupPage({ params }: { params: Promise<{ id: stri
       ),
       myRecord:
         mine && mine.picksMade > 0 ? `${mine.correct}–${mine.missed}` : null,
+      awarded: winners.length > 0,
+      championNames: winners.map(
+        (w) =>
+          standings.find((x) => x.user_id === w.user_id)?.display_name ?? "Player"
+      ),
     });
   }
+  // An awarded season is done — it leaves Happening now and drops to
+  // Settled pools below, the same rule as awarded quizzes and finished
+  // poker tables. A complete season that hasn't been awarded yet STAYS
+  // in Happening now: the award is still outstanding, and the commish
+  // reaches it through the card.
+  const liveSeasonCards = seasonCards.filter((s) => !s.awarded);
+  const settledSeasonCards = seasonCards.filter((s) => s.awarded);
 
   // ---- my all-time hero ---------------------------------------------------
   // The viewer is a member whenever this page renders (non-members get
@@ -372,7 +389,7 @@ export default async function GroupPage({ params }: { params: Promise<{ id: stri
   const myRow = leaderboard.find((m) => m.user_id === user.id);
   const myRating = ratings.get(user.id);
   const anythingLive =
-    seasonCards.length > 0 ||
+    liveSeasonCards.length > 0 ||
     open.length > 0 ||
     openPools.length > 0 ||
     openPickem.length > 0 ||
@@ -488,7 +505,7 @@ export default async function GroupPage({ params }: { params: Promise<{ id: stri
         <div>
           <GroupSectionTitle>Happening now</GroupSectionTitle>
           <div className="space-y-2">
-            {seasonCards.map((s) => (
+            {liveSeasonCards.map((s) => (
               <Link key={s.id} href={`/groups/${id}/pickem/season/${s.id}`}>
                 <div className="rounded-2xl border border-slate-900 bg-slate-900 px-4 py-3.5 shadow-sm text-white transition hover:border-slate-700">
                   <div className="flex items-center justify-between gap-2">
@@ -750,10 +767,28 @@ export default async function GroupPage({ params }: { params: Promise<{ id: stri
         </div>
       </div>
 
-      {(settledPools.length > 0 || settledPickem.length > 0) && (
+      {(settledPools.length > 0 || settledPickem.length > 0 || settledSeasonCards.length > 0) && (
         <div>
           <GroupSectionTitle>Settled pools</GroupSectionTitle>
           <div className="space-y-2">
+            {settledSeasonCards.map((s) => (
+              <Link key={s.id} href={`/groups/${id}/pickem/season/${s.id}`}>
+                <div className={tileClass}>
+                  <div className="flex items-center justify-between gap-2">
+                    <p className={tileTitleClass}>{s.name}</p>
+                    <span className="flex shrink-0 gap-1">
+                      <span className={`${chipClass} bg-slate-900 text-white`}>season</span>
+                      <span className={`${chipClass} bg-slate-100 text-slate-500`}>
+                        settled
+                      </span>
+                    </span>
+                  </div>
+                  <p className={tileSubClass}>
+                    {s.championNames.join(" & ")} won · +{SEASON_WINNER_POINTS} pts each
+                  </p>
+                </div>
+              </Link>
+            ))}
             {settledPools.map((p: any) => {
               const n = entriesByPool.get(p.id) ?? 0;
               return (
