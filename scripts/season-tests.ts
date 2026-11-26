@@ -12,6 +12,7 @@ import {
   aggregateSeasonRounds,
   pickCurrentRoundNo,
   pickFocusRoundNo,
+  seasonLeaderIds,
   type RoundBoardInput,
   type RoundPickOutcome,
   type SeasonMemberInput,
@@ -391,6 +392,54 @@ check(
     { roundNo: 4, allFinal: true, unpickedUpcoming: 0 },
     { roundNo: 5, allFinal: true, unpickedUpcoming: 0 },
   ]) === 5
+);
+
+// ------------------------------------------------------- season leaders
+
+// The championship is a points race: the leaders are the players tied
+// at the most banked points (10 per weekly win), not the most correct
+// picks. The real Test of Manhood ending is the fixture: Davis and
+// Aaron tied at 30 banked (3 wins each) while Gaymez7 had more correct
+// picks (54) but only 20 banked — the title is Davis and Aaron's.
+{
+  const toM = [
+    { user_id: "u-gaymez", pointsBanked: 20, picksMade: 77 },
+    { user_id: "u-aaron", pointsBanked: 30, picksMade: 65 },
+    { user_id: "u-davis", pointsBanked: 30, picksMade: 74 },
+    { user_id: "u-lafferty", pointsBanked: 10, picksMade: 60 },
+    { user_id: "u-mark", pointsBanked: 0, picksMade: 60 },
+    { user_id: "u-joe", pointsBanked: 0, picksMade: 0 },
+  ];
+  const leaders = seasonLeaderIds(toM);
+  check(
+    "leaders: the tied 30-point pair leads (Davis + Aaron)",
+    leaders.length === 2 && leaders.includes("u-davis") && leaders.includes("u-aaron"),
+    JSON.stringify(leaders)
+  );
+  check(
+    "leaders: more correct picks do not win the title (Gaymez7's 20 banked loses)",
+    !leaders.includes("u-gaymez")
+  );
+  check(
+    "leaders: nobody with zero banked points leads",
+    !leaders.includes("u-mark") && !leaders.includes("u-joe")
+  );
+}
+check(
+  "leaders: a lone leader comes back alone",
+  JSON.stringify(
+    seasonLeaderIds([
+      { user_id: "u-a", pointsBanked: 20, picksMade: 10 },
+      { user_id: "u-b", pointsBanked: 10, picksMade: 10 },
+    ])
+  ) === JSON.stringify(["u-a"])
+);
+check(
+  "leaders: nobody picked yet means no leaders",
+  seasonLeaderIds([
+    { user_id: "u-a", pointsBanked: 0, picksMade: 0 },
+    { user_id: "u-b", pointsBanked: 0, picksMade: 0 },
+  ]).length === 0
 );
 
 // ------------------------------------------------------------ summary
