@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
-import { GRACE_DAYS, AUTO_SETTLE_DAYS } from "@/lib/config";
+import { GRACE_DAYS, AUTO_SETTLE_DAYS, maxPicksPerGame } from "@/lib/config";
 import { MODIFIER_CODES, isModifierCode } from "@/lib/modifiers";
 import { ANIMAL_KEYS } from "@/lib/avatar-keys";
 import {
@@ -675,13 +675,35 @@ export async function submitEntry(poolId: string, formData: FormData) {
   if (spent > pool.budget) {
     throw new Error(`That's $${spent} — over the $${pool.budget} cap.`);
   }
-  // Pools whose players carry a game slot: at most one pick per game.
-  // Players without a slot (legacy pools) don't take part in the check.
+  // Pools whose players carry a game slot cap picks per game. The cap
+  // is maxPicksPerGame: 1 when the pool has at least as many games as
+  // roster spots, more when a shorter slate has to fit the roster
+  // (e.g. 5 picks across 4 games caps at 2 per game, so one game
+  // doubles up). The distinct game count comes from the pool's whole
+  // player list, not just the picked players. Players without a slot
+  // (legacy pools) don't take part in the check.
   const gameNumbers = (players as any[])
     .map((p) => p.game_number)
     .filter((g) => g != null);
-  if (new Set(gameNumbers).size !== gameNumbers.length) {
-    throw new Error("Pick at most one player per game.");
+  if (gameNumbers.length > 0) {
+    const { data: poolGameRows } = await supabase
+      .from("pool_players")
+      .select("game_number")
+      .eq("pool_id", poolId)
+      .not("game_number", "is", null);
+    const distinctGames = new Set(
+      ((poolGameRows ?? []) as any[]).map((p) => p.game_number)
+    ).size;
+    const maxPerGame = maxPicksPerGame(pool.roster_size, distinctGames);
+    const perGameCount = new Map<number, number>();
+    for (const g of gameNumbers) {
+      perGameCount.set(g, (perGameCount.get(g) ?? 0) + 1);
+    }
+    for (const [, n] of perGameCount) {
+      if (n > maxPerGame) {
+        throw new Error(`Pick at most ${maxPerGame} players per game.`);
+      }
+    }
   }
 
   // Pools whose players carry a game slot (showdown-style): one modifier

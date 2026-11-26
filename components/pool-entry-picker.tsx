@@ -4,6 +4,7 @@ import { useState } from "react";
 import { submitEntry } from "@/lib/actions";
 import { Card, SectionTitle, SubmitButton } from "@/components/ui";
 import { MODIFIERS, type ModifierCode } from "@/lib/modifiers";
+import { maxPicksPerGame } from "@/lib/config";
 
 export interface PickerPlayer {
   id: string;
@@ -49,17 +50,28 @@ export default function PoolEntryPicker({
 
   const hasGameNumbers = players.some((p) => p.game_number != null);
 
-  // Games whose slot is already taken by a selected player — the other
-  // players in those games grey out (client feedback only; the server
-  // still enforces one pick per game in submitEntry).
-  const takenGames = new Set(
-    players
-      .filter((p) => selected.includes(p.id) && p.game_number != null)
-      .map((p) => p.game_number as number)
+  // Per-game pick cap — the same rule the server enforces in
+  // submitEntry (maxPicksPerGame in lib/config): at most one pick per
+  // game when the pool has at least as many games as roster spots,
+  // more when a shorter slate has to fit the roster (e.g. 5 picks
+  // across 4 games caps at 2 per game). A game's remaining players
+  // grey out only once that game has hit the cap.
+  const distinctGames = new Set(
+    players.map((p) => p.game_number).filter((g) => g != null)
+  ).size;
+  const maxPerGame = maxPicksPerGame(rosterSize, distinctGames);
+  const picksPerGame = new Map<number, number>();
+  for (const p of players) {
+    if (p.game_number != null && selected.includes(p.id)) {
+      picksPerGame.set(p.game_number, (picksPerGame.get(p.game_number) ?? 0) + 1);
+    }
+  }
+  const fullGames = new Set(
+    [...picksPerGame.entries()].filter(([, n]) => n >= maxPerGame).map(([g]) => g)
   );
 
   const isDisabled = (p: PickerPlayer) =>
-    !selected.includes(p.id) && p.game_number != null && takenGames.has(p.game_number);
+    !selected.includes(p.id) && p.game_number != null && fullGames.has(p.game_number);
 
   const toggle = (p: PickerPlayer) => {
     if (isDisabled(p)) return;
@@ -133,7 +145,9 @@ export default function PoolEntryPicker({
         </p>
         {hasGameNumbers && (
           <p className="text-xs text-slate-500">
-            One pick per game — picking a player greys out the rest of his game.
+            {maxPerGame === 1
+              ? "One pick per game — picking a player greys out the rest of his game."
+              : `At most ${maxPerGame} picks per game — a game greys out once you've picked ${maxPerGame} from it.`}
           </p>
         )}
         <div className="max-h-96 space-y-3 overflow-y-auto rounded-xl border border-slate-200 p-3">
