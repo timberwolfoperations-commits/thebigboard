@@ -2,6 +2,19 @@
 export const GRACE_DAYS = 3; // days past settle date before the deadbeat board
 export const AUTO_SETTLE_DAYS = 7; // days past settle date before an undisputed proposal auto-settles
 
+// Per-game pick cap for roster pools whose players carry a game slot.
+// A pool with at least as many games as roster spots caps at one pick
+// per game; a pool with fewer games than picks (e.g. a revised pool with
+// 4 games and 5 picks) lets one game double up, so the cap is the
+// smallest number that still fits the roster across the games.
+// Server (submitEntry) and the picker both use this — they must never
+// disagree. Legacy pools (no game slots) skip the check entirely, so a
+// zero game count just yields the 1 default here.
+export function maxPicksPerGame(rosterSize: number, distinctGameCount: number): number {
+  if (distinctGameCount <= 0) return 1;
+  return Math.max(1, Math.ceil(rosterSize / distinctGameCount));
+}
+
 // Standard roster-pool rules, pre-filled in the form so the commish tweaks
 // instead of retyping. Parameterized so it matches the pool's setup.
 export function defaultPoolRules(rosterSize: number, budget: number): string {
