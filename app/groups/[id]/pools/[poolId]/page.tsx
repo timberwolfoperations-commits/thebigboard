@@ -11,7 +11,7 @@ import {
   awardPoolWinner,
 } from "@/lib/actions";
 import { defaultPoolRules, defaultScoringFormula } from "@/lib/config";
-import { computeEntryScores } from "@/lib/pool-scoring";
+import { computeEntryScores, formatPlayerStatLine } from "@/lib/pool-scoring";
 import { MODIFIER_SHORTS, type ModifierCode } from "@/lib/modifiers";
 import { getAvatarMap } from "@/lib/avatars";
 import { Avatar } from "@/components/Avatar";
@@ -121,7 +121,7 @@ export default async function PoolPage({
   // award action and the dashboard use. Base points still come from the
   // API stat lines on the pool's linked games when it has any; otherwise
   // from manual stat lines, exactly as before.
-  const { entries: scoredEntries, linkedGames, unmatched, hasModifiers } = await computeEntryScores(supabase, poolId);
+  const { entries: scoredEntries, linkedGames, unmatched, hasModifiers, playerScores } = await computeEntryScores(supabase, poolId);
   // Pre-lock, a user sees only their own picks. Other entries' picks and
   // modifier tags are stripped here, server-side, so they are not in the
   // rendered page at all — no one can copy picks before lock. The entry
@@ -447,6 +447,57 @@ export default async function PoolPage({
           <p className="mt-1 text-[11px] text-slate-400">
             Most points from that game&rsquo;s slot. Co-winners tie — crowns are
             board-only, no lifetime points.
+          </p>
+        </div>
+      )}
+
+      {/* ---- player scoring --------------------------------------- */}
+      {/* Every player in the pool with the base points the formula
+          gives them and the raw stats behind it — drafted or not, so
+          the whole pool can see who is actually scoring. This is the
+          pool's own scoring, not any entry's picks, so it never leaks
+          a lineup before lock. Hidden until there is a scoring source
+          (linked games or hand-entered lines); before that it would
+          just be a column of zeroes. */}
+      {playerList.length > 0 && (linkedGames.length > 0 || lineList.length > 0) && (
+        <div>
+          <PoolSectionTitle>Player scoring</PoolSectionTitle>
+          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <div className="flex items-center gap-1.5 border-b border-slate-100 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+              <span className="min-w-0 flex-1">Player</span>
+              <span className="w-8 text-right">Gm</span>
+              <span className="w-12 text-right">Pts</span>
+            </div>
+            <div className="divide-y divide-slate-100">
+              {playerScores.map((p: any) => {
+                const line = formatPlayerStatLine(p.stats ?? {});
+                return (
+                  <div key={p.playerId} className="px-3 py-1.5">
+                    <div className="flex items-center gap-1.5">
+                      <p className="min-w-0 flex-1 truncate text-[13px] font-medium">
+                        {p.name}{" "}
+                        <span className="font-normal text-slate-400">
+                          {p.team} · ${p.salary}
+                        </span>
+                      </p>
+                      <span className="w-8 text-right text-[13px] tabular-nums text-slate-500">
+                        {p.gameNumber != null ? `G${p.gameNumber}` : "—"}
+                      </span>
+                      <span className="w-12 text-right text-[13px] font-semibold tabular-nums">
+                        {p.points}
+                      </span>
+                    </div>
+                    <p className="mt-0.5 pl-0 text-xs text-slate-400">
+                      {line || "No stats yet"}
+                    </p>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+          <p className="mt-1 text-[11px] text-slate-400">
+            Base points from the pool&rsquo;s scoring formula. Modifier bonuses
+            live on the leaderboard, not here.
           </p>
         </div>
       )}

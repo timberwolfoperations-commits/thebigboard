@@ -32,8 +32,38 @@ export interface LinkedGame {
 export interface PoolPoints {
   points: Map<string, number>; // pool_player.id -> points
   perGame: Map<string, number[]>; // pool_player.id -> points per linked game, kickoff order
+  stats: Map<string, Record<string, number>>; // pool_player.id -> summed raw stats that scored those points
   unmatched: string[]; // player names with no API match anywhere (linked pools)
   linkedGames: LinkedGame[];
+}
+
+// Short labels for the raw stat keys, in the order they read on a
+// scoring line. Unknown keys fall back to the key itself.
+const STAT_LABELS: Record<string, string> = {
+  PASS_YD: "pass yds",
+  PASS_TD: "pass TD",
+  INT: "INT",
+  RUSH_YD: "rush yds",
+  RUSH_TD: "rush TD",
+  REC: "rec",
+  REC_YD: "rec yds",
+  REC_TD: "rec TD",
+  FUM_LOST: "fum lost",
+};
+
+// The compact stat line under a player's points: only the stats that
+// are nonzero, e.g. "245 pass yds · 2 pass TD · 1 INT". Empty when
+// nothing has scored yet.
+export function formatPlayerStatLine(stats: Record<string, number>): string {
+  const parts: string[] = [];
+  for (const [key, label] of Object.entries(STAT_LABELS)) {
+    const v = stats[key] ?? 0;
+    if (v !== 0) parts.push(`${v} ${label}`);
+  }
+  for (const [key, v] of Object.entries(stats)) {
+    if (!(key in STAT_LABELS) && v !== 0) parts.push(`${v} ${key}`);
+  }
+  return parts.join(" · ");
 }
 
 const norm = (s: unknown) => String(s ?? "").trim().toUpperCase();
@@ -53,6 +83,17 @@ export async function computePoolPoints(supabase: any, poolId: string): Promise<
 
   const points = new Map<string, number>();
   const perGame = new Map<string, number[]>();
+  const stats = new Map<string, Record<string, number>>();
+  // Sum one stat record into a player's running totals (a player
+  // scores in one game in practice, but the sum stays correct if a
+  // name ever matches in two).
+  const addStats = (playerId: string, rec: Record<string, number>) => {
+    const cur = stats.get(playerId) ?? {};
+    for (const [k, v] of Object.entries(rec)) {
+      cur[k] = (cur[k] ?? 0) + (typeof v === "number" ? v : 0);
+    }
+    stats.set(playerId, cur);
+  };
 
   // Legacy: no linked games — manual lines only, exactly as before.
   if (gameIds.length === 0) {
@@ -61,10 +102,12 @@ export async function computePoolPoints(supabase: any, poolId: string): Promise<
       .select("player_id, stats")
       .eq("pool_id", poolId);
     for (const s of (lines ?? []) as any[]) {
-      const pts = calcPoints((s.stats ?? {}) as Record<string, number>, formula);
+      const rec = (s.stats ?? {}) as Record<string, number>;
+      const pts = calcPoints(rec, formula);
       points.set(s.player_id, (points.get(s.player_id) ?? 0) + pts);
+      addStats(s.player_id, rec);
     }
-    return { points, perGame, unmatched: [], linkedGames: [] };
+    return { points, perGame, stats, unmatched: [], linkedGames: [] };
   }
 
   const { data: games } = await supabase
@@ -106,14 +149,18 @@ export async function computePoolPoints(supabase: any, poolId: string): Promise<
       const override = manualByKey.get(`${p.id}|${i + 1}`);
       let pts = 0;
       if (override) {
-        pts = calcPoints((override.stats ?? {}) as Record<string, number>, formula);
+        const rec = (override.stats ?? {}) as Record<string, number>;
+        pts = calcPoints(rec, formula);
+        addStats(p.id, rec);
         matched = true;
       } else {
         const line = (apiByGame.get(g.id) ?? []).find(
           (l: any) => norm(l.player_name) === norm(p.name) && norm(l.team) === norm(p.team)
         );
         if (line) {
-          pts = calcPoints((line.stats ?? {}) as Record<string, number>, formula);
+          const rec = (line.stats ?? {}) as Record<string, number>;
+          pts = calcPoints(rec, formula);
+          addStats(p.id, rec);
           matched = true;
         }
       }
@@ -125,7 +172,7 @@ export async function computePoolPoints(supabase: any, poolId: string): Promise<
     if (!matched) unmatched.push(p.name);
   }
 
-  return { points, perGame, unmatched, linkedGames };
+  return { points, perGame, stats, unmatched, linkedGames };
 }
 
 // --- Entry standings with modifiers -----------------------------------------
@@ -165,17 +212,28 @@ export interface EntryScore {
   perGameModified: number[]; // modified points per linked game, kickoff order
 }
 
+export interface PlayerScore {
+  playerId: string;
+  name: string;
+  team: string;
+  salary: number;
+  gameNumber: number | null;
+  points: number; // base fantasy points from the pool's formula
+  stats: Record<string, number>; // the raw stats that scored those points
+}
+
 export interface EntryScores {
   entries: EntryScore[]; // sorted by total desc, then earliest entry first
   linkedGames: LinkedGame[];
   unmatched: string[];
   hasModifiers: boolean; // any entry carries a modifier
+  playerScores: PlayerScore[]; // every player in the pool, points desc — the scoring table
 }
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
 export async function computeEntryScores(supabase: any, poolId: string): Promise<EntryScores> {
-  const { points, unmatched, linkedGames } = await computePoolPoints(supabase, poolId);
+  const { points, stats, unmatched, linkedGames } = await computePoolPoints(supabase, poolId);
 
   const [{ data: players }, { data: entries }, { data: picks }] = await Promise.all([
     supabase
@@ -311,5 +369,24 @@ export async function computeEntryScores(supabase: any, poolId: string): Promise
     (a, b) => b.total - a.total || new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
   );
 
-  return { entries: entriesOut, linkedGames, unmatched, hasModifiers };
+  // The scoring table: every player in the pool with the base points
+  // the formula gives them and the raw stats behind it — drafted or
+  // not, so the whole pool can see who is actually scoring. Best
+  // first; ties break to the higher salary, then the alphabet.
+  const playerScores: PlayerScore[] = playerList
+    .map((p: any) => ({
+      playerId: p.id as string,
+      name: p.name as string,
+      team: p.team as string,
+      salary: (p.salary ?? 0) as number,
+      gameNumber: (p.game_number ?? null) as number | null,
+      points: round2(points.get(p.id) ?? 0),
+      stats: stats.get(p.id) ?? {},
+    }))
+    .sort(
+      (a, b) =>
+        b.points - a.points || b.salary - a.salary || a.name.localeCompare(b.name)
+    );
+
+  return { entries: entriesOut, linkedGames, unmatched, hasModifiers, playerScores };
 }
