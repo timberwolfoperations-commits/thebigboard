@@ -14,6 +14,12 @@ import {
   type PickemRow,
 } from "@/lib/pickem-scoring";
 
+// What a season champion banks on the group lifetime board, each
+// (co-champions are just two rows in pickem_season_winners, migration
+// 034). Group points land when a contest ends — the season champion
+// banks theirs after the final round, never week to week.
+export const SEASON_WINNER_POINTS = 10;
+
 export interface SeasonRow {
   id: string;
   group_id: string;
@@ -102,6 +108,29 @@ export interface SeasonWinnerInput {
 export interface SeasonMemberInput {
   userId: string;
   displayName: string;
+}
+
+// The season champion(s): the players tied at the most banked points
+// (10 per weekly win) among everyone who picked at least once. The
+// championship is a points race — correct picks decide the board order,
+// banked points decide the title — so a player who picked more games
+// right but won fewer weeks is not the champion. Returns the leaders'
+// user ids in standings order; empty when nobody has picked yet.
+export function seasonLeaderIds(
+  standings: ReadonlyArray<{
+    user_id: string;
+    pointsBanked: number;
+    picksMade: number;
+  }>
+): string[] {
+  let maxBanked = 0;
+  for (const s of standings) {
+    if (s.picksMade > 0 && s.pointsBanked > maxBanked) maxBanked = s.pointsBanked;
+  }
+  if (maxBanked <= 0) return [];
+  return standings
+    .filter((s) => s.picksMade > 0 && s.pointsBanked === maxBanked)
+    .map((s) => s.user_id);
 }
 
 // A season is a confidence season when it has linked rounds and every
@@ -337,6 +366,29 @@ export async function loadSeason(
       pool: r.pickem_pools as SeasonRoundPool,
     }));
   return { season: season as SeasonRow, rounds };
+}
+
+// The season's awarded champions (migration 034), if any. Empty
+// when nobody has been awarded yet — or when the migration hasn't run
+// (the table read errors and the caller renders the un-awarded state,
+// never a crash).
+export interface SeasonWinnerRow {
+  user_id: string;
+  points: number;
+  awarded_at: string;
+}
+
+export async function loadSeasonWinners(
+  supabase: any,
+  seasonId: string
+): Promise<SeasonWinnerRow[]> {
+  const { data, error } = await supabase
+    .from("pickem_season_winners")
+    .select("user_id, points, awarded_at")
+    .eq("season_id", seasonId)
+    .order("awarded_at", { ascending: true });
+  if (error || !data) return [];
+  return data as SeasonWinnerRow[];
 }
 
 // Seasons belonging to a group (for entry-point cards). Empty when

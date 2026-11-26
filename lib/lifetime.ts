@@ -1,19 +1,22 @@
-// Lifetime points for one group, from the same five sources the group
+// Lifetime points for one group, from the same six sources the group
 // page's board uses: settled bets, roster-pool champs, pick'em
-// co-winners, quiz winners, poker winners. Returns a Map keyed by
-// user_id; members with no wins simply aren't in the map (callers
-// default to 0).
+// co-winners, quiz winners, poker winners, and season champions.
+// Returns a Map keyed by user_id; members with no wins simply aren't
+// in the map (callers default to 0).
 //
 // ONE SCOPE RULE (Michael, 2026-11-10): pick'em winners of a pool that
 // belongs to a SEASON (a row in pickem_season_rounds) do NOT count
 // here. Season weekly wins are season-internal — they decide the
 // champion on the season page (which reads pickem_pool_winners itself)
 // and group points land when a contest ends, not week to week. The
-// winners rows themselves are untouched; this is a read-scope rule in
-// this shared computation only, so every surface that shows lifetime
-// points (group board, pool pages) agrees. lib/rating.ts is a separate
-// computation with its own queries and deliberately still counts
-// season titles exactly as before — do not "fix" it to match.
+// season CHAMPION is the exception that proves it: the champion(s)
+// bank SEASON_WINNER_POINTS here via pickem_season_winners (migration
+// 034), once, when the season is awarded. The winners rows themselves
+// are untouched; this is a read-scope rule in this shared computation
+// only, so every surface that shows lifetime points (group board, pool
+// pages) agrees. lib/rating.ts is a separate computation with its own
+// queries and deliberately still counts season titles exactly as
+// before — do not "fix" it to match.
 
 export interface LifetimeSources {
   settledBets: { proposed_winner_id: string | null; points: number }[];
@@ -21,10 +24,11 @@ export interface LifetimeSources {
   pickemWinners: { pool_id: string; user_id: string; points: number }[];
   quizWinners: { user_id: string; points: number }[];
   pokerWinners: { user_id: string; points: number }[];
+  seasonWinners: { user_id: string; points: number }[];
   seasonPoolIds: ReadonlySet<string>;
 }
 
-// Pure merge of the five winner sources into the lifetime map — split
+// Pure merge of the six winner sources into the lifetime map — split
 // out of getGroupLifetime so the scope rule is testable without a DB.
 export function tallyLifetimeSources(
   sources: LifetimeSources
@@ -48,6 +52,9 @@ export function tallyLifetimeSources(
   }
   for (const w of sources.quizWinners) add(w.user_id, w.points);
   for (const w of sources.pokerWinners) add(w.user_id, w.points);
+  // Season champions bank once, when the season is awarded — the
+  // weekly wins above stay season-internal.
+  for (const w of sources.seasonWinners) add(w.user_id, w.points);
 
   return pointsByUser;
 }
@@ -56,12 +63,14 @@ export async function getGroupLifetime(
   supabase: any,
   groupId: string
 ): Promise<Map<string, { points: number; wins: number }>> {
-  // The five sources are independent — one parallel batch instead of
-  // five serial round trips. Results are still merged in the same
+  // The six sources are independent — one parallel batch instead of
+  // six serial round trips. Results are still merged in the same
   // source order in tallyLifetimeSources, so totals are unchanged.
-  // The sixth read is the season linkage for this group (pool ids that
+  // The seventh read is the season linkage for this group (pool ids that
   // are season rounds); if migration 029 hasn't run it simply comes
-  // back empty and every pick'em win counts, as before.
+  // back empty and every pick'em win counts, as before. The season
+  // champions read is the same shape: if migration 034 hasn't run it
+  // comes back empty and nothing banks, as before.
   const [
     { data: settled },
     { data: poolWinners },
@@ -69,6 +78,7 @@ export async function getGroupLifetime(
     { data: quizWinners },
     { data: pokerWinners },
     { data: seasonRounds },
+    { data: seasonWinners },
   ] = await Promise.all([
     supabase
       .from("bets")
@@ -96,6 +106,10 @@ export async function getGroupLifetime(
       .from("pickem_season_rounds")
       .select("pool_id, pickem_seasons!inner(group_id)")
       .eq("pickem_seasons.group_id", groupId),
+    supabase
+      .from("pickem_season_winners")
+      .select("user_id, points, pickem_seasons!inner(group_id)")
+      .eq("pickem_seasons.group_id", groupId),
   ]);
 
   return tallyLifetimeSources({
@@ -104,6 +118,7 @@ export async function getGroupLifetime(
     pickemWinners: (pickemWinners ?? []) as LifetimeSources["pickemWinners"],
     quizWinners: (quizWinners ?? []) as LifetimeSources["quizWinners"],
     pokerWinners: (pokerWinners ?? []) as LifetimeSources["pokerWinners"],
+    seasonWinners: (seasonWinners ?? []) as LifetimeSources["seasonWinners"],
     seasonPoolIds: new Set(
       ((seasonRounds ?? []) as any[]).map((r) => r.pool_id as string)
     ),

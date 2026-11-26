@@ -5,12 +5,15 @@ import { createClient } from "@/lib/supabase/server";
 import {
   loadSeason,
   loadRoundGameStates,
+  loadSeasonWinners,
   computeSeasonStandings,
   pickFocusRoundNo,
   seasonIsConfidence,
+  seasonLeaderIds,
+  SEASON_WINNER_POINTS,
   type SeasonStanding,
 } from "@/lib/season";
-import { attachPoolToSeason } from "@/lib/season-actions";
+import { attachPoolToSeason, awardSeasonWinners } from "@/lib/season-actions";
 import { creationLockedForGroup } from "@/lib/commissioner";
 import { getAvatarMap } from "@/lib/avatars";
 import { Avatar } from "@/components/Avatar";
@@ -92,9 +95,10 @@ export default async function SeasonPage({
     .eq("id", id)
     .maybeSingle();
 
-  const [standings, gameStates] = await Promise.all([
+  const [standings, gameStates, winners] = await Promise.all([
     computeSeasonStandings(supabase, loaded),
     loadRoundGameStates(supabase, rounds, user.id),
+    loadSeasonWinners(supabase, seasonId),
   ]);
   // A confidence season races on cumulative confidence points (PTS
   // below); a standard season races on correct picks, exactly as
@@ -153,6 +157,23 @@ export default async function SeasonPage({
   const freeRoundNos = Array.from({ length: season.rounds_total }, (_, i) => i + 1).filter(
     (n) => !linkedRoundNos.has(n)
   );
+
+  // ---- season award data (champion banking, migration 034) --------
+  // The award unlocks only when the season is over: every round linked
+  // and every round's games final. The championship is a points race,
+  // so the candidates are everyone who banked at least one weekly win,
+  // best season first, with the tied leaders pre-checked.
+  const seasonComplete =
+    rounds.length === season.rounds_total &&
+    rounds.length > 0 &&
+    rounds.every((r) => gameStates.get(r.pool_id)?.allFinal ?? false);
+  const championNames = winners.map(
+    (w) => standings.find((s) => s.user_id === w.user_id)?.display_name ?? "Player"
+  );
+  const awardCandidates = standings
+    .filter((s) => s.picksMade > 0 && s.pointsBanked > 0)
+    .sort((a, b) => b.pointsBanked - a.pointsBanked || b.correct - a.correct);
+  const leaderIds = new Set(seasonLeaderIds(standings));
 
   const statusChip = (st: "final" | "live" | "open") =>
     st === "final"
@@ -476,6 +497,57 @@ export default async function SeasonPage({
           })}
         </div>
       </div>
+
+      {/* ---- season champions / award ------------------------------ */}
+      {winners.length > 0 ? (
+        <div>
+          <SeasonSectionTitle>Season champions</SeasonSectionTitle>
+          <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3.5 shadow-sm">
+            <p className="text-[15px] font-semibold">{championNames.join(" & ")}</p>
+            <p className="mt-1 text-[13px] text-slate-600">
+              {SEASON_WINNER_POINTS} pts each, banked on the group board.
+            </p>
+          </div>
+        </div>
+      ) : (
+        canAttach &&
+        seasonComplete &&
+        awardCandidates.length > 0 && (
+          <div>
+            <SeasonSectionTitle>Commissioner — award season</SeasonSectionTitle>
+            <div className="rounded-2xl border border-slate-200 px-4 py-3.5">
+              <p className="text-[13px] text-slate-600">
+                Every round is final. Pick the champion
+                {awardCandidates.length > 1 ? "s" : ""} — the tied leaders are
+                pre-checked — and bank {SEASON_WINNER_POINTS} pts each on the group
+                board.
+              </p>
+              <form action={awardSeasonWinners} className="mt-2.5 space-y-2">
+                <input type="hidden" name="seasonId" value={season.id} />
+                {awardCandidates.map((s) => (
+                  <label
+                    key={s.user_id}
+                    className="flex cursor-pointer items-center gap-2 text-[13px]"
+                  >
+                    <input
+                      type="checkbox"
+                      name="winnerIds"
+                      value={s.user_id}
+                      defaultChecked={leaderIds.has(s.user_id)}
+                      className="h-4 w-4 accent-orange-600"
+                    />
+                    <span className="font-medium">{s.display_name}</span>
+                    <span className="text-slate-500">
+                      {s.pointsBanked} banked · {s.correct} correct
+                    </span>
+                  </label>
+                ))}
+                <SubmitButton>Award {SEASON_WINNER_POINTS} pts each</SubmitButton>
+              </form>
+            </div>
+          </div>
+        )
+      )}
 
       {/* ---- commissioner: attach a round ---------------------------- */}
       {canAttach && unattachedPools.length > 0 && freeRoundNos.length > 0 && (

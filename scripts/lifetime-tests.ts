@@ -35,6 +35,7 @@ const empty: LifetimeSources = {
   pickemWinners: [],
   quizWinners: [],
   pokerWinners: [],
+  seasonWinners: [],
   seasonPoolIds: new Set(),
 };
 
@@ -142,11 +143,12 @@ const tomSeasonWinners: LifetimeSources["pickemWinners"] = [
     pickemWinners: tomSeasonWinners,
     quizWinners: [{ user_id: BIGRED, points: 10 }],
     pokerWinners: [{ user_id: DAVIS, points: 10 }],
+    seasonWinners: [{ user_id: DAVIS, points: 10 }],
     seasonPoolIds: tomSeasonPoolIds,
   });
   check(
-    "other sources: Davis = settled bet 25 + poker 10 (season pick'em excluded)",
-    board.get(DAVIS)?.points === 35 && board.get(DAVIS)?.wins === 2,
+    "other sources: Davis = settled bet 25 + poker 10 + season champ 10 (season pick'em excluded)",
+    board.get(DAVIS)?.points === 45 && board.get(DAVIS)?.wins === 3,
     JSON.stringify(board.get(DAVIS))
   );
   check(
@@ -156,6 +158,39 @@ const tomSeasonWinners: LifetimeSources["pickemWinners"] = [
   check(
     "other sources: quiz winner still counts (10 pts / 1 win)",
     board.get(BIGRED)?.points === 10 && board.get(BIGRED)?.wins === 1
+  );
+}
+
+// --------------------------- season champions bank, weekly wins don't
+
+// The real Test of Manhood ending: Davis and Aaron tied the 6-week
+// race at 30 banked points (3 weekly wins each) and split the title.
+// The award is two pickem_season_winners rows at 10 pts each — and
+// their 3 weekly wins each stay season-internal, so neither banks 30.
+{
+  const board = tallyLifetimeSources({
+    ...empty,
+    pickemWinners: tomSeasonWinners,
+    seasonWinners: [
+      { user_id: DAVIS, points: 10 },
+      { user_id: AARON, points: 10 },
+    ],
+    seasonPoolIds: tomSeasonPoolIds,
+  });
+  check(
+    "season champions: Davis banks 10 pts / 1 win for the title (not 30 for the weeks)",
+    board.get(DAVIS)?.points === 10 && board.get(DAVIS)?.wins === 1,
+    JSON.stringify(board.get(DAVIS))
+  );
+  check(
+    "season champions: Aaron banks 10 pts / 1 win for the shared title",
+    board.get(AARON)?.points === 10 && board.get(AARON)?.wins === 1,
+    JSON.stringify(board.get(AARON))
+  );
+  check(
+    "season champions: only the two champions land (20 pts total)",
+    [...board.values()].reduce((a, x) => a + x.points, 0) === 20 &&
+      [...board.values()].reduce((a, x) => a + x.wins, 0) === 2
   );
 }
 
